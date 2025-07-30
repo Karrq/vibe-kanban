@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
+use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{Executor, ExecutorError, NormalizedConversation, NormalizedEntry},
@@ -225,9 +226,11 @@ impl Default for SstOpencodeExecutor {
 impl SstOpencodeExecutor {
     /// Create a new SstOpencodeExecutor with default settings
     pub fn new() -> Self {
+        let command = build_agent_command("sst-opencode", None)
+            .unwrap_or_else(|_| "npx -y opencode-ai@latest run --print-logs".to_string());
         Self {
             executor_type: "SST Opencode".to_string(),
-            command: "npx -y opencode-ai@latest run --print-logs".to_string(),
+            command,
         }
     }
 }

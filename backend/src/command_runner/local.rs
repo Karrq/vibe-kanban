@@ -43,7 +43,7 @@ impl CommandExecutor for LocalCommandExecutor {
         if let Some(dir) = &request.working_dir {
             tracing::debug!("Working directory: {:?}", dir);
         }
-        
+
         let mut cmd = Command::new(&request.command);
 
         cmd.args(&request.args)

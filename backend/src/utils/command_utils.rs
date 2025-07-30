@@ -13,8 +13,10 @@ mod tests {
     fn test_command_exists() {
         // Test with a command that should exist on most systems
         assert!(command_exists("sh"));
-        
+
         // Test with a command that definitely doesn't exist
-        assert!(!command_exists("this-command-definitely-does-not-exist-1234567890"));
+        assert!(!command_exists(
+            "this-command-definitely-does-not-exist-1234567890"
+        ));
     }
 }

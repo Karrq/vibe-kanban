@@ -3,6 +3,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use uuid::Uuid;
 
+use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -12,8 +13,6 @@ use crate::{
     models::task::Task,
     utils::shell::get_shell_command,
 };
-
-use super::build_agent_command;
 
 fn create_watchkill_script(command: &str) -> String {
     let claude_plan_stop_indicator = "Exit plan mode?";

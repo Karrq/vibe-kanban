@@ -17,6 +17,7 @@ pub use streaming::GeminiPatchBatch;
 use streaming::GeminiStreaming;
 use uuid::Uuid;
 
+use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -25,8 +26,6 @@ use crate::{
     models::task::Task,
     utils::shell::get_shell_command,
 };
-
-use super::build_agent_command;
 
 /// An executor that uses Gemini CLI to process tasks
 pub struct GeminiExecutor;

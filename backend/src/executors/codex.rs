@@ -6,6 +6,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
+use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -15,8 +16,6 @@ use crate::{
     models::{executor_session::ExecutorSession, task::Task},
     utils::{path::make_path_relative, shell::get_shell_command},
 };
-
-use super::build_agent_command;
 
 /// Check if a JSON message looks like a system configuration message
 /// This prevents accidentally filtering out regular messages or tool messages
