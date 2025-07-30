@@ -26,6 +26,8 @@ use crate::{
     utils::shell::get_shell_command,
 };
 
+use super::build_agent_command;
+
 /// An executor that uses Gemini CLI to process tasks
 pub struct GeminiExecutor;
 
@@ -236,13 +238,14 @@ impl GeminiExecutor {
     /// Create a standardized Gemini CLI command
     fn create_gemini_command(worktree_path: &str) -> CommandRunner {
         let (shell_cmd, shell_arg) = get_shell_command();
-        let gemini_command = "npx @google/gemini-cli@latest --yolo";
+        let gemini_command = build_agent_command("gemini", None)
+            .unwrap_or_else(|_| "npx @google/gemini-cli@latest --yolo".to_string());
 
         let mut command = CommandRunner::new();
         command
             .command(shell_cmd)
             .arg(shell_arg)
-            .arg(gemini_command)
+            .arg(&gemini_command)
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1");
         command

@@ -15,6 +15,8 @@ use crate::{
     utils::shell::get_shell_command,
 };
 
+use super::build_agent_command;
+
 /// An executor that uses Amp to process tasks
 pub struct AmpExecutor;
 
@@ -220,13 +222,14 @@ Task title: {}"#,
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
         // --format=jsonl is deprecated in latest versions of Amp CLI
-        let amp_command = "npx @sourcegraph/amp@0.0.1752148945-gd8844f --format=jsonl";
+        let amp_command = build_agent_command("amp", None)
+            .unwrap_or_else(|_| "npx @sourcegraph/amp@0.0.1752148945-gd8844f --format=jsonl".to_string());
 
         let mut command = CommandRunner::new();
         command
             .command(shell_cmd)
             .arg(shell_arg)
-            .arg(amp_command)
+            .arg(&amp_command)
             .stdin(&prompt)
             .working_dir(worktree_path);
 
@@ -250,10 +253,19 @@ Task title: {}"#,
     ) -> Result<CommandProcess, ExecutorError> {
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
-        let amp_command = format!(
-            "npx @sourcegraph/amp@0.0.1752148945-gd8844f threads continue {} --format=jsonl",
-            session_id
-        );
+        let continue_args = format!("threads continue {} --format=jsonl", session_id);
+        let base_command = build_agent_command("amp", None)
+            .unwrap_or_else(|_| "npx @sourcegraph/amp@0.0.1752148945-gd8844f --format=jsonl".to_string());
+        
+        // Extract just the base command without --format=jsonl since we're adding different args
+        let base_parts: Vec<&str> = base_command.split_whitespace().collect();
+        let amp_command = if base_parts.len() > 2 && base_parts[base_parts.len() - 1] == "--format=jsonl" {
+            // Remove --format=jsonl from the end and add continue args
+            format!("{} {}", base_parts[..base_parts.len() - 1].join(" "), continue_args)
+        } else {
+            // Fallback to the expected format
+            format!("npx @sourcegraph/amp@0.0.1752148945-gd8844f {}", continue_args)
+        };
 
         let mut command = CommandRunner::new();
         command

@@ -16,6 +16,8 @@ use crate::{
     utils::{path::make_path_relative, shell::get_shell_command},
 };
 
+use super::build_agent_command;
+
 /// Check if a JSON message looks like a system configuration message
 /// This prevents accidentally filtering out regular messages or tool messages
 fn is_system_config_message(json: &Value) -> bool {
@@ -179,9 +181,11 @@ impl Default for CodexExecutor {
 impl CodexExecutor {
     /// Create a new CodexExecutor with default settings
     pub fn new() -> Self {
+        let command = build_agent_command("codex", None)
+            .unwrap_or_else(|_| "npx @openai/codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check".to_string());
         Self {
             executor_type: "Codex".to_string(),
-            command: "npx @openai/codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check".to_string(),
+            command,
         }
     }
 }
