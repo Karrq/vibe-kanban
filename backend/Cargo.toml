@@ -62,6 +62,7 @@ futures-util = "0.3"
 async-stream = "0.3"
 json-patch = "2.0"
 backon = "1.5.1"
+dotenvy = "0.15"
 
 [dev-dependencies]
 tempfile = "3.8"

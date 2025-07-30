@@ -120,6 +120,9 @@ Task title: {}"#,
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1");
 
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
+
         let proc = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
                 .with_task(task_id, Some(task.title.clone()))
@@ -159,6 +162,9 @@ Task title: {}"#,
             .stdin(prompt)
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1");
+
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
 
         let proc = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)

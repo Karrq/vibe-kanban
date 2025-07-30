@@ -17,7 +17,7 @@ impl Executor for EchoExecutor {
         &self,
         pool: &sqlx::SqlitePool,
         task_id: Uuid,
-        _worktree_path: &str,
+        worktree_path: &str,
     ) -> Result<CommandProcess, ExecutorError> {
         // Get the task to fetch its description
         let task = Task::find_by_id(pool, task_id)
@@ -60,7 +60,11 @@ echo "Task completed: {}""#,
         command_runner
             .command(shell_cmd)
             .arg(shell_arg)
-            .arg(&script);
+            .arg(&script)
+            .working_dir(worktree_path);
+
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command_runner, worktree_path);
 
         let child = command_runner.start().await.map_err(|e| {
             SpawnContext::from_command(&command_runner, "Echo")

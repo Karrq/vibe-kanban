@@ -230,6 +230,9 @@ Task title: {}"#,
             .stdin(&prompt)
             .working_dir(worktree_path);
 
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
+
         let proc = command.start().await.map_err(|e| {
             executor::SpawnContext::from_command(&command, "Amp")
                 .with_task(task_id, Some(task.title.clone()))
@@ -262,6 +265,9 @@ Task title: {}"#,
             .arg(&amp_command)
             .stdin(prompt)
             .working_dir(worktree_path);
+
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
 
         let proc = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, "Amp")

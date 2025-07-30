@@ -597,6 +597,17 @@ impl ProcessService {
 
         tracing::info!("Starting {} for task attempt {}", activity_note, attempt_id);
 
+        // Check for .env file and inject system message if found
+        if matches!(process_type, ExecutionProcessType::CodingAgent) {
+            let env_message = Self::check_env_file(worktree_path);
+            if let Some(msg) = env_message {
+                // Inject the system message into the execution process stdout
+                if let Err(e) = crate::executor::inject_system_message(pool, process_id, &msg).await {
+                    tracing::warn!("Failed to inject env loading message: {}", e);
+                }
+            }
+        }
+
         // Execute the process
         let child = Self::execute_process(
             &executor_type,
@@ -888,6 +899,32 @@ impl ProcessService {
             .await;
     }
 
+    /// Check if .env file exists and return a message about it
+    fn check_env_file(worktree_path: &str) -> Option<String> {
+        use crate::utils::env_loader;
+        
+        match env_loader::load_env_from_directory(worktree_path) {
+            Ok(load_result) => {
+                if load_result.var_count > 0 {
+                    Some(format!(
+                        "[System] Loaded {} environment variable{} from {}",
+                        load_result.var_count,
+                        if load_result.var_count == 1 { "" } else { "s" },
+                        load_result.env_file_path.unwrap_or_default()
+                    ))
+                } else {
+                    // .env file doesn't exist or is empty
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to check .env file in {}: {}", worktree_path, e);
+                // Return a warning message that will be shown to the user
+                Some(format!("[System] Warning: Failed to load .env file: {}", e))
+            }
+        }
+    }
+    
     /// Create execution process database record with delegation context
     async fn create_execution_process_record_with_delegation(
         pool: &SqlitePool,
