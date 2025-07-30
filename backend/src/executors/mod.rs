@@ -43,7 +43,7 @@ pub fn build_agent_command(agent_name: &str, additional_args: Option<&str>) -> R
             cmd.push(' ');
             cmd.push_str(extra);
         }
-        tracing::info!("Using {} from PATH", config.path_command);
+        tracing::trace!("Using {} from PATH", config.path_command);
         Ok(cmd)
     } else {
         // Fall back to npx
@@ -52,7 +52,7 @@ pub fn build_agent_command(agent_name: &str, additional_args: Option<&str>) -> R
             cmd.push(' ');
             cmd.push_str(extra);
         }
-        tracing::info!("Using {} via npx (not found in PATH)", config.path_command);
+        tracing::trace!("Using {} via npx (not found in PATH)", config.path_command);
         Ok(cmd)
     }
 }

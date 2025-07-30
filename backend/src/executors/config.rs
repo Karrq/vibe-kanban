@@ -12,13 +12,13 @@ lazy_static::lazy_static! {
         let mut m = HashMap::new();
         
         m.insert("claude", AgentConfig {
-            path_command: "claude-code",
+            path_command: "claude",
             npx_package: "@anthropic-ai/claude-code@latest",
             args: "-p --dangerously-skip-permissions --verbose --output-format=stream-json",
         });
         
         m.insert("claude-plan", AgentConfig {
-            path_command: "claude-code",
+            path_command: "claude",
             npx_package: "@anthropic-ai/claude-code@latest",
             args: "-p --permission-mode=plan --verbose --output-format=stream-json",
         });
