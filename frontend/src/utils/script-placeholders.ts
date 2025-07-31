@@ -2,6 +2,7 @@ interface ScriptPlaceholders {
   setup: string;
   dev: string;
   cleanup: string;
+  executorEnv: string;
 }
 
 interface ScriptPlaceholderStrategy {
@@ -20,6 +21,10 @@ REM Add dev server start command here...`,
       cleanup: `@echo off
 REM Add cleanup commands here...
 REM This runs after coding agent execution`,
+      executorEnv: `@echo off
+REM Set environment variables for executor
+REM set MY_API_KEY=...
+REM call .env.bat`,
     };
   }
 }
@@ -36,6 +41,10 @@ npm run dev
       cleanup: `#!/bin/bash
 # Add cleanup commands here...
 # This runs after coding agent execution`,
+      executorEnv: `#!/bin/bash
+# Set environment variables for executor
+# export MY_API_KEY="..."
+# source .env`,
     };
   }
 }

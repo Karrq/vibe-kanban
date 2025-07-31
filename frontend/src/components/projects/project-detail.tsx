@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { ProjectWithBranch } from 'shared/types';
+import { ProjectWithBranch } from '@/types/project-extensions';
 import { ProjectForm } from './project-form';
 import { projectsApi } from '@/lib/api';
 import {

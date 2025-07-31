@@ -4,8 +4,6 @@ import {
   Config,
   ConfigConstants,
   CreateFollowUpAttempt,
-  CreateProject,
-  CreateProjectFromGitHub,
   CreateTask,
   CreateTaskAndStart,
   CreateTaskAttempt,
@@ -17,18 +15,22 @@ import {
   ExecutionProcessSummary,
   GitBranch,
   ProcessLogsResponse,
-  Project,
-  ProjectWithBranch,
   Task,
   TaskAttempt,
   TaskAttemptState,
   TaskTemplate,
   TaskWithAttemptStatus,
-  UpdateProject,
   UpdateTask,
   UpdateTaskTemplate,
   WorktreeDiff,
 } from 'shared/types';
+import {
+  CreateProject,
+  CreateProjectFromGitHub,
+  Project,
+  ProjectWithBranch,
+  UpdateProject,
+} from '@/types/project-extensions';
 
 export const makeRequest = async (url: string, options: RequestInit = {}) => {
   const headers = {
