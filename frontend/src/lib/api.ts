@@ -390,12 +390,20 @@ export const attemptsApi = {
   merge: async (
     projectId: string,
     taskId: string,
-    attemptId: string
+    attemptId: string,
+    customCommitMessage?: { title: string; description: string }
   ): Promise<void> => {
     const response = await makeRequest(
       `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/merge`,
       {
         method: 'POST',
+        headers: customCommitMessage ? {
+          'Content-Type': 'application/json',
+        } : undefined,
+        body: customCommitMessage ? JSON.stringify({
+          custom_commit_title: customCommitMessage.title,
+          custom_commit_description: customCommitMessage.description,
+        }) : undefined,
       }
     );
     return handleApiResponse<void>(response);

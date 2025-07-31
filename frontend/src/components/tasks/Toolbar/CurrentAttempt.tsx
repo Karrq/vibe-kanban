@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog.tsx';
 import BranchSelector from '@/components/tasks/BranchSelector.tsx';
+import { MergeModal } from '@/components/tasks/MergeModal.tsx';
 import {
   attemptsApi,
   executionProcessesApi,
@@ -142,6 +143,8 @@ function CurrentAttempt({
   const [showStopConfirmation, setShowStopConfirmation] = useState(false);
   const [isApprovingPlan, setIsApprovingPlan] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   const processedDevServerLogs = useMemo(() => {
     if (!devServerDetails) return 'No output yet...';
@@ -281,11 +284,16 @@ function CurrentAttempt({
     [fetchAttemptData, fetchExecutionState, setSelectedAttempt]
   );
 
-  const handleMergeClick = async () => {
+  const handleMergeClick = async (event: React.MouseEvent) => {
     if (!projectId || !selectedAttempt?.id || !selectedAttempt?.task_id) return;
 
-    // Directly perform merge without checking branch status
-    await performMerge();
+    // If shift key is held, perform direct merge
+    if (event.shiftKey) {
+      await performMerge();
+    } else {
+      // Otherwise show the merge modal
+      setShowMergeModal(true);
+    }
   };
 
   const fetchBranchStatus = useCallback(async () => {
@@ -316,15 +324,45 @@ function CurrentAttempt({
     }
   }, [selectedAttempt, fetchBranchStatus]);
 
-  const performMerge = async () => {
+  // Track shift key press state
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.shiftKey) {
+        setIsShiftPressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!e.shiftKey) {
+        setIsShiftPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  const performMerge = async (customTitle?: string, customDescription?: string) => {
     if (!projectId || !selectedAttempt?.id || !selectedAttempt?.task_id) return;
 
     try {
       setMerging(true);
+      // Pass custom commit message if provided
+      const customCommitMessage = customTitle ? {
+        title: customTitle,
+        description: customDescription || ''
+      } : undefined;
+      
       await attemptsApi.merge(
         projectId,
         selectedAttempt.task_id,
-        selectedAttempt.id
+        selectedAttempt.id,
+        customCommitMessage
       );
       // Refetch branch status to show updated state
       fetchBranchStatus();
@@ -335,6 +373,16 @@ function CurrentAttempt({
     } finally {
       setMerging(false);
     }
+  };
+
+  const handleMergeWithCustomMessage = async (title: string, description: string) => {
+    await performMerge(title, description);
+    setShowMergeModal(false);
+  };
+
+  const handleMergeDirect = async () => {
+    await performMerge();
+    setShowMergeModal(false);
   };
 
   const handleRebaseClick = async () => {
@@ -774,19 +822,30 @@ function CurrentAttempt({
                           ? 'Creating...'
                           : 'Create PR'}
                     </Button>
-                    <Button
-                      onClick={handleMergeClick}
-                      disabled={
-                        merging ||
-                        Boolean(branchStatus.is_behind) ||
-                        isAttemptRunning
-                      }
-                      size="sm"
-                      className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 gap-1"
-                    >
-                      <GitBranchIcon className="h-3 w-3" />
-                      {merging ? 'Merging...' : 'Merge'}
-                    </Button>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            onClick={handleMergeClick}
+                            disabled={
+                              merging ||
+                              Boolean(branchStatus.is_behind) ||
+                              isAttemptRunning
+                            }
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 gap-1"
+                          >
+                            <GitBranchIcon className="h-3 w-3" />
+                            {merging ? 'Merging...' : isShiftPressed ? 'Quick Merge' : 'Merge'}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>{isShiftPressed 
+                            ? 'Merge directly with auto-generated commit message' 
+                            : 'Click to customize commit message, Shift+Click for quick merge'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </>
                 )
               )}
@@ -895,6 +954,17 @@ function CurrentAttempt({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Merge Modal */}
+      <MergeModal
+        isOpen={showMergeModal}
+        onOpenChange={setShowMergeModal}
+        taskTitle={task?.title || ''}
+        taskDescription={task?.description}
+        onMergeWithCustomMessage={handleMergeWithCustomMessage}
+        onMergeDirect={handleMergeDirect}
+        isLoading={merging}
+      />
     </div>
   );
 }
