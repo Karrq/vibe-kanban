@@ -42,7 +42,8 @@ export const KanbanBoard = ({ id, children, className }: KanbanBoardProps) => {
   return (
     <div
       className={cn(
-        'flex h-full min-h-40 flex-col gap-2 rounded-md border bg-secondary p-2 text-xs shadow-sm outline outline-2 transition-all',
+        'flex flex-col gap-2 rounded-md border bg-secondary p-2 text-xs shadow-sm outline outline-2 transition-all',
+        'h-full overflow-hidden', // Use full height and hide overflow
         isOver ? 'outline-primary' : 'outline-transparent',
         className
       )}
@@ -123,7 +124,9 @@ export type KanbanCardsProps = {
 };
 
 export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
-  <div className={cn('flex flex-1 flex-col gap-2', className)}>{children}</div>
+  <div className={cn('flex flex-1 flex-col gap-2 overflow-y-auto min-h-0', className)}>
+    {children}
+  </div>
 );
 
 export type KanbanHeaderProps =
@@ -174,7 +177,7 @@ export const KanbanProvider = ({
     >
       <div
         className={cn(
-          'grid w-full auto-cols-fr grid-flow-col gap-4',
+          'grid w-full h-full auto-cols-fr grid-flow-col gap-4',
           className
         )}
       >
