@@ -385,6 +385,9 @@ function DisplayConversationEntry({ entry, index, diffDeletable }: Props) {
           />
         </div>
       )}
+      
+      {/* Add a separator line between messages */}
+      <div className="my-3 border-b border-gray-200 dark:border-gray-700 opacity-30" />
     </div>
   );
 }
