@@ -145,6 +145,7 @@ function CurrentAttempt({
   const [copied, setCopied] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
+  const [isHoveringMergeButton, setIsHoveringMergeButton] = useState(false);
 
   const processedDevServerLogs = useMemo(() => {
     if (!devServerDetails) return 'No output yet...';
@@ -324,8 +325,13 @@ function CurrentAttempt({
     }
   }, [selectedAttempt, fetchBranchStatus]);
 
-  // Track shift key press state
+  // Track shift key press state only when hovering merge button
   useEffect(() => {
+    if (!isHoveringMergeButton) {
+      setIsShiftPressed(false);
+      return;
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.shiftKey) {
         setIsShiftPressed(true);
@@ -345,7 +351,7 @@ function CurrentAttempt({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [isHoveringMergeButton]);
 
   const performMerge = async (customTitle?: string, customDescription?: string) => {
     if (!projectId || !selectedAttempt?.id || !selectedAttempt?.task_id) return;
@@ -827,6 +833,8 @@ function CurrentAttempt({
                         <TooltipTrigger asChild>
                           <Button
                             onClick={handleMergeClick}
+                            onMouseEnter={() => setIsHoveringMergeButton(true)}
+                            onMouseLeave={() => setIsHoveringMergeButton(false)}
                             disabled={
                               merging ||
                               Boolean(branchStatus.is_behind) ||
