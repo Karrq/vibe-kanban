@@ -388,7 +388,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
       )}
       
       {/* Add a separator line between messages */}
-      {!isLast && <div className="my-3 border-b border-gray-200 dark:border-gray-700 opacity-30" />}
+      {!isLast && <div className="my-4 border-b-2 border-gray-300 dark:border-gray-600" />}
     </div>
   );
 }
