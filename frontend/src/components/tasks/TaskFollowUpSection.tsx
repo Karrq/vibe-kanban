@@ -2,7 +2,7 @@ import { AlertCircle, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FileSearchTextarea } from '@/components/ui/file-search-textarea';
-import { useContext, useMemo, useState } from 'react';
+import { useContext, useMemo, useState, useEffect, useCallback } from 'react';
 import { attemptsApi } from '@/lib/api.ts';
 import {
   TaskAttemptDataContext,
@@ -21,6 +21,35 @@ export function TaskFollowUpSection() {
   const [followUpMessage, setFollowUpMessage] = useState('');
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
+
+  // Generate a unique key for localStorage based on task and attempt
+  const getDraftKey = useCallback(() => {
+    if (!task || !selectedAttempt) return null;
+    return `vibe-kanban-followup-draft-${task.id}-${selectedAttempt.id}`;
+  }, [task, selectedAttempt]);
+
+  // Load draft from localStorage when component mounts or task/attempt changes
+  useEffect(() => {
+    const draftKey = getDraftKey();
+    if (draftKey) {
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        setFollowUpMessage(savedDraft);
+      }
+    }
+  }, [getDraftKey]);
+
+  // Save draft to localStorage whenever message changes
+  useEffect(() => {
+    const draftKey = getDraftKey();
+    if (draftKey) {
+      if (followUpMessage.trim()) {
+        localStorage.setItem(draftKey, followUpMessage);
+      } else {
+        localStorage.removeItem(draftKey);
+      }
+    }
+  }, [followUpMessage, getDraftKey]);
 
   const canSendFollowUp = useMemo(() => {
     if (
@@ -61,6 +90,11 @@ export function TaskFollowUpSection() {
         }
       );
       setFollowUpMessage('');
+      // Clear the draft from localStorage after successful send
+      const draftKey = getDraftKey();
+      if (draftKey) {
+        localStorage.removeItem(draftKey);
+      }
       fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
     } catch (error: unknown) {
       // @ts-expect-error it is type ApiError
