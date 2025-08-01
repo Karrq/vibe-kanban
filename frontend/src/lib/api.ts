@@ -3,6 +3,7 @@ import {
   BranchStatus,
   Config,
   ConfigConstants,
+  CreateBranch,
   CreateFollowUpAttempt,
   CreateProject,
   CreateProjectFromGitHub,
@@ -181,6 +182,14 @@ export const projectsApi = {
   getBranches: async (id: string): Promise<GitBranch[]> => {
     const response = await makeRequest(`/api/projects/${id}/branches`);
     return handleApiResponse<GitBranch[]>(response);
+  },
+
+  createBranch: async (id: string, data: CreateBranch): Promise<GitBranch> => {
+    const response = await makeRequest(`/api/projects/${id}/branches`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return handleApiResponse<GitBranch>(response);
   },
 
   searchFiles: async (

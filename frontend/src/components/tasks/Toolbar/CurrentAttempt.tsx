@@ -32,6 +32,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog.tsx';
+import { Input } from '@/components/ui/input.tsx';
+import { Label } from '@/components/ui/label.tsx';
 import BranchSelector from '@/components/tasks/BranchSelector.tsx';
 import { MergeModal } from '@/components/tasks/MergeModal.tsx';
 import {
@@ -40,6 +42,7 @@ import {
   makeRequest,
   FollowUpResponse,
   ApiResponse,
+  projectsApi,
 } from '@/lib/api.ts';
 import {
   Dispatch,
@@ -102,6 +105,7 @@ type Props = {
     name: string;
   }[];
   branches: GitBranch[];
+  setBranches: Dispatch<SetStateAction<GitBranch[]>>;
 };
 
 function CurrentAttempt({
@@ -114,6 +118,7 @@ function CurrentAttempt({
   handleEnterCreateAttemptMode,
   availableExecutors,
   branches,
+  setBranches,
 }: Props) {
   const { task, projectId, handleOpenInEditor, projectHasDevScript } =
     useContext(TaskDetailsContext);
@@ -141,6 +146,9 @@ function CurrentAttempt({
   const [showRebaseDialog, setShowRebaseDialog] = useState(false);
   const [selectedRebaseBranch, setSelectedRebaseBranch] = useState<string>('');
   const [showStopConfirmation, setShowStopConfirmation] = useState(false);
+  const [isCreatingNewBranch, setIsCreatingNewBranch] = useState(false);
+  const [newBranchName, setNewBranchName] = useState<string>('');
+  const [newBranchBaseBranch, setNewBranchBaseBranch] = useState<string>('');
   const [isApprovingPlan, setIsApprovingPlan] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
@@ -431,14 +439,41 @@ function CurrentAttempt({
     }
   };
 
-  const handleRebaseDialogConfirm = () => {
-    if (selectedRebaseBranch) {
-      handleRebaseWithNewBranch(selectedRebaseBranch);
+  const handleRebaseDialogConfirm = async () => {
+    if (isCreatingNewBranch) {
+      // Create new branch first
+      if (!newBranchName || !newBranchBaseBranch) return;
+      
+      try {
+        setRebasing(true);
+        await projectsApi.createBranch(projectId, {
+          name: newBranchName,
+          base_branch: newBranchBaseBranch,
+        });
+        
+        // Refresh branches list
+        const updatedBranches = await projectsApi.getBranches(projectId);
+        setBranches(updatedBranches);
+        
+        // Now rebase to the new branch
+        await handleRebaseWithNewBranch(newBranchName);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create branch');
+        setRebasing(false);
+      }
+    } else {
+      // Regular rebase to existing branch
+      if (selectedRebaseBranch) {
+        handleRebaseWithNewBranch(selectedRebaseBranch);
+      }
     }
   };
 
   const handleRebaseDialogOpen = () => {
     setSelectedRebaseBranch('');
+    setIsCreatingNewBranch(false);
+    setNewBranchName('');
+    setNewBranchBaseBranch('');
     setShowRebaseDialog(true);
   };
 
@@ -887,27 +922,68 @@ function CurrentAttempt({
 
       {/* Rebase Dialog */}
       <Dialog open={showRebaseDialog} onOpenChange={setShowRebaseDialog}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Rebase Task Attempt</DialogTitle>
             <DialogDescription>
-              Choose a new base branch to rebase this task attempt onto.
+              Choose a new base branch to rebase this task attempt onto, or create a new branch.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="base-branch" className="text-sm font-medium">
-                Base Branch
-              </label>
-              <BranchSelector
-                branches={branches}
-                selectedBranch={selectedRebaseBranch}
-                onBranchSelect={setSelectedRebaseBranch}
-                placeholder="Select a base branch"
-                excludeCurrentBranch={false}
-              />
+            <div className="flex gap-2 p-1 bg-muted rounded-md">
+              <Button
+                variant={!isCreatingNewBranch ? "default" : "ghost"}
+                size="sm"
+                className="flex-1"
+                onClick={() => setIsCreatingNewBranch(false)}
+              >
+                Use Existing Branch
+              </Button>
+              <Button
+                variant={isCreatingNewBranch ? "default" : "ghost"}
+                size="sm"
+                className="flex-1"
+                onClick={() => setIsCreatingNewBranch(true)}
+              >
+                Create New Branch
+              </Button>
             </div>
+
+            {!isCreatingNewBranch ? (
+              <div className="space-y-2">
+                <Label htmlFor="base-branch">Base Branch</Label>
+                <BranchSelector
+                  branches={branches}
+                  selectedBranch={selectedRebaseBranch}
+                  onBranchSelect={setSelectedRebaseBranch}
+                  placeholder="Select a base branch"
+                  excludeCurrentBranch={false}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="new-branch-name">New Branch Name</Label>
+                  <Input
+                    id="new-branch-name"
+                    value={newBranchName}
+                    onChange={(e) => setNewBranchName(e.target.value)}
+                    placeholder="feature/my-new-feature"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-branch-base">Create From Branch</Label>
+                  <BranchSelector
+                    branches={branches}
+                    selectedBranch={newBranchBaseBranch}
+                    onBranchSelect={setNewBranchBaseBranch}
+                    placeholder="Select base branch"
+                    excludeCurrentBranch={false}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
@@ -920,9 +996,13 @@ function CurrentAttempt({
             </Button>
             <Button
               onClick={handleRebaseDialogConfirm}
-              disabled={rebasing || !selectedRebaseBranch}
+              disabled={
+                rebasing || 
+                (!isCreatingNewBranch && !selectedRebaseBranch) ||
+                (isCreatingNewBranch && (!newBranchName || !newBranchBaseBranch))
+              }
             >
-              {rebasing ? 'Rebasing...' : 'Rebase'}
+              {rebasing ? 'Processing...' : isCreatingNewBranch ? 'Create & Rebase' : 'Rebase'}
             </Button>
           </DialogFooter>
         </DialogContent>

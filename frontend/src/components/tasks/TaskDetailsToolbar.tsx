@@ -257,6 +257,7 @@ function TaskDetailsToolbar() {
                   handleEnterCreateAttemptMode={handleEnterCreateAttemptMode}
                   availableExecutors={availableExecutors}
                   branches={branches}
+                  setBranches={setBranches}
                 />
               ) : (
                 <div className="text-center py-8">
