@@ -258,9 +258,6 @@ impl GeminiExecutor {
             .env("NODE_NO_WARNINGS", "1")
             .env_setup_script(executor_env_script);
         
-        // Load and apply .env variables from the project directory
-        crate::executor::apply_env_to_command(&mut command, worktree_path);
-        
         command
     }
 

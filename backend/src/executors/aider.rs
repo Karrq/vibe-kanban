@@ -550,9 +550,6 @@ impl Executor for AiderExecutor {
             .env("COLUMNS", "1000") // Prevent line wrapping in aider output
             .env_setup_script(project.executor_env_script.clone());
 
-        // Load and apply .env variables from the project directory
-        crate::executor::apply_env_to_command(&mut command, worktree_path);
-
         let child = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
                 .with_task(task_id, Some(task.title.clone()))
@@ -787,9 +784,6 @@ impl Executor for AiderExecutor {
             .working_dir(worktree_path)
             .env("COLUMNS", "1000") // Prevent line wrapping in aider output
             .env_setup_script(project.executor_env_script.clone());
-
-        // Load and apply .env variables from the project directory
-        crate::executor::apply_env_to_command(&mut command, worktree_path);
 
         let child = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
