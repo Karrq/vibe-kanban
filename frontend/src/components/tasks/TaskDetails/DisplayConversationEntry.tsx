@@ -28,6 +28,7 @@ type Props = {
   entry: NormalizedEntry;
   index: number;
   diffDeletable?: boolean;
+  isLast?: boolean;
 };
 
 const getEntryIcon = (entryType: NormalizedEntryType) => {
@@ -266,7 +267,7 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
   );
 };
 
-function DisplayConversationEntry({ entry, index, diffDeletable }: Props) {
+function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
 
@@ -387,7 +388,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable }: Props) {
       )}
       
       {/* Add a separator line between messages */}
-      <div className="my-3 border-b border-gray-200 dark:border-gray-700 opacity-30" />
+      {!isLast && <div className="my-3 border-b border-gray-200 dark:border-gray-700 opacity-30" />}
     </div>
   );
 }
