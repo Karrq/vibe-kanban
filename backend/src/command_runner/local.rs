@@ -34,6 +34,16 @@ impl CommandExecutor for LocalCommandExecutor {
         &self,
         request: &CommandRunnerArgs,
     ) -> Result<Box<dyn ProcessHandle>, CommandError> {
+        // Log the command being executed
+        tracing::debug!(
+            "Executing command: {} {}",
+            request.command,
+            request.args.join(" ")
+        );
+        if let Some(dir) = &request.working_dir {
+            tracing::debug!("Working directory: {:?}", dir);
+        }
+
         let mut cmd = Command::new(&request.command);
 
         cmd.args(&request.args)

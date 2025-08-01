@@ -6,6 +6,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
+use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -179,9 +180,11 @@ impl Default for CodexExecutor {
 impl CodexExecutor {
     /// Create a new CodexExecutor with default settings
     pub fn new() -> Self {
+        let command = build_agent_command("codex", None)
+            .unwrap_or_else(|_| "npx @openai/codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check".to_string());
         Self {
             executor_type: "Codex".to_string(),
-            command: "npx @openai/codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check".to_string(),
+            command,
         }
     }
 }

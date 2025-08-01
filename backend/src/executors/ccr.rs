@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::{
     command_runner::CommandProcess,
     executor::{Executor, ExecutorError, NormalizedConversation},
-    executors::ClaudeExecutor,
+    executors::{build_agent_command, ClaudeExecutor},
 };
 
 /// An executor that uses Claude Code Router (CCR) to process tasks
@@ -19,9 +19,11 @@ impl Default for CCRExecutor {
 
 impl CCRExecutor {
     pub fn new() -> Self {
+        let command = build_agent_command("ccr", None)
+            .unwrap_or_else(|_| "npx -y @musistudio/claude-code-router code -p --dangerously-skip-permissions --verbose --output-format=stream-json".to_string());
         Self(ClaudeExecutor::with_command(
             "claude-code-router".to_string(),
-            "npx -y @musistudio/claude-code-router code -p --dangerously-skip-permissions --verbose --output-format=stream-json".to_string(),
+            command,
         ))
     }
 }

@@ -3,6 +3,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use uuid::Uuid;
 
+use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -52,15 +53,18 @@ impl Default for ClaudeExecutor {
 impl ClaudeExecutor {
     /// Create a new ClaudeExecutor with default settings
     pub fn new() -> Self {
+        let command = build_agent_command("claude", None)
+            .unwrap_or_else(|_| "npx -y @anthropic-ai/claude-code@latest -p --dangerously-skip-permissions --verbose --output-format=stream-json".to_string());
         Self {
             executor_type: "Claude Code".to_string(),
-            command: "npx -y @anthropic-ai/claude-code@latest -p --dangerously-skip-permissions --verbose --output-format=stream-json".to_string(),
+            command,
         }
     }
 
     pub fn new_plan_mode() -> Self {
-        let command = "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json";
-        let script = create_watchkill_script(command);
+        let command = build_agent_command("claude-plan", None)
+            .unwrap_or_else(|_| "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json".to_string());
+        let script = create_watchkill_script(&command);
         Self {
             executor_type: "ClaudePlan".to_string(),
             command: script,
