@@ -253,7 +253,7 @@ export function TaskFormDialog({
   ]);
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange} uncloseable={!isEditMode}>
       <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
           <DialogTitle>
