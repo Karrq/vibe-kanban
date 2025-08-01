@@ -12,6 +12,7 @@ use crate::{
         AiderExecutor, AmpExecutor, CCRExecutor, CharmOpencodeExecutor, ClaudeExecutor,
         CodexExecutor, EchoExecutor, GeminiExecutor, SetupScriptExecutor, SstOpencodeExecutor,
     },
+    utils::env_loader,
 };
 
 // Constants for database streaming - fast for near-real-time updates
@@ -867,10 +868,64 @@ fn parse_session_id_from_line(line: &str) -> Option<String> {
     None
 }
 
+/// Helper function to inject a system message into the execution process stdout
+pub async fn inject_system_message(
+    pool: &sqlx::SqlitePool,
+    execution_process_id: Uuid,
+    message: &str,
+) -> Result<(), sqlx::Error> {
+    use crate::models::execution_process::ExecutionProcess;
+    
+    // Format the message as a system info line
+    let formatted_message = format!("{}\n", message);
+    
+    // Append to stdout
+    ExecutionProcess::append_output(
+        pool,
+        execution_process_id,
+        Some(&formatted_message),
+        None,
+    )
+    .await
+}
+
+/// Helper function to apply .env variables to a CommandRunner
+/// This loads the .env file from the worktree directory and applies all variables
+/// Returns a message about what was loaded that can be shown to the user
+pub fn apply_env_to_command(command: &mut CommandRunner, worktree_path: &str) -> Option<String> {
+    match env_loader::load_env_from_directory(worktree_path) {
+        Ok(load_result) => {
+            if load_result.var_count > 0 {
+                // Apply all environment variables
+                for (key, value) in load_result.env_vars {
+                    command.env(&key, &value);
+                }
+                
+                // Return a message for the user
+                Some(format!(
+                    "[System] Loaded {} environment variable{} from {}",
+                    load_result.var_count,
+                    if load_result.var_count == 1 { "" } else { "s" },
+                    load_result.env_file_path.unwrap_or_default()
+                ))
+            } else {
+                None
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load .env file from {}: {}", worktree_path, e);
+            Some(format!("[System] Warning: Failed to load .env file: {}", e))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::executors::{AiderExecutor, AmpExecutor, ClaudeExecutor};
+    use crate::command_runner::CommandRunner;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_parse_claude_session_id() {
@@ -1077,5 +1132,55 @@ mod tests {
         let result = aider_executor.normalize_logs("", "/tmp");
         assert!(result.is_ok());
         assert_eq!(result.unwrap().executor_type, "aider");
+    }
+
+    #[test]
+    fn test_executor_loads_env_file() {
+        // Create a temporary directory with a .env file
+        let temp_dir = TempDir::new().unwrap();
+        let env_content = "TEST_VAR=test_value\nANOTHER_VAR=another_value";
+        fs::write(temp_dir.path().join(".env"), env_content).unwrap();
+
+        // Create a CommandRunner and apply env
+        let mut command = CommandRunner::new();
+        command
+            .command("echo")
+            .arg("test")
+            .working_dir(temp_dir.path().to_str().unwrap());
+
+        // Apply env variables
+        let message = apply_env_to_command(&mut command, temp_dir.path().to_str().unwrap());
+
+        // Verify that env variables were added
+        let args = command.to_args().unwrap();
+        assert!(args.env_vars.iter().any(|(k, v)| k == "TEST_VAR" && v == "test_value"));
+        assert!(args.env_vars.iter().any(|(k, v)| k == "ANOTHER_VAR" && v == "another_value"));
+        
+        // Verify that a message was returned
+        assert!(message.is_some());
+        assert!(message.unwrap().contains("Loaded 2 environment variables"));
+    }
+
+    #[test]
+    fn test_executor_handles_missing_env_file() {
+        // Create a temporary directory without a .env file
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a CommandRunner and apply env
+        let mut command = CommandRunner::new();
+        command
+            .command("echo")
+            .arg("test")
+            .working_dir(temp_dir.path().to_str().unwrap());
+
+        // Apply env variables - should not fail
+        let message = apply_env_to_command(&mut command, temp_dir.path().to_str().unwrap());
+
+        // Verify that no env variables were added
+        let args = command.to_args().unwrap();
+        assert!(args.env_vars.is_empty());
+        
+        // Verify that no message was returned (no .env file)
+        assert!(message.is_none());
     }
 }
