@@ -44,6 +44,12 @@ pub struct CreateGitHubPRRequest {
     pub base_branch: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MergeTaskAttemptRequest {
+    pub custom_commit_title: Option<String>,
+    pub custom_commit_description: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct FollowUpResponse {
     pub message: String,
@@ -308,8 +314,26 @@ pub async fn merge_task_attempt(
     Extension(task): Extension<Task>,
     Extension(task_attempt): Extension<TaskAttempt>,
     State(app_state): State<AppState>,
+    payload: Option<Json<MergeTaskAttemptRequest>>,
 ) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
-    match TaskAttempt::merge_changes(&app_state.db_pool, task_attempt.id, task.id, project.id).await
+    // Construct custom commit message if title is provided
+    let custom_commit_message = payload.and_then(|json| {
+        json.custom_commit_title.as_ref().map(|title| {
+            if let Some(description) = &json.custom_commit_description {
+                format!("{}\n\n{}", title, description)
+            } else {
+                title.clone()
+            }
+        })
+    });
+
+    match TaskAttempt::merge_changes(
+        &app_state.db_pool, 
+        task_attempt.id, 
+        task.id, 
+        project.id,
+        custom_commit_message
+    ).await
     {
         Ok(_) => {
             // Update task status to Done

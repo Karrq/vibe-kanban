@@ -511,24 +511,31 @@ impl TaskAttempt {
         task_title: &str,
         task_description: &Option<String>,
         task_id: Uuid,
+        custom_commit_message: &Option<String>,
     ) -> Result<String, TaskAttemptError> {
         let git_service = GitService::new(main_repo_path)?;
         let worktree_path = Path::new(worktree_path);
 
-        // Extract first section of UUID (before first hyphen)
-        let task_uuid_str = task_id.to_string();
-        let first_uuid_section = task_uuid_str.split('-').next().unwrap_or(&task_uuid_str);
+        // Use custom commit message if provided, otherwise generate default
+        let commit_message = if let Some(custom_msg) = custom_commit_message {
+            custom_msg.clone()
+        } else {
+            // Extract first section of UUID (before first hyphen)
+            let task_uuid_str = task_id.to_string();
+            let first_uuid_section = task_uuid_str.split('-').next().unwrap_or(&task_uuid_str);
 
-        // Create commit message with task title and description
-        let mut commit_message = format!("{} (vibe-kanban {})", task_title, first_uuid_section);
+            // Create commit message with task title and description
+            let mut msg = format!("{} (vibe-kanban {})", task_title, first_uuid_section);
 
-        // Add description on next line if it exists
-        if let Some(description) = task_description {
-            if !description.trim().is_empty() {
-                commit_message.push_str("\n\n");
-                commit_message.push_str(description);
+            // Add description on next line if it exists
+            if let Some(description) = task_description {
+                if !description.trim().is_empty() {
+                    msg.push_str("\n\n");
+                    msg.push_str(description);
+                }
             }
-        }
+            msg
+        };
 
         git_service
             .merge_changes(worktree_path, branch_name, base_branch, &commit_message)
@@ -556,6 +563,7 @@ impl TaskAttempt {
         attempt_id: Uuid,
         task_id: Uuid,
         project_id: Uuid,
+        custom_commit_message: Option<String>,
     ) -> Result<String, TaskAttemptError> {
         // Load context with full validation
         let ctx = TaskAttempt::load_context(pool, attempt_id, task_id, project_id).await?;
@@ -563,6 +571,8 @@ impl TaskAttempt {
         // Ensure worktree exists (recreate if needed for cold task support)
         let worktree_path =
             Self::ensure_worktree_exists(pool, attempt_id, project_id, "merge").await?;
+
+        // Use the provided custom commit message directly
 
         // Perform the actual merge operation
         let merge_commit_id = Self::perform_merge_operation(
@@ -573,6 +583,7 @@ impl TaskAttempt {
             &ctx.task.title,
             &ctx.task.description,
             ctx.task.id,
+            &custom_commit_message,
         )?;
 
         // Update the task attempt with the merge commit
