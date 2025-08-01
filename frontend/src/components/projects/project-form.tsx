@@ -15,13 +15,13 @@ import { FolderPicker } from '@/components/ui/folder-picker';
 import { TaskTemplateManager } from '@/components/TaskTemplateManager';
 import { ProjectFormFields } from './project-form-fields';
 import { GitHubRepositoryPicker } from './github-repository-picker';
+import { Environment } from 'shared/types';
 import {
   CreateProject,
   CreateProjectFromGitHub,
   Project,
   UpdateProject,
-  Environment,
-} from 'shared/types';
+} from '@/types/project-extensions';
 import { projectsApi, configApi, githubApi, RepositoryInfo } from '@/lib/api';
 
 interface ProjectFormProps {
@@ -43,6 +43,9 @@ export function ProjectForm({
   const [devScript, setDevScript] = useState(project?.dev_script ?? '');
   const [cleanupScript, setCleanupScript] = useState(
     project?.cleanup_script ?? ''
+  );
+  const [executorEnvScript, setExecutorEnvScript] = useState(
+    project?.executor_env_script ?? ''
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -87,12 +90,14 @@ export function ProjectForm({
       setSetupScript(project.setup_script ?? '');
       setDevScript(project.dev_script ?? '');
       setCleanupScript(project.cleanup_script ?? '');
+      setExecutorEnvScript(project.executor_env_script ?? '');
     } else {
       setName('');
       setGitRepoPath('');
       setSetupScript('');
       setDevScript('');
       setCleanupScript('');
+      setExecutorEnvScript('');
       setSelectedRepository(null);
     }
   }, [project]);
@@ -134,6 +139,7 @@ export function ProjectForm({
           setup_script: setupScript.trim() || null,
           dev_script: devScript.trim() || null,
           cleanup_script: cleanupScript.trim() || null,
+          executor_env_script: executorEnvScript.trim() || null,
         };
 
         await projectsApi.update(project.id, updateData);
@@ -153,6 +159,7 @@ export function ProjectForm({
             setup_script: setupScript.trim() || null,
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
+            executor_env_script: executorEnvScript.trim() || null,
           };
 
           await githubApi.createProjectFromRepository(githubData);
@@ -173,6 +180,7 @@ export function ProjectForm({
             setup_script: setupScript.trim() || null,
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
+            executor_env_script: executorEnvScript.trim() || null,
           };
 
           await projectsApi.create(createData);
@@ -186,6 +194,7 @@ export function ProjectForm({
       setSetupScript('');
       setDevScript('');
       setCleanupScript('');
+      setExecutorEnvScript('');
       setParentPath('');
       setFolderName('');
       setSelectedRepository(null);
@@ -202,11 +211,15 @@ export function ProjectForm({
       setGitRepoPath(project.git_repo_path || '');
       setSetupScript(project.setup_script ?? '');
       setDevScript(project.dev_script ?? '');
+      setCleanupScript(project.cleanup_script ?? '');
+      setExecutorEnvScript(project.executor_env_script ?? '');
     } else {
       setName('');
       setGitRepoPath('');
       setSetupScript('');
       setDevScript('');
+      setCleanupScript('');
+      setExecutorEnvScript('');
     }
     setParentPath('');
     setFolderName('');
@@ -257,6 +270,8 @@ export function ProjectForm({
                   setDevScript={setDevScript}
                   cleanupScript={cleanupScript}
                   setCleanupScript={setCleanupScript}
+                  executorEnvScript={executorEnvScript}
+                  setExecutorEnvScript={setExecutorEnvScript}
                   error={error}
                 />
                 <DialogFooter>
@@ -340,6 +355,19 @@ export function ProjectForm({
                       rows={2}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="executor-env-script">
+                      Executor Environment Script (optional)
+                    </Label>
+                    <textarea
+                      id="executor-env-script"
+                      placeholder="e.g., export API_KEY=..., source .env"
+                      value={executorEnvScript}
+                      onChange={(e) => setExecutorEnvScript(e.target.value)}
+                      className="w-full p-2 border rounded-md resize-none"
+                      rows={2}
+                    />
+                  </div>
                 </div>
               </>
             ) : (
@@ -363,6 +391,8 @@ export function ProjectForm({
                 setDevScript={setDevScript}
                 cleanupScript={cleanupScript}
                 setCleanupScript={setCleanupScript}
+                executorEnvScript={executorEnvScript}
+                setExecutorEnvScript={setExecutorEnvScript}
                 error={error}
               />
             )}

@@ -10,8 +10,8 @@ use crate::{
         NormalizedEntryType,
     },
     models::{
-        execution_process::ExecutionProcess, executor_session::ExecutorSession, task::Task,
-        task_attempt::TaskAttempt,
+        execution_process::ExecutionProcess, executor_session::ExecutorSession, project::Project,
+        task::Task, task_attempt::TaskAttempt,
     },
     utils::{path::make_path_relative, shell::get_shell_command},
 };
@@ -481,6 +481,11 @@ impl Executor for AiderExecutor {
             .await?
             .ok_or(ExecutorError::TaskNotFound)?;
 
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+
         let prompt = if let Some(task_description) = task.description {
             format!("{}\n{}", task.title, task_description)
         } else {
@@ -542,7 +547,8 @@ impl Executor for AiderExecutor {
             .arg(shell_arg)
             .arg(&aider_command)
             .working_dir(worktree_path)
-            .env("COLUMNS", "1000"); // Prevent line wrapping in aider output
+            .env("COLUMNS", "1000") // Prevent line wrapping in aider output
+            .env_setup_script(project.executor_env_script.clone());
 
         let child = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
@@ -706,12 +712,22 @@ impl Executor for AiderExecutor {
 
     async fn spawn_followup(
         &self,
-        _pool: &sqlx::SqlitePool,
-        _task_id: Uuid,
+        pool: &sqlx::SqlitePool,
+        task_id: Uuid,
         session_id: &str,
         prompt: &str,
         worktree_path: &str,
     ) -> Result<CommandProcess, ExecutorError> {
+        // Get the task to find the project
+        let task = Task::find_by_id(pool, task_id)
+            .await?
+            .ok_or(ExecutorError::TaskNotFound)?;
+
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+
         let base_dir = TaskAttempt::get_worktree_base_dir();
 
         // Create session directory if it doesn't exist
@@ -766,7 +782,8 @@ impl Executor for AiderExecutor {
             .arg(shell_arg)
             .arg(&aider_command)
             .working_dir(worktree_path)
-            .env("COLUMNS", "1000"); // Prevent line wrapping in aider output
+            .env("COLUMNS", "1000") // Prevent line wrapping in aider output
+            .env_setup_script(project.executor_env_script.clone());
 
         let child = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)

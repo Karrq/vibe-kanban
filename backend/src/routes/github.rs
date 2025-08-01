@@ -163,6 +163,7 @@ pub async fn create_project_from_github(
         setup_script: payload.setup_script,
         dev_script: payload.dev_script,
         cleanup_script: payload.cleanup_script,
+        executor_env_script: payload.executor_env_script,
     };
 
     let project_id = Uuid::new_v4();

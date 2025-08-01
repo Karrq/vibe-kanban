@@ -28,6 +28,8 @@ interface ProjectFormFieldsProps {
   setDevScript: (script: string) => void;
   cleanupScript: string;
   setCleanupScript: (script: string) => void;
+  executorEnvScript: string;
+  setExecutorEnvScript: (script: string) => void;
   error: string;
 }
 
@@ -50,6 +52,8 @@ export function ProjectFormFields({
   setDevScript,
   cleanupScript,
   setCleanupScript,
+  executorEnvScript,
+  setExecutorEnvScript,
   error,
 }: ProjectFormFieldsProps) {
   const { systemInfo } = useSystemInfo();
@@ -64,6 +68,8 @@ export function ProjectFormFields({
         dev: '#!/bin/bash\nnpm run dev\n# Add dev server start command here...',
         cleanup:
           '#!/bin/bash\n# Add cleanup commands here...\n# This runs after coding agent execution',
+        executorEnv:
+          '#!/bin/bash\n# Set environment variables for executor\n# export MY_API_KEY="..."\n# source .env',
       };
 
   return (
@@ -243,6 +249,23 @@ export function ProjectFormFields({
           This script will run after coding agent execution is complete. Use it
           for quality assurance tasks like running linters, formatters, tests,
           or other validation steps.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="executor-env-script">Executor Environment Script (Optional)</Label>
+        <textarea
+          id="executor-env-script"
+          value={executorEnvScript}
+          onChange={(e) => setExecutorEnvScript(e.target.value)}
+          placeholder={placeholders.executorEnv}
+          rows={4}
+          className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+        />
+        <p className="text-sm text-muted-foreground">
+          This script will run before the executor starts to set up environment
+          variables and configuration. Use it to load API keys, configure
+          environment-specific settings, or source environment files.
         </p>
       </div>
 

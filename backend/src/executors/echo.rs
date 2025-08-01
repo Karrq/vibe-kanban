@@ -63,9 +63,6 @@ echo "Task completed: {}""#,
             .arg(&script)
             .working_dir(worktree_path);
 
-        // Load and apply .env variables from the project directory
-        crate::executor::apply_env_to_command(&mut command_runner, worktree_path);
-
         let child = command_runner.start().await.map_err(|e| {
             SpawnContext::from_command(&command_runner, "Echo")
                 .with_task(task_id, Some(task.title.clone()))

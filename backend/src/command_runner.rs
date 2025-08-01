@@ -60,6 +60,7 @@ pub struct CommandRunner {
     working_dir: Option<String>,
     env_vars: Vec<(String, String)>,
     stdin: Option<String>,
+    env_setup_script: Option<String>,
 }
 impl Default for CommandRunner {
     fn default() -> Self {
@@ -173,6 +174,7 @@ impl CommandRunner {
                 working_dir: None,
                 env_vars: Vec::new(),
                 stdin: None,
+                env_setup_script: None,
             },
             Environment::Local => CommandRunner {
                 executor: Box::new(LocalCommandExecutor::new()),
@@ -181,6 +183,7 @@ impl CommandRunner {
                 working_dir: None,
                 env_vars: Vec::new(),
                 stdin: None,
+                env_setup_script: None,
             },
         }
     }
@@ -222,6 +225,11 @@ impl CommandRunner {
         self
     }
 
+    pub fn env_setup_script(&mut self, script: Option<String>) -> &mut Self {
+        self.env_setup_script = script;
+        self
+    }
+
     /// Convert the current CommandRunner state to a CreateCommandRequest
     pub fn to_args(&self) -> Option<CommandRunnerArgs> {
         Some(CommandRunnerArgs {
@@ -259,9 +267,50 @@ impl CommandRunner {
     }
 
     pub async fn start(&self) -> Result<CommandProcess, CommandError> {
-        let request = self.to_args().ok_or(CommandError::NoCommandSet)?;
-        let handle = self.executor.start(&request).await?;
+        let mut request = self.to_args().ok_or(CommandError::NoCommandSet)?;
 
+        // If there's an environment setup script, wrap the command
+        if let Some(script) = &self.env_setup_script {
+            // Create a wrapper script that runs the env setup, then the actual command
+            let wrapper_command = "sh".to_string();
+            let wrapper_script = {
+                    // Escape the command and arguments for shell
+                    let escaped_command = shell_escape::escape(request.command.clone().into());
+                    let escaped_args: Vec<String> = request.args.iter()
+                        .map(|arg| shell_escape::escape(arg.clone().into()).to_string())
+                        .collect();
+                    
+                    let full_command = if escaped_args.is_empty() {
+                        escaped_command.to_string()
+                    } else {
+                        format!("{} {}", escaped_command, escaped_args.join(" "))
+                    };
+                    
+                    // Create the wrapper script with proper formatting
+                    // The environment script becomes the top of the script,
+                    // followed by the actual command execution
+                    format!(
+                        r#"{}
+
+# ---- END OF USER ENVIRONMENT SETUP SCRIPT
+
+exec {}
+"#,
+                        script.trim(),
+                        full_command
+                    )
+                };
+            
+            let wrapper_args = vec![
+                "-c".to_string(),
+                wrapper_script,
+            ];
+            
+            request.command = wrapper_command;
+            request.args = wrapper_args;
+        }
+
+        let handle = self.executor.start(&request).await?;
         Ok(CommandProcess { handle })
     }
 }
