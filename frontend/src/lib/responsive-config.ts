@@ -19,25 +19,23 @@ export const PANEL_WIDTHS = {
 } as const;
 
 // Generate classes for TaskDetailsPanel
-export const getTaskPanelClasses = () => {
-  const overlayClasses = [
-    'fixed inset-y-0 right-0 z-50',
-    PANEL_WIDTHS.base,
-    PANEL_WIDTHS.sm,
-    PANEL_WIDTHS.md,
-    PANEL_WIDTHS.lg,
-    PANEL_WIDTHS.xl,
-  ].join(' ');
-
-  const sideBySideClasses = [
-    `${PANEL_SIDE_BY_SIDE_BREAKPOINT}:relative`,
-    `${PANEL_SIDE_BY_SIDE_BREAKPOINT}:inset-auto`,
-    `${PANEL_SIDE_BY_SIDE_BREAKPOINT}:z-auto`,
-    `${PANEL_SIDE_BY_SIDE_BREAKPOINT}:h-full`,
-    `${PANEL_SIDE_BY_SIDE_BREAKPOINT}:w-[800px]`,
-  ].join(' ');
-
-  return `${overlayClasses} ${sideBySideClasses} bg-background border-l shadow-lg overflow-hidden`;
+export const getTaskPanelClasses = (isSideBySide: boolean) => {
+  // In overlay mode, use responsive widths
+  if (!isSideBySide) {
+    const overlayClasses = [
+      'fixed inset-y-0 right-0 z-50',
+      PANEL_WIDTHS.base,
+      PANEL_WIDTHS.sm,
+      PANEL_WIDTHS.md,
+      PANEL_WIDTHS.lg,
+      PANEL_WIDTHS.xl,
+    ].join(' ');
+    
+    return `${overlayClasses} bg-background border-l shadow-lg overflow-hidden`;
+  }
+  
+  // In side-by-side mode, use relative positioning (width will be set inline)
+  return `relative h-full bg-background border-l shadow-lg overflow-hidden`;
 };
 
 // Generate classes for backdrop (only show in overlay mode)

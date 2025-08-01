@@ -6,6 +6,7 @@ import {
   getBackdropClasses,
   getTaskPanelClasses,
 } from '@/lib/responsive-config';
+import { useResizablePanel } from '@/hooks/useResizablePanel';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import DiffTab from '@/components/tasks/TaskDetails/DiffTab.tsx';
 import LogsTab from '@/components/tasks/TaskDetails/LogsTab.tsx';
@@ -37,6 +38,25 @@ export function TaskDetailsPanel({
   isDialogOpen = false,
 }: TaskDetailsPanelProps) {
   const [showEditorDialog, setShowEditorDialog] = useState(false);
+  const { width, isResizing, handleMouseDown } = useResizablePanel();
+  
+  // Initialize with correct side-by-side state
+  const [isSideBySide, setIsSideBySide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280; // xl breakpoint
+    }
+    return false;
+  });
+
+  // Check if we're in side-by-side mode
+  useEffect(() => {
+    const checkMode = () => {
+      setIsSideBySide(window.innerWidth >= 1280); // xl breakpoint
+    };
+    
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
 
   // Tab and collapsible state
   const [activeTab, setActiveTab] = useState<
@@ -80,7 +100,25 @@ export function TaskDetailsPanel({
           <div className={getBackdropClasses()} onClick={onClose} />
 
           {/* Panel */}
-          <div className={getTaskPanelClasses()}>
+          <div 
+            className={getTaskPanelClasses(isSideBySide)}
+            style={isSideBySide ? { width: `${width}px` } : undefined}
+          >
+            {/* Resize Handle - only visible in side-by-side mode */}
+            {isSideBySide && (
+              <div
+                className={`absolute left-0 top-0 bottom-0 w-4 -ml-2 cursor-col-resize hover:bg-primary/5 transition-colors ${
+                  isResizing ? 'bg-primary/10' : ''
+                }`}
+                onMouseDown={handleMouseDown}
+              >
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-16 bg-border/50 rounded-full" />
+                {isResizing && (
+                  <div className="absolute left-1/2 top-0 bottom-0 w-0.5 -translate-x-1/2 bg-primary" />
+                )}
+              </div>
+            )}
+            
             <div className="flex flex-col h-full">
               <TaskDetailsHeader
                 onClose={onClose}
