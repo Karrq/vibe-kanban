@@ -22,7 +22,7 @@ use crate::{
     executor::{
         Executor, ExecutorError, NormalizedConversation, NormalizedEntry, NormalizedEntryType,
     },
-    models::task::Task,
+    models::{project::Project, task::Task},
     utils::shell::get_shell_command,
 };
 
@@ -42,6 +42,11 @@ impl Executor for GeminiExecutor {
             .await?
             .ok_or(ExecutorError::TaskNotFound)?;
 
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+
         let prompt = if let Some(task_description) = task.description {
             format!(
                 r#"project_id: {}
@@ -59,7 +64,7 @@ Task title: {}"#,
             )
         };
 
-        let mut command = Self::create_gemini_command(worktree_path);
+        let mut command = Self::create_gemini_command(worktree_path, project.executor_env_script.clone());
         command.stdin(&prompt);
 
         let proc = command.start().await.map_err(|e| {
@@ -115,9 +120,15 @@ Task title: {}"#,
             .map_err(|_| ExecutorError::InvalidSessionId(session_id.to_string()))?;
 
         let task = self.load_task(pool, task_id).await?;
+        
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        
         let resume_context = self.collect_resume_context(pool, &task, attempt_id).await?;
         let comprehensive_prompt = self.build_comprehensive_prompt(&task, &resume_context, prompt);
-        self.spawn_process(worktree_path, &comprehensive_prompt, attempt_id)
+        self.spawn_process(worktree_path, &comprehensive_prompt, attempt_id, project.executor_env_script)
             .await
     }
 
@@ -234,7 +245,7 @@ Task title: {}"#,
 
 impl GeminiExecutor {
     /// Create a standardized Gemini CLI command
-    fn create_gemini_command(worktree_path: &str) -> CommandRunner {
+    fn create_gemini_command(worktree_path: &str, executor_env_script: Option<String>) -> CommandRunner {
         let (shell_cmd, shell_arg) = get_shell_command();
         let gemini_command = "npx @google/gemini-cli@latest --yolo";
 
@@ -244,7 +255,12 @@ impl GeminiExecutor {
             .arg(shell_arg)
             .arg(gemini_command)
             .working_dir(worktree_path)
-            .env("NODE_NO_WARNINGS", "1");
+            .env("NODE_NO_WARNINGS", "1")
+            .env_setup_script(executor_env_script);
+        
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
+        
         command
     }
 
@@ -493,6 +509,7 @@ You are continuing work on the above task. The execution history shows what has 
         worktree_path: &str,
         comprehensive_prompt: &str,
         attempt_id: Uuid,
+        executor_env_script: Option<String>,
     ) -> Result<CommandProcess, ExecutorError> {
         tracing::info!(
             "Spawning Gemini followup execution for attempt {} with resume context ({} chars)",
@@ -500,7 +517,7 @@ You are continuing work on the above task. The execution history shows what has 
             comprehensive_prompt.len()
         );
 
-        let mut command = GeminiExecutor::create_gemini_command(worktree_path);
+        let mut command = GeminiExecutor::create_gemini_command(worktree_path, executor_env_script);
         command.stdin(comprehensive_prompt);
 
         let proc = command.start().await.map_err(|e| {

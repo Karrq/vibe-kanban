@@ -9,7 +9,7 @@ use crate::{
         ActionType, Executor, ExecutorError, NormalizedConversation, NormalizedEntry,
         NormalizedEntryType,
     },
-    models::task::Task,
+    models::{project::Project, task::Task},
     utils::shell::get_shell_command,
 };
 
@@ -89,6 +89,11 @@ impl Executor for ClaudeExecutor {
             .await?
             .ok_or(ExecutorError::TaskNotFound)?;
 
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+
         let prompt = if let Some(task_description) = task.description {
             format!(
                 r#"project_id: {}
@@ -118,7 +123,8 @@ Task title: {}"#,
             .arg(claude_command)
             .stdin(&prompt)
             .working_dir(worktree_path)
-            .env("NODE_NO_WARNINGS", "1");
+            .env("NODE_NO_WARNINGS", "1")
+            .env_setup_script(project.executor_env_script.clone());
 
         // Load and apply .env variables from the project directory
         crate::executor::apply_env_to_command(&mut command, worktree_path);
@@ -134,12 +140,21 @@ Task title: {}"#,
 
     async fn spawn_followup(
         &self,
-        _pool: &sqlx::SqlitePool,
-        _task_id: Uuid,
+        pool: &sqlx::SqlitePool,
+        task_id: Uuid,
         session_id: &str,
         prompt: &str,
         worktree_path: &str,
     ) -> Result<CommandProcess, ExecutorError> {
+        // Get the task to find the project
+        let task = Task::find_by_id(pool, task_id)
+            .await?
+            .ok_or(ExecutorError::TaskNotFound)?;
+
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
 
@@ -161,7 +176,8 @@ Task title: {}"#,
             .arg(&claude_command)
             .stdin(prompt)
             .working_dir(worktree_path)
-            .env("NODE_NO_WARNINGS", "1");
+            .env("NODE_NO_WARNINGS", "1")
+            .env_setup_script(project.executor_env_script.clone());
 
         // Load and apply .env variables from the project directory
         crate::executor::apply_env_to_command(&mut command, worktree_path);

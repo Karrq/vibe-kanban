@@ -597,8 +597,9 @@ impl ProcessService {
 
         tracing::info!("Starting {} for task attempt {}", activity_note, attempt_id);
 
-        // Check for .env file and inject system message if found
+        // Check for .env file and run executor environment script for coding agents
         if matches!(process_type, ExecutionProcessType::CodingAgent) {
+            // First, check for .env file
             let env_message = Self::check_env_file(worktree_path);
             if let Some(msg) = env_message {
                 // Inject the system message into the execution process stdout
@@ -606,6 +607,7 @@ impl ProcessService {
                     tracing::warn!("Failed to inject env loading message: {}", e);
                 }
             }
+            
         }
 
         // Execute the process

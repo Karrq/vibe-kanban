@@ -893,6 +893,9 @@ pub async fn inject_system_message(
 /// This loads the .env file from the worktree directory and applies all variables
 /// Returns a message about what was loaded that can be shown to the user
 pub fn apply_env_to_command(command: &mut CommandRunner, worktree_path: &str) -> Option<String> {
+    let mut messages = Vec::new();
+    
+    // First, load .env file
     match env_loader::load_env_from_directory(worktree_path) {
         Ok(load_result) => {
             if load_result.var_count > 0 {
@@ -901,21 +904,24 @@ pub fn apply_env_to_command(command: &mut CommandRunner, worktree_path: &str) ->
                     command.env(&key, &value);
                 }
                 
-                // Return a message for the user
-                Some(format!(
+                messages.push(format!(
                     "[System] Loaded {} environment variable{} from {}",
                     load_result.var_count,
                     if load_result.var_count == 1 { "" } else { "s" },
                     load_result.env_file_path.unwrap_or_default()
-                ))
-            } else {
-                None
+                ));
             }
         }
         Err(e) => {
             tracing::warn!("Failed to load .env file from {}: {}", worktree_path, e);
-            Some(format!("[System] Warning: Failed to load .env file: {}", e))
+            messages.push(format!("[System] Warning: Failed to load .env file: {}", e));
         }
+    }
+    
+    if messages.is_empty() {
+        None
+    } else {
+        Some(messages.join("\n"))
     }
 }
 
