@@ -12,7 +12,7 @@ use crate::{
         ActionType, Executor, ExecutorError, NormalizedConversation, NormalizedEntry,
         NormalizedEntryType,
     },
-    models::{executor_session::ExecutorSession, task::Task},
+    models::{executor_session::ExecutorSession, project::Project, task::Task},
     utils::{path::make_path_relative, shell::get_shell_command},
 };
 
@@ -199,6 +199,11 @@ impl Executor for CodexExecutor {
             .await?
             .ok_or(ExecutorError::TaskNotFound)?;
 
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+
         let prompt = if let Some(task_description) = task.description {
             format!(
                 r#"project_id: {}
@@ -222,7 +227,11 @@ Task description: {}"#,
             .stdin(&prompt)
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1")
-            .env("RUST_LOG", "info"); // Enable rust logging to capture session info
+            .env("RUST_LOG", "info") // Enable rust logging to capture session info
+            .env_setup_script(project.executor_env_script.clone());
+
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
 
         let child = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
@@ -236,12 +245,21 @@ Task description: {}"#,
 
     async fn spawn_followup(
         &self,
-        _pool: &sqlx::SqlitePool,
-        _task_id: Uuid,
+        pool: &sqlx::SqlitePool,
+        task_id: Uuid,
         session_id: &str,
         prompt: &str,
         worktree_path: &str,
     ) -> Result<CommandProcess, ExecutorError> {
+        // Get the task to find the project
+        let task = Task::find_by_id(pool, task_id)
+            .await?
+            .ok_or(ExecutorError::TaskNotFound)?;
+
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
         // Find the rollout file for this session
         let rollout_file_path =
             find_rollout_file_path(session_id).map_err(ExecutorError::InvalidSessionId)?;
@@ -263,7 +281,11 @@ Task description: {}"#,
             .stdin(prompt)
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1")
-            .env("RUST_LOG", "info");
+            .env("RUST_LOG", "info")
+            .env_setup_script(project.executor_env_script.clone());
+
+        // Load and apply .env variables from the project directory
+        crate::executor::apply_env_to_command(&mut command, worktree_path);
 
         let child = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
