@@ -15,13 +15,13 @@ import { FolderPicker } from '@/components/ui/folder-picker';
 import { TaskTemplateManager } from '@/components/TaskTemplateManager';
 import { ProjectFormFields } from './project-form-fields';
 import { GitHubRepositoryPicker } from './github-repository-picker';
-import { Environment } from 'shared/types';
 import {
   CreateProject,
   CreateProjectFromGitHub,
+  Environment,
   Project,
   UpdateProject,
-} from '@/types/project-extensions';
+} from 'shared/types';
 import { projectsApi, configApi, githubApi, RepositoryInfo } from '@/lib/api';
 
 interface ProjectFormProps {

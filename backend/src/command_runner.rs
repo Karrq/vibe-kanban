@@ -271,43 +271,32 @@ impl CommandRunner {
 
         // If there's an environment setup script, wrap the command
         if let Some(script) = &self.env_setup_script {
-            // Create a wrapper script that runs the env setup, then the actual command
-            let wrapper_command = "sh".to_string();
-            let wrapper_script = {
-                    // Escape the command and arguments for shell
-                    let escaped_command = shell_escape::escape(request.command.clone().into());
-                    let escaped_args: Vec<String> = request.args.iter()
-                        .map(|arg| shell_escape::escape(arg.clone().into()).to_string())
-                        .collect();
-                    
-                    let full_command = if escaped_args.is_empty() {
-                        escaped_command.to_string()
-                    } else {
-                        format!("{} {}", escaped_command, escaped_args.join(" "))
-                    };
-                    
-                    // Create the wrapper script with proper formatting
-                    // The environment script becomes the top of the script,
-                    // followed by the actual command execution
-                    format!(
-                        r#"{}
-
-# ---- END OF USER ENVIRONMENT SETUP SCRIPT
-
-exec {}
-"#,
-                        script.trim(),
-                        full_command
-                    )
-                };
+            // Create a temporary file for the setup script
+            let temp_dir = std::env::temp_dir();
+            let script_path = temp_dir.join(format!("vibe-env-setup-{}.sh", uuid::Uuid::new_v4()));
             
-            let wrapper_args = vec![
-                "-c".to_string(),
-                wrapper_script,
-            ];
+            // Write the script to the file
+            std::fs::write(&script_path, script)
+                .map_err(|e| CommandError::IoError { error: e })?;
             
-            request.command = wrapper_command;
-            request.args = wrapper_args;
+            // Make the script executable
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&script_path)
+                    .map_err(|e| CommandError::IoError { error: e })?
+                    .permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&script_path, perms)
+                    .map_err(|e| CommandError::IoError { error: e })?;
+            }
+            
+            // The setup script becomes the command, with the original command and args as parameters
+            let mut new_args = vec![std::mem::take(&mut request.command)];
+            new_args.extend(std::mem::take(&mut request.args));
+            
+            request.command = script_path.to_string_lossy().into_owned();
+            request.args = new_args;
         }
 
         let handle = self.executor.start(&request).await?;

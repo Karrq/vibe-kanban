@@ -69,7 +69,7 @@ export function ProjectFormFields({
         cleanup:
           '#!/bin/bash\n# Add cleanup commands here...\n# This runs after coding agent execution',
         executorEnv:
-          '#!/bin/bash\n# Set environment variables for executor\n# export MY_API_KEY="..."\n# source .env',
+          '#!/bin/bash\n# Set environment variables for executor\n# export MY_API_KEY="..."\n# source .env\n\n# Execute the agent (required)\nexec "$@"',
       };
 
   return (
@@ -264,8 +264,8 @@ export function ProjectFormFields({
         />
         <p className="text-sm text-muted-foreground">
           This script will run before the executor starts to set up environment
-          variables and configuration. Use it to load API keys, configure
-          environment-specific settings, or source environment files.
+          variables and configuration. The executor command and arguments are passed
+          to your script - make sure to call the executor at the end of your script.
         </p>
       </div>
 

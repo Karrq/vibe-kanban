@@ -1,5 +1,10 @@
 // Import all necessary types from shared types
 import {
+  CreateProject,
+  CreateProjectFromGitHub,
+  Project,
+  ProjectWithBranch,
+  UpdateProject,
   BranchStatus,
   Config,
   ConfigConstants,
@@ -24,13 +29,6 @@ import {
   UpdateTaskTemplate,
   WorktreeDiff,
 } from 'shared/types';
-import {
-  CreateProject,
-  CreateProjectFromGitHub,
-  Project,
-  ProjectWithBranch,
-  UpdateProject,
-} from '@/types/project-extensions';
 
 export const makeRequest = async (url: string, options: RequestInit = {}) => {
   const headers = {
