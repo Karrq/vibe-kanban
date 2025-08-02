@@ -42,9 +42,10 @@ npm run dev
 # Add cleanup commands here...
 # This runs after coding agent execution`,
       executorEnv: `#!/bin/bash
-# Set environment variables for executor
-# export MY_API_KEY="..."
-# source .env`,
+# Set environment for coding agent executor
+# source .env
+# Execute the agent (required)
+exec "$@"`,
     };
   }
 }
