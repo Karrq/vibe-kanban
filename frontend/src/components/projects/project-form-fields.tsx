@@ -2,12 +2,19 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, Folder } from 'lucide-react';
+import { AlertCircle, Folder, ChevronDown } from 'lucide-react';
 import { useSystemInfo } from '@/hooks/use-system-info';
 import {
   createScriptPlaceholderStrategy,
   ScriptPlaceholderContext,
 } from '@/utils/script-placeholders';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Separator } from '@/components/ui/separator';
+import { useState } from 'react';
 
 interface ProjectFormFieldsProps {
   isEditing: boolean;
@@ -57,6 +64,10 @@ export function ProjectFormFields({
   error,
 }: ProjectFormFieldsProps) {
   const { systemInfo } = useSystemInfo();
+  const [setupScriptOpen, setSetupScriptOpen] = useState(false);
+  const [devScriptOpen, setDevScriptOpen] = useState(false);
+  const [cleanupScriptOpen, setCleanupScriptOpen] = useState(false);
+  const [executorEnvScriptOpen, setExecutorEnvScriptOpen] = useState(false);
 
   // Create strategy-based placeholders
   const os_type = systemInfo ? systemInfo.os_type : 'unix';
@@ -193,75 +204,159 @@ export function ProjectFormFields({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="setup-script">Setup Script (Optional)</Label>
-        <textarea
-          id="setup-script"
-          value={setupScript}
-          onChange={(e) => setSetupScript(e.target.value)}
-          placeholder={placeholders.setup}
-          rows={4}
-          className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <p className="text-sm text-muted-foreground">
-          This script will run after creating the worktree and before the
-          executor starts. Use it for setup tasks like installing dependencies
-          or preparing the environment.
-        </p>
-      </div>
+      {/* Divider between project options and scripts */}
+      <Separator className="my-4" />
 
-      <div className="space-y-2">
-        <Label htmlFor="dev-script">Dev Server Script (Optional)</Label>
-        <textarea
-          id="dev-script"
-          value={devScript}
-          onChange={(e) => setDevScript(e.target.value)}
-          placeholder={placeholders.dev}
-          rows={4}
-          className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <p className="text-sm text-muted-foreground">
-          This script can be run from task attempts to start a development
-          server. Use it to quickly start your project's dev server for testing
-          changes.
-        </p>
-      </div>
+      {/* Scripts Section - Individual collapsibles */}
+      <div className="space-y-3">
+        {/* Setup Script */}
+        <Collapsible open={setupScriptOpen} onOpenChange={setSetupScriptOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">Setup Script (Optional)</span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  setupScriptOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <textarea
+                id="setup-script"
+                value={setupScript}
+                onChange={(e) => setSetupScript(e.target.value)}
+                placeholder={placeholders.setup}
+                rows={4}
+                className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-sm text-muted-foreground">
+                This script will run after creating the worktree and before the
+                executor starts. Use it for setup tasks like installing
+                dependencies or preparing the environment.
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-      <div className="space-y-2">
-        <Label htmlFor="cleanup-script">Cleanup Script (Optional)</Label>
-        <textarea
-          id="cleanup-script"
-          value={cleanupScript}
-          onChange={(e) => setCleanupScript(e.target.value)}
-          placeholder={placeholders.cleanup}
-          rows={4}
-          className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <p className="text-sm text-muted-foreground">
-          This script will run after coding agent execution is complete. Use it
-          for quality assurance tasks like running linters, formatters, tests,
-          or other validation steps.
-        </p>
-      </div>
+        {/* Dev Script */}
+        <Collapsible open={devScriptOpen} onOpenChange={setDevScriptOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">Dev Server Script (Optional)</span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  devScriptOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <textarea
+                id="dev-script"
+                value={devScript}
+                onChange={(e) => setDevScript(e.target.value)}
+                placeholder={placeholders.dev}
+                rows={4}
+                className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-sm text-muted-foreground">
+                This script can be run from task attempts to start a development
+                server. Use it to quickly start your project's dev server for
+                testing changes.
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
-      <div className="space-y-2">
-        <Label htmlFor="executor-env-script">
-          Executor Environment Script (Optional)
-        </Label>
-        <textarea
-          id="executor-env-script"
-          value={executorEnvScript}
-          onChange={(e) => setExecutorEnvScript(e.target.value)}
-          placeholder={placeholders.executorEnv}
-          rows={4}
-          className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
-        />
-        <p className="text-sm text-muted-foreground">
-          This script will run before the executor starts to set up environment
-          variables and configuration. The executor command and arguments are
-          passed to your script - make sure to call the executor at the end of
-          your script.
-        </p>
+        {/* Cleanup Script */}
+        <Collapsible
+          open={cleanupScriptOpen}
+          onOpenChange={setCleanupScriptOpen}
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">Cleanup Script (Optional)</span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  cleanupScriptOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <textarea
+                id="cleanup-script"
+                value={cleanupScript}
+                onChange={(e) => setCleanupScript(e.target.value)}
+                placeholder={placeholders.cleanup}
+                rows={4}
+                className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-sm text-muted-foreground">
+                This script will run after coding agent execution is complete.
+                Use it for quality assurance tasks like running linters,
+                formatters, tests, or other validation steps.
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* Executor Environment Script */}
+        <Collapsible
+          open={executorEnvScriptOpen}
+          onOpenChange={setExecutorEnvScriptOpen}
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">
+                Executor Environment Script (Optional)
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  executorEnvScriptOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <textarea
+                id="executor-env-script"
+                value={executorEnvScript}
+                onChange={(e) => setExecutorEnvScript(e.target.value)}
+                placeholder={placeholders.executorEnv}
+                rows={4}
+                className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-sm text-muted-foreground">
+                This script will run before the executor starts to set up
+                environment variables and configuration. The executor command
+                and arguments are passed to your script - make sure to call the
+                executor at the end of your script.
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
 
       {error && (

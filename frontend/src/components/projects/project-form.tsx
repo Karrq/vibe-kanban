@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ChevronDown } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -23,6 +22,12 @@ import {
   UpdateProject,
 } from 'shared/types';
 import { projectsApi, configApi, githubApi, RepositoryInfo } from '@/lib/api';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import { Separator } from '@/components/ui/separator';
 
 interface ProjectFormProps {
   open: boolean;
@@ -59,6 +64,10 @@ export function ProjectForm({
   const [selectedRepository, setSelectedRepository] =
     useState<RepositoryInfo | null>(null);
   const [modeLoading, setModeLoading] = useState(true);
+  const [githubSetupScriptOpen, setGithubSetupScriptOpen] = useState(false);
+  const [githubDevScriptOpen, setGithubDevScriptOpen] = useState(false);
+  const [githubCleanupScriptOpen, setGithubCleanupScriptOpen] = useState(false);
+  const [githubExecutorEnvScriptOpen, setGithubExecutorEnvScriptOpen] = useState(false);
 
   const isEditing = !!project;
 
@@ -314,60 +323,150 @@ export function ProjectForm({
                   error={error}
                 />
 
-                {/* Show script fields for GitHub source */}
-                <div className="space-y-4 pt-4 border-t">
-                  <div className="space-y-2">
-                    <Label htmlFor="setup-script">
-                      Setup Script (optional)
-                    </Label>
-                    <textarea
-                      id="setup-script"
-                      placeholder="e.g., npm install"
-                      value={setupScript}
-                      onChange={(e) => setSetupScript(e.target.value)}
-                      className="w-full p-2 border rounded-md resize-none"
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="dev-script">
-                      Dev Server Script (optional)
-                    </Label>
-                    <textarea
-                      id="dev-script"
-                      placeholder="e.g., npm run dev"
-                      value={devScript}
-                      onChange={(e) => setDevScript(e.target.value)}
-                      className="w-full p-2 border rounded-md resize-none"
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cleanup-script">
-                      Cleanup Script (optional)
-                    </Label>
-                    <textarea
-                      id="cleanup-script"
-                      placeholder="e.g., docker-compose down"
-                      value={cleanupScript}
-                      onChange={(e) => setCleanupScript(e.target.value)}
-                      className="w-full p-2 border rounded-md resize-none"
-                      rows={2}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="executor-env-script">
-                      Executor Environment Script (optional)
-                    </Label>
-                    <textarea
-                      id="executor-env-script"
-                      placeholder="e.g., export API_KEY=..., source .env"
-                      value={executorEnvScript}
-                      onChange={(e) => setExecutorEnvScript(e.target.value)}
-                      className="w-full p-2 border rounded-md resize-none"
-                      rows={2}
-                    />
-                  </div>
+                {/* Divider between repository and scripts */}
+                <Separator className="my-4" />
+
+                {/* Scripts Section - Individual collapsibles */}
+                <div className="space-y-3">
+                  {/* Setup Script */}
+                  <Collapsible open={githubSetupScriptOpen} onOpenChange={setGithubSetupScriptOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+                      >
+                        <span className="font-medium">Setup Script (Optional)</span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-200 ${
+                            githubSetupScriptOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+                        <textarea
+                          id="setup-script"
+                          placeholder="e.g., npm install"
+                          value={setupScript}
+                          onChange={(e) => setSetupScript(e.target.value)}
+                          className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
+                          rows={3}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          This script will run after cloning the repository and before the
+                          executor starts. Use it for setup tasks like installing dependencies
+                          or preparing the environment.
+                        </p>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Dev Script */}
+                  <Collapsible open={githubDevScriptOpen} onOpenChange={setGithubDevScriptOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+                      >
+                        <span className="font-medium">Dev Server Script (Optional)</span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-200 ${
+                            githubDevScriptOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+                        <textarea
+                          id="dev-script"
+                          placeholder="e.g., npm run dev"
+                          value={devScript}
+                          onChange={(e) => setDevScript(e.target.value)}
+                          className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
+                          rows={3}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          This script can be run from task attempts to start a development
+                          server. Use it to quickly start your project's dev server for testing
+                          changes.
+                        </p>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Cleanup Script */}
+                  <Collapsible open={githubCleanupScriptOpen} onOpenChange={setGithubCleanupScriptOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+                      >
+                        <span className="font-medium">Cleanup Script (Optional)</span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-200 ${
+                            githubCleanupScriptOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+                        <textarea
+                          id="cleanup-script"
+                          placeholder="e.g., docker-compose down"
+                          value={cleanupScript}
+                          onChange={(e) => setCleanupScript(e.target.value)}
+                          className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
+                          rows={3}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          This script will run after coding agent execution is complete. Use it
+                          for quality assurance tasks like running linters, formatters, tests,
+                          or other validation steps.
+                        </p>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Executor Environment Script */}
+                  <Collapsible open={githubExecutorEnvScriptOpen} onOpenChange={setGithubExecutorEnvScriptOpen}>
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+                      >
+                        <span className="font-medium">Executor Environment Script (Optional)</span>
+                        <ChevronDown
+                          className={`h-4 w-4 transition-transform duration-200 ${
+                            githubExecutorEnvScriptOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+                        <textarea
+                          id="executor-env-script"
+                          placeholder="e.g., export API_KEY=..., source .env"
+                          value={executorEnvScript}
+                          onChange={(e) => setExecutorEnvScript(e.target.value)}
+                          className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
+                          rows={3}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          This script will run before the executor starts to set up environment
+                          variables and configuration. Use it to load API keys, configure
+                          environment-specific settings, or source environment files.
+                        </p>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
               </>
             ) : (
