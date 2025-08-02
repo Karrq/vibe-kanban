@@ -59,18 +59,10 @@ export function ProjectFormFields({
   const { systemInfo } = useSystemInfo();
 
   // Create strategy-based placeholders
-  const placeholders = systemInfo
-    ? new ScriptPlaceholderContext(
-        createScriptPlaceholderStrategy(systemInfo.os_type)
-      ).getPlaceholders()
-    : {
-        setup: '#!/bin/bash\nnpm install\n# Add any setup commands here...',
-        dev: '#!/bin/bash\nnpm run dev\n# Add dev server start command here...',
-        cleanup:
-          '#!/bin/bash\n# Add cleanup commands here...\n# This runs after coding agent execution',
-        executorEnv:
-          '#!/bin/bash\n# Set environment variables for executor\n# export MY_API_KEY="..."\n# source .env\n\n# Execute the agent (required)\nexec "$@"',
-      };
+  const os_type = systemInfo ? systemInfo.os_type : 'unix';
+  const placeholders = new ScriptPlaceholderContext(
+    createScriptPlaceholderStrategy(os_type)
+  ).getPlaceholders();
 
   return (
     <>
@@ -253,7 +245,9 @@ export function ProjectFormFields({
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="executor-env-script">Executor Environment Script (Optional)</Label>
+        <Label htmlFor="executor-env-script">
+          Executor Environment Script (Optional)
+        </Label>
         <textarea
           id="executor-env-script"
           value={executorEnvScript}
@@ -264,8 +258,9 @@ export function ProjectFormFields({
         />
         <p className="text-sm text-muted-foreground">
           This script will run before the executor starts to set up environment
-          variables and configuration. The executor command and arguments are passed
-          to your script - make sure to call the executor at the end of your script.
+          variables and configuration. The executor command and arguments are
+          passed to your script - make sure to call the executor at the end of
+          your script.
         </p>
       </div>
 
