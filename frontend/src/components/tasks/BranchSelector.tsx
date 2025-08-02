@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback, useTransition } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { ArrowDown, GitBranch as GitBranchIcon, Search } from 'lucide-react';
 import {
@@ -26,6 +26,10 @@ type Props = {
   excludeCurrentBranch?: boolean;
 };
 
+// Constants for virtualization
+const VISIBLE_ITEMS = 20;
+const ITEM_HEIGHT = 32; // Approximate height of each menu item
+
 function BranchSelector({
   branches,
   selectedBranch,
@@ -35,7 +39,18 @@ function BranchSelector({
   excludeCurrentBranch = false,
 }: Props) {
   const [branchSearchTerm, setBranchSearchTerm] = useState('');
+  const [isPending, startTransition] = useTransition();
+  const [scrollOffset, setScrollOffset] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Debounced search term update
+  const handleSearchChange = useCallback((value: string) => {
+    startTransition(() => {
+      setBranchSearchTerm(value);
+      setScrollOffset(0); // Reset scroll when searching
+    });
+  }, []);
 
   // Filter branches based on search term and options
   const filteredBranches = useMemo(() => {
@@ -67,6 +82,91 @@ function BranchSelector({
     setBranchSearchTerm('');
   };
 
+  // Calculate virtualization parameters
+  const visibleRange = useMemo(() => {
+    const startIndex = Math.floor(scrollOffset / ITEM_HEIGHT);
+    const endIndex = Math.min(
+      startIndex + VISIBLE_ITEMS + 2, // Add buffer
+      filteredBranches.length
+    );
+    return { startIndex, endIndex };
+  }, [scrollOffset, filteredBranches.length]);
+
+  // Memoize branch items to avoid re-creating them on every render
+  const branchItems = useMemo(() => {
+    const { startIndex, endIndex } = visibleRange;
+    const items = [];
+    
+    for (let i = startIndex; i < endIndex; i++) {
+      const branch = filteredBranches[i];
+      if (!branch) continue;
+      
+      const isCurrentAndExcluded = excludeCurrentBranch && branch.is_current;
+      items.push({
+        branch,
+        isCurrentAndExcluded,
+        key: branch.name,
+        index: i,
+      });
+    }
+    
+    return items;
+  }, [filteredBranches, excludeCurrentBranch, visibleRange]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    setScrollOffset(target.scrollTop);
+  }, []);
+
+  // Render individual branch item
+  const renderBranchItem = useCallback(({ branch, isCurrentAndExcluded }: { branch: GitBranch; isCurrentAndExcluded: boolean }) => {
+    const menuItem = (
+      <DropdownMenuItem
+        key={branch.name}
+        onClick={() => {
+          if (!isCurrentAndExcluded) {
+            handleBranchSelect(branch.name);
+          }
+        }}
+        disabled={isCurrentAndExcluded}
+        className={`${selectedBranch === branch.name ? 'bg-accent' : ''} ${
+          isCurrentAndExcluded ? 'opacity-50 cursor-not-allowed' : ''
+        }`}
+      >
+        <div className="flex items-center justify-between w-full">
+          <span className={branch.is_current ? 'font-medium' : ''}>
+            {branch.name}
+          </span>
+          <div className="flex gap-1">
+            {branch.is_current && (
+              <span className="text-xs bg-green-100 text-green-800 px-1 rounded">
+                current
+              </span>
+            )}
+            {branch.is_remote && (
+              <span className="text-xs bg-blue-100 text-blue-800 px-1 rounded">
+                remote
+              </span>
+            )}
+          </div>
+        </div>
+      </DropdownMenuItem>
+    );
+
+    if (isCurrentAndExcluded) {
+      return (
+        <Tooltip key={branch.name}>
+          <TooltipTrigger asChild>{menuItem}</TooltipTrigger>
+          <TooltipContent>
+            <p>Cannot rebase a branch onto itself</p>
+          </TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return menuItem;
+  }, [selectedBranch, handleBranchSelect]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -90,7 +190,7 @@ function BranchSelector({
               ref={searchInputRef}
               placeholder="Search branches..."
               value={branchSearchTerm}
-              onChange={(e) => setBranchSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="pl-8"
               onKeyDown={(e) => {
                 // Prevent the dropdown from closing when typing
@@ -101,66 +201,36 @@ function BranchSelector({
           </div>
         </div>
         <DropdownMenuSeparator />
-        <div className="max-h-64 overflow-y-auto">
-          {filteredBranches.length === 0 ? (
-            <div className="p-2 text-sm text-muted-foreground text-center">
-              No branches found
-            </div>
-          ) : (
-            filteredBranches.map((branch) => {
-              const isCurrentAndExcluded =
-                excludeCurrentBranch && branch.is_current;
-
-              const menuItem = (
-                <DropdownMenuItem
-                  key={branch.name}
-                  onClick={() => {
-                    if (!isCurrentAndExcluded) {
-                      handleBranchSelect(branch.name);
-                    }
-                  }}
-                  disabled={isCurrentAndExcluded}
-                  className={`${selectedBranch === branch.name ? 'bg-accent' : ''} ${
-                    isCurrentAndExcluded ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className={branch.is_current ? 'font-medium' : ''}>
-                      {branch.name}
-                    </span>
-                    <div className="flex gap-1">
-                      {branch.is_current && (
-                        <span className="text-xs bg-green-100 text-green-800 px-1 rounded">
-                          current
-                        </span>
-                      )}
-                      {branch.is_remote && (
-                        <span className="text-xs bg-blue-100 text-blue-800 px-1 rounded">
-                          remote
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </DropdownMenuItem>
-              );
-
-              if (isCurrentAndExcluded) {
-                return (
-                  <TooltipProvider key={branch.name}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>{menuItem}</TooltipTrigger>
-                      <TooltipContent>
-                        <p>Cannot rebase a branch onto itself</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                );
-              }
-
-              return menuItem;
-            })
-          )}
-        </div>
+        <TooltipProvider>
+          <div 
+            className="max-h-64 overflow-y-auto"
+            ref={scrollContainerRef}
+            onScroll={filteredBranches.length > VISIBLE_ITEMS ? handleScroll : undefined}
+          >
+            {isPending && branchSearchTerm ? (
+              <div className="p-2 text-sm text-muted-foreground text-center">
+                Searching...
+              </div>
+            ) : filteredBranches.length === 0 ? (
+              <div className="p-2 text-sm text-muted-foreground text-center">
+                No branches found
+              </div>
+            ) : filteredBranches.length > VISIBLE_ITEMS ? (
+              // Use virtualization for large lists
+              <div style={{ height: filteredBranches.length * ITEM_HEIGHT, position: 'relative' }}>
+                <div style={{ transform: `translateY(${visibleRange.startIndex * ITEM_HEIGHT}px)` }}>
+                  {branchItems.map((item) => renderBranchItem(item))}
+                </div>
+              </div>
+            ) : (
+              // Render all items for small lists
+              filteredBranches.map((branch) => {
+                const isCurrentAndExcluded = excludeCurrentBranch && branch.is_current;
+                return renderBranchItem({ branch, isCurrentAndExcluded });
+              })
+            )}
+          </div>
+        </TooltipProvider>
       </DropdownMenuContent>
     </DropdownMenu>
   );
