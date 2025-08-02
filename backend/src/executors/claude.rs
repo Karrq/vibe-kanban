@@ -233,6 +233,34 @@ Task title: {}"#,
             // Process different message types
             let processed = if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
                 match msg_type {
+                    "result" => {
+                        // Check for context limit errors
+                        if let Some(is_error) = json.get("is_error").and_then(|e| e.as_bool()) {
+                            if is_error {
+                                if let Some(error_msg) = json.get("error").and_then(|e| e.as_str()) {
+                                    // Check if it's a context limit error
+                                    if error_msg.to_lowercase().contains("prompt too long") 
+                                        || error_msg.to_lowercase().contains("context") 
+                                        || error_msg.to_lowercase().contains("token limit") {
+                                        entries.push(NormalizedEntry {
+                                            timestamp: None,
+                                            entry_type: NormalizedEntryType::ErrorMessage,
+                                            content: format!("Context limit reached: {}", error_msg),
+                                            metadata: Some(json.clone()),
+                                        });
+                                    } else {
+                                        entries.push(NormalizedEntry {
+                                            timestamp: None,
+                                            entry_type: NormalizedEntryType::ErrorMessage,
+                                            content: format!("Error: {}", error_msg),
+                                            metadata: Some(json.clone()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        true
+                    }
                     "assistant" => {
                         if let Some(message) = json.get("message") {
                             if let Some(content) = message.get("content").and_then(|c| c.as_array())
@@ -346,14 +374,7 @@ Task title: {}"#,
             };
 
             // If JSON didn't match expected patterns, add it as unrecognized JSON
-            // Skip JSON with type "result" as requested
             if !processed {
-                if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
-                    if msg_type == "result" {
-                        // Skip result entries
-                        continue;
-                    }
-                }
                 entries.push(NormalizedEntry {
                     timestamp: None,
                     entry_type: NormalizedEntryType::SystemMessage,
@@ -374,6 +395,16 @@ Task title: {}"#,
 }
 
 impl ClaudeExecutor {
+    /// Check if the conversation has hit a context limit error
+    pub fn has_context_limit_error(conversation: &NormalizedConversation) -> bool {
+        conversation.entries.iter().any(|entry| {
+            matches!(entry.entry_type, NormalizedEntryType::ErrorMessage) &&
+            (entry.content.to_lowercase().contains("context limit") ||
+             entry.content.to_lowercase().contains("prompt too long") ||
+             entry.content.to_lowercase().contains("token limit"))
+        })
+    }
+
     /// Convert absolute paths to relative paths based on worktree path
     fn make_path_relative(&self, path: &str, worktree_path: &str) -> String {
         let path_obj = Path::new(path);
@@ -650,29 +681,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normalize_logs_ignores_result_type() {
+    fn test_normalize_logs_processes_result_errors() {
         let executor = ClaudeExecutor::new();
         let logs = r#"{"type":"system","subtype":"init","cwd":"/private/tmp","session_id":"e988eeea-3712-46a1-82d4-84fbfaa69114","tools":[],"model":"claude-sonnet-4-20250514"}
 {"type":"assistant","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Hello world"}],"stop_reason":null},"session_id":"e988eeea-3712-46a1-82d4-84fbfaa69114"}
+{"type":"result","subtype":"error","is_error":true,"error":"Prompt too long: exceeded context window"}
 {"type":"result","subtype":"success","is_error":false,"duration_ms":6059,"result":"Final result"}
 {"type":"unknown","data":"some data"}"#;
 
         let result = executor.normalize_logs(logs, "/tmp/test-worktree").unwrap();
 
-        // Should have system message, assistant message, and unknown message
-        // but NOT the result message
-        assert_eq!(result.entries.len(), 3);
+        // Should have system message, assistant message, error message, and unknown message
+        assert_eq!(result.entries.len(), 4);
 
-        // Check that no entry contains "result"
-        for entry in &result.entries {
-            assert!(!entry.content.contains("result"));
-        }
+        // Check that we have an error message for context limit
+        assert!(result.entries.iter().any(|e| {
+            matches!(e.entry_type, NormalizedEntryType::ErrorMessage) &&
+            e.content.contains("Context limit reached")
+        }));
 
         // Check that unknown JSON is still processed
         assert!(result
             .entries
             .iter()
             .any(|e| e.content.contains("Unrecognized JSON")));
+    }
+
+    #[test]
+    fn test_has_context_limit_error() {
+        let executor = ClaudeExecutor::new();
+        let logs_with_error = r#"{"type":"result","subtype":"error","is_error":true,"error":"Prompt too long: exceeded context window"}"#;
+        let conversation = executor.normalize_logs(logs_with_error, "/tmp/test-worktree").unwrap();
+        
+        assert!(ClaudeExecutor::has_context_limit_error(&conversation));
+
+        let logs_without_error = r#"{"type":"assistant","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[{"type":"text","text":"Hello world"}],"stop_reason":null},"session_id":"e988eeea-3712-46a1-82d4-84fbfaa69114"}"#;
+        let conversation = executor.normalize_logs(logs_without_error, "/tmp/test-worktree").unwrap();
+        
+        assert!(!ClaudeExecutor::has_context_limit_error(&conversation));
     }
 
     #[test]

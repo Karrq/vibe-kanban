@@ -839,6 +839,40 @@ async fn handle_coding_agent_completion(
     success: bool,
     exit_code: Option<i64>,
 ) {
+    // Check if the execution failed due to context limit
+    let has_context_limit_error = if let Some(stdout) = &execution_process.stdout {
+        let stdout_lower = stdout.to_lowercase();
+        stdout_lower.contains("[context_limit_error]") ||
+        stdout.contains("prompt too long") ||
+        (stdout_lower.contains("context") && stdout_lower.contains("limit")) ||
+        stdout_lower.contains("token limit")
+    } else {
+        false
+    };
+
+    if has_context_limit_error {
+        tracing::warn!(
+            "Context limit error detected for execution process {} (attempt: {})",
+            execution_process_id,
+            task_attempt_id
+        );
+        
+        // Store a note about the context limit error
+        if let Err(e) = crate::models::executor_session::ExecutorSession::update_summary(
+            &app_state.db_pool,
+            execution_process_id,
+            "[Context limit reached - follow-up messages will start a new session]",
+        )
+        .await
+        {
+            tracing::error!(
+                "Failed to update context limit error note for execution process {}: {}",
+                execution_process_id,
+                e
+            );
+        }
+    }
+
     // Extract and store assistant message from execution logs
     let summary = if let Some(stdout) = &execution_process.stdout {
         if let Some(assistant_message) = crate::executor::parse_assistant_message_from_logs(stdout)

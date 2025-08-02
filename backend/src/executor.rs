@@ -616,6 +616,31 @@ async fn stream_stdout_to_db(
                         session_id_parsed = true;
                     }
                 }
+                
+                // Check for context limit errors
+                if let Some(error_msg) = check_for_context_limit_error(&line) {
+                    tracing::error!(
+                        "Context limit error detected for process {}: {}",
+                        execution_process_id,
+                        error_msg
+                    );
+                    // Store the error in the database for later handling
+                    if let Err(e) = ExecutionProcess::append_output(
+                        &pool,
+                        execution_process_id,
+                        Some(&format!("\n[CONTEXT_LIMIT_ERROR]: {}\n", error_msg)),
+                        None,
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            "Failed to store context limit error for process {}: {}",
+                            execution_process_id,
+                            e
+                        );
+                    }
+                }
+                
                 accumulated_output.push_str(&line);
                 update_counter += 1;
 
@@ -861,6 +886,39 @@ fn parse_session_id_from_line(line: &str) -> Option<String> {
         // Check for Amp threadID
         if let Some(thread_id) = json.get("threadID").and_then(|v| v.as_str()) {
             return Some(thread_id.to_string());
+        }
+    }
+
+    None
+}
+
+/// Check if a line contains a context limit error
+fn check_for_context_limit_error(line: &str) -> Option<String> {
+    use serde_json::Value;
+
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    // Try to parse as JSON
+    if let Ok(json) = serde_json::from_str::<Value>(trimmed) {
+        // Check for result type with error
+        if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
+            if msg_type == "result" {
+                if let Some(is_error) = json.get("is_error").and_then(|e| e.as_bool()) {
+                    if is_error {
+                        if let Some(error_msg) = json.get("error").and_then(|e| e.as_str()) {
+                            let error_lower = error_msg.to_lowercase();
+                            if error_lower.contains("prompt too long") 
+                                || error_lower.contains("context") && error_lower.contains("limit")
+                                || error_lower.contains("token limit") {
+                                return Some(error_msg.to_string());
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

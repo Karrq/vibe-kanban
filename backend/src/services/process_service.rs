@@ -21,6 +21,30 @@ use crate::{
 pub struct ProcessService;
 
 impl ProcessService {
+    /// Check if the execution process output contains a context limit error
+    async fn has_context_limit_error(
+        pool: &SqlitePool,
+        execution_process_id: Uuid,
+    ) -> Result<bool, TaskAttemptError> {
+        let process = ExecutionProcess::find_by_id(pool, execution_process_id)
+            .await?
+            .ok_or(TaskAttemptError::ValidationError(
+                "Execution process not found".to_string(),
+            ))?;
+        
+        if let Some(stdout) = &process.stdout {
+            let stdout_lower = stdout.to_lowercase();
+            // Check for context limit indicators
+            if stdout_lower.contains("[context_limit_error]") ||
+               stdout.contains("prompt too long") ||
+               (stdout_lower.contains("context") && stdout_lower.contains("limit")) ||
+               stdout_lower.contains("token limit") {
+                return Ok(true);
+            }
+        }
+        
+        Ok(false)
+    }
     /// Run cleanup script if project has one configured
     pub async fn run_cleanup_script_if_configured(
         pool: &SqlitePool,
@@ -474,19 +498,36 @@ impl ProcessService {
             }
         };
 
-        // Try to use follow-up with session ID, but fall back to new session if it fails
+        // Check if the previous execution had a context limit error
+        let had_context_limit_error = Self::has_context_limit_error(pool, most_recent_coding_agent.id)
+            .await
+            .unwrap_or(false);
+
+        // Try to use follow-up with session ID, but fall back to new session if it fails or if context limit was reached
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
-            // First try with session ID for continuation
-            debug!(
-                "SESSION_FOLLOWUP: Attempting follow-up execution with session ID: {} (attempt: {}, worktree: {})",
-                session_id, attempt_id, worktree_path
-            );
-            crate::executor::ExecutorType::CodingAgent {
-                config: executor_config.clone(),
-                follow_up: Some(crate::executor::FollowUpInfo {
-                    session_id: session_id.clone(),
-                    prompt: prompt.to_string(),
-                }),
+            if had_context_limit_error {
+                // Previous session hit context limit, start new session
+                tracing::info!(
+                    "SESSION_FOLLOWUP: Previous session hit context limit, starting new session for attempt {} (worktree: {})",
+                    attempt_id, worktree_path
+                );
+                crate::executor::ExecutorType::CodingAgent {
+                    config: executor_config.clone(),
+                    follow_up: None,
+                }
+            } else {
+                // Try with session ID for continuation
+                debug!(
+                    "SESSION_FOLLOWUP: Attempting follow-up execution with session ID: {} (attempt: {}, worktree: {})",
+                    session_id, attempt_id, worktree_path
+                );
+                crate::executor::ExecutorType::CodingAgent {
+                    config: executor_config.clone(),
+                    follow_up: Some(crate::executor::FollowUpInfo {
+                        session_id: session_id.clone(),
+                        prompt: prompt.to_string(),
+                    }),
+                }
             }
         } else {
             // No session ID available, start new session
