@@ -49,6 +49,7 @@ rmcp = { version = "0.2.1", features = ["server", "transport-io"] }
 schemars = "0.8"
 regex = "1.11.1"
 which = "6.0"
+shell-escape = "0.1"
 notify-rust = "4.11"
 octocrab = "0.44"
 os_info = "3.12.0"
@@ -63,7 +64,6 @@ futures-util = "0.3"
 async-stream = "0.3"
 json-patch = "2.0"
 backon = "1.5.1"
-dotenvy = "0.15"
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -72,4 +72,3 @@ tower = { version = "0.4", features = ["util"] }
 [build-dependencies]
 dotenv = "0.15"
 ts-rs = { version = "9.0", features = ["uuid-impl", "chrono-impl", "no-serde-warnings"] }
-

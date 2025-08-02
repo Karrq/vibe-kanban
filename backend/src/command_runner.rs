@@ -60,6 +60,7 @@ pub struct CommandRunner {
     working_dir: Option<String>,
     env_vars: Vec<(String, String)>,
     stdin: Option<String>,
+    env_setup_script: Option<String>,
 }
 impl Default for CommandRunner {
     fn default() -> Self {
@@ -173,6 +174,7 @@ impl CommandRunner {
                 working_dir: None,
                 env_vars: Vec::new(),
                 stdin: None,
+                env_setup_script: None,
             },
             Environment::Local => CommandRunner {
                 executor: Box::new(LocalCommandExecutor::new()),
@@ -181,6 +183,7 @@ impl CommandRunner {
                 working_dir: None,
                 env_vars: Vec::new(),
                 stdin: None,
+                env_setup_script: None,
             },
         }
     }
@@ -222,6 +225,11 @@ impl CommandRunner {
         self
     }
 
+    pub fn env_setup_script(&mut self, script: Option<String>) -> &mut Self {
+        self.env_setup_script = script;
+        self
+    }
+
     /// Convert the current CommandRunner state to a CreateCommandRequest
     pub fn to_args(&self) -> Option<CommandRunnerArgs> {
         Some(CommandRunnerArgs {
@@ -259,9 +267,39 @@ impl CommandRunner {
     }
 
     pub async fn start(&self) -> Result<CommandProcess, CommandError> {
-        let request = self.to_args().ok_or(CommandError::NoCommandSet)?;
-        let handle = self.executor.start(&request).await?;
+        let mut request = self.to_args().ok_or(CommandError::NoCommandSet)?;
 
+        // If there's an environment setup script, wrap the command
+        if let Some(script) = &self.env_setup_script {
+            // Create a temporary file for the setup script
+            let temp_dir = std::env::temp_dir();
+            let script_path = temp_dir.join(format!("vibe-env-setup-{}.sh", uuid::Uuid::new_v4()));
+            
+            // Write the script to the file
+            std::fs::write(&script_path, script)
+                .map_err(|e| CommandError::IoError { error: e })?;
+            
+            // Make the script executable
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&script_path)
+                    .map_err(|e| CommandError::IoError { error: e })?
+                    .permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&script_path, perms)
+                    .map_err(|e| CommandError::IoError { error: e })?;
+            }
+            
+            // The setup script becomes the command, with the original command and args as parameters
+            let mut new_args = vec![std::mem::take(&mut request.command)];
+            new_args.extend(std::mem::take(&mut request.args));
+            
+            request.command = script_path.to_string_lossy().into_owned();
+            request.args = new_args;
+        }
+
+        let handle = self.executor.start(&request).await?;
         Ok(CommandProcess { handle })
     }
 }

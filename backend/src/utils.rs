@@ -3,7 +3,6 @@ use std::{env, sync::OnceLock};
 use directories::ProjectDirs;
 
 pub mod command_utils;
-pub mod env_loader;
 pub mod path;
 pub mod shell;
 pub mod text;

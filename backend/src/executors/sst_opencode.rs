@@ -7,7 +7,7 @@ use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{Executor, ExecutorError, NormalizedConversation, NormalizedEntry},
-    models::{execution_process::ExecutionProcess, executor_session::ExecutorSession, task::Task},
+    models::{execution_process::ExecutionProcess, executor_session::ExecutorSession, project::Project, task::Task},
     utils::shell::get_shell_command,
 };
 
@@ -250,6 +250,11 @@ impl Executor for SstOpencodeExecutor {
             .await?
             .ok_or(ExecutorError::TaskNotFound)?;
 
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+
         let prompt = if let Some(task_description) = task.description {
             format!(
                 r#"project_id: {}
@@ -278,7 +283,8 @@ Task title: {}"#,
             .arg(opencode_command)
             .stdin(&prompt)
             .working_dir(worktree_path)
-            .env("NODE_NO_WARNINGS", "1");
+            .env("NODE_NO_WARNINGS", "1")
+            .env_setup_script(project.executor_env_script.clone());
 
         let proc = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
@@ -394,12 +400,21 @@ Task title: {}"#,
 
     async fn spawn_followup(
         &self,
-        _pool: &sqlx::SqlitePool,
-        _task_id: Uuid,
+        pool: &sqlx::SqlitePool,
+        task_id: Uuid,
         session_id: &str,
         prompt: &str,
         worktree_path: &str,
     ) -> Result<CommandProcess, ExecutorError> {
+        // Get the task to find the project
+        let task = Task::find_by_id(pool, task_id)
+            .await?
+            .ok_or(ExecutorError::TaskNotFound)?;
+
+        // Get the project to fetch the executor environment script
+        let project = Project::find_by_id(pool, task.project_id)
+            .await?
+            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
         let opencode_command = format!("{} --session {}", self.command, session_id);
@@ -411,7 +426,8 @@ Task title: {}"#,
             .arg(&opencode_command)
             .stdin(prompt)
             .working_dir(worktree_path)
-            .env("NODE_NO_WARNINGS", "1");
+            .env("NODE_NO_WARNINGS", "1")
+            .env_setup_script(project.executor_env_script.clone());
 
         let proc = command.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&command, &self.executor_type)
