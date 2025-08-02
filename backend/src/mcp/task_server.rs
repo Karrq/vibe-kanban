@@ -12,9 +12,14 @@ use serde_json;
 use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use crate::models::{
-    project::Project,
-    task::{CreateTask, Task, TaskStatus},
+use crate::{
+    app_state::AppState,
+    executor::ExecutorConfig,
+    models::{
+        project::Project,
+        task::{CreateTask, Task, TaskStatus},
+        task_attempt::{CreateTaskAttempt, TaskAttempt, ExecutionState},
+    },
 };
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -191,17 +196,64 @@ pub struct GetTaskResponse {
     pub project_name: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StartTaskAttemptRequest {
+    #[schemars(description = "The ID of the project containing the task")]
+    pub project_id: String,
+    #[schemars(description = "The ID of the task to start an attempt for")]
+    pub task_id: String,
+    #[schemars(description = "Optional executor type: 'claude', 'claude-plan', 'gemini', 'amp', 'windsurf', 'custom', 'echo'")]
+    pub executor: Option<String>,
+    #[schemars(description = "Optional base branch to use (defaults to the project's default branch)")]
+    pub base_branch: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct StartTaskAttemptResponse {
+    pub success: bool,
+    pub attempt_id: String,
+    pub message: String,
+    pub worktree_path: Option<String>,
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetTaskAttemptStatusRequest {
+    #[schemars(description = "The ID of the project containing the task")]
+    pub project_id: String,
+    #[schemars(description = "The ID of the task")]
+    pub task_id: String,
+    #[schemars(description = "The ID of the task attempt")]
+    pub attempt_id: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetTaskAttemptStatusResponse {
+    pub success: bool,
+    pub attempt_id: String,
+    pub execution_state: String,
+    pub has_changes: bool,
+    pub has_setup_script: bool,
+    pub setup_process_id: Option<String>,
+    pub coding_agent_process_id: Option<String>,
+    pub worktree_path: String,
+    pub branch: String,
+    pub pr_url: Option<String>,
+}
+
+#[derive(Clone)]
 pub struct TaskServer {
     pub pool: SqlitePool,
+    pub app_state: AppState,
     tool_router: ToolRouter<TaskServer>,
 }
 
 impl TaskServer {
     #[allow(dead_code)]
-    pub fn new(pool: SqlitePool) -> Self {
+    pub fn new(pool: SqlitePool, app_state: AppState) -> Self {
         Self {
             pool,
+            app_state,
             tool_router: Self::tool_router(),
         }
     }
@@ -802,6 +854,297 @@ impl TaskServer {
             }
         }
     }
+
+    #[tool(
+        description = "Start a task attempt (execution) for a specific task. This creates a git worktree and starts the executor. `project_id` and `task_id` are required!"
+    )]
+    async fn start_task_attempt(
+        &self,
+        Parameters(StartTaskAttemptRequest {
+            project_id,
+            task_id,
+            executor,
+            base_branch,
+        }): Parameters<StartTaskAttemptRequest>,
+    ) -> Result<CallToolResult, RmcpError> {
+        // Parse project_id from string to UUID
+        let project_uuid = match Uuid::parse_str(&project_id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Invalid project ID format. Must be a valid UUID.",
+                    "project_id": project_id
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        // Parse task_id from string to UUID
+        let task_uuid = match Uuid::parse_str(&task_id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Invalid task ID format. Must be a valid UUID.",
+                    "task_id": task_id
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        // Verify the task exists and belongs to the project
+        let task = match Task::find_by_id_and_project_id(&self.pool, task_uuid, project_uuid).await {
+            Ok(Some(task)) => task,
+            Ok(None) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Task not found in the specified project",
+                    "task_id": task_id,
+                    "project_id": project_id
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+            Err(e) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Failed to retrieve task",
+                    "details": e.to_string()
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        // Parse executor if provided
+        let executor_config = if let Some(executor_str) = executor {
+            match executor_str.parse::<ExecutorConfig>() {
+                Ok(config) => Some(config),
+                Err(_) => {
+                    let error_response = serde_json::json!({
+                        "success": false,
+                        "error": "Invalid executor type. Valid values: 'claude', 'claude-plan', 'gemini', 'amp', 'windsurf', 'custom', 'echo'",
+                        "provided_executor": executor_str
+                    });
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        serde_json::to_string_pretty(&error_response).unwrap(),
+                    )]));
+                }
+            }
+        } else {
+            None
+        };
+
+        // Create the task attempt
+        let create_attempt_data = CreateTaskAttempt {
+            executor: executor_config.map(|config| config.to_string()),
+            base_branch,
+        };
+
+        match TaskAttempt::create(&self.pool, &create_attempt_data, task_uuid).await {
+            Ok(attempt) => {
+                // Update task status to InProgress
+                if let Err(e) = Task::update_status(&self.pool, task_uuid, project_uuid, TaskStatus::InProgress).await {
+                    tracing::error!("Failed to update task status to InProgress: {}", e);
+                    // Continue anyway - the attempt was created successfully
+                }
+                
+                // Start execution asynchronously (don't block the response)
+                let app_state_clone = self.app_state.clone();
+                let pool_clone = self.pool.clone();
+                let attempt_id = attempt.id;
+                let attempt_worktree_path = attempt.worktree_path.clone();
+                let attempt_branch = attempt.branch.clone();
+                
+                tokio::spawn(async move {
+                    if let Err(e) = TaskAttempt::start_execution(
+                        &pool_clone,
+                        &app_state_clone,
+                        attempt_id,
+                        task_uuid,
+                        project_uuid,
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            "Failed to start execution for task attempt {}: {}",
+                            attempt_id,
+                            e
+                        );
+                    }
+                });
+                
+                let response = StartTaskAttemptResponse {
+                    success: true,
+                    attempt_id: attempt_id.to_string(),
+                    message: format!(
+                        "Task attempt created and execution started for task '{}'", 
+                        task.title
+                    ),
+                    worktree_path: Some(attempt_worktree_path),
+                    branch: Some(attempt_branch),
+                };
+
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&response).unwrap(),
+                )]))
+            }
+            Err(e) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Failed to create task attempt",
+                    "details": e.to_string(),
+                    "task_id": task_id,
+                    "project_id": project_id
+                });
+                Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]))
+            }
+        }
+    }
+
+    #[tool(
+        description = "Get the current status of a task attempt, including execution state and process IDs. `project_id`, `task_id`, and `attempt_id` are required!"
+    )]
+    async fn get_task_attempt_status(
+        &self,
+        Parameters(GetTaskAttemptStatusRequest {
+            project_id,
+            task_id,
+            attempt_id,
+        }): Parameters<GetTaskAttemptStatusRequest>,
+    ) -> Result<CallToolResult, RmcpError> {
+        // Parse UUIDs
+        let project_uuid = match Uuid::parse_str(&project_id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Invalid project ID format"
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        let task_uuid = match Uuid::parse_str(&task_id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Invalid task ID format"
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        let attempt_uuid = match Uuid::parse_str(&attempt_id) {
+            Ok(uuid) => uuid,
+            Err(_) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Invalid attempt ID format"
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        // Get the task attempt
+        let task_attempt = match TaskAttempt::find_by_id(&self.pool, attempt_uuid).await {
+            Ok(Some(attempt)) => attempt,
+            Ok(None) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Task attempt not found",
+                    "attempt_id": attempt_id
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+            Err(e) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Failed to retrieve task attempt",
+                    "details": e.to_string()
+                });
+                return Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]));
+            }
+        };
+
+        // Verify the attempt belongs to the specified task
+        if task_attempt.task_id != task_uuid {
+            let error_response = serde_json::json!({
+                "success": false,
+                "error": "Task attempt does not belong to the specified task",
+                "attempt_task_id": task_attempt.task_id.to_string(),
+                "expected_task_id": task_id
+            });
+            return Ok(CallToolResult::error(vec![Content::text(
+                serde_json::to_string_pretty(&error_response).unwrap(),
+            )]));
+        }
+
+        // Get the execution state
+        match TaskAttempt::get_execution_state(&self.pool, attempt_uuid, task_uuid, project_uuid).await {
+            Ok(state) => {
+                let execution_state_str = match state.execution_state {
+                    ExecutionState::NotStarted => "not_started",
+                    ExecutionState::SetupRunning => "setup_running",
+                    ExecutionState::SetupComplete => "setup_complete",
+                    ExecutionState::SetupFailed => "setup_failed",
+                    ExecutionState::SetupStopped => "setup_stopped",
+                    ExecutionState::CodingAgentRunning => "coding_agent_running",
+                    ExecutionState::CodingAgentComplete => "coding_agent_complete",
+                    ExecutionState::CodingAgentFailed => "coding_agent_failed",
+                    ExecutionState::CodingAgentStopped => "coding_agent_stopped",
+                    ExecutionState::Complete => "complete",
+                };
+
+                let response = GetTaskAttemptStatusResponse {
+                    success: true,
+                    attempt_id: attempt_id.clone(),
+                    execution_state: execution_state_str.to_string(),
+                    has_changes: state.has_changes,
+                    has_setup_script: state.has_setup_script,
+                    setup_process_id: state.setup_process_id,
+                    coding_agent_process_id: state.coding_agent_process_id,
+                    worktree_path: task_attempt.worktree_path,
+                    branch: task_attempt.branch,
+                    pr_url: task_attempt.pr_url,
+                };
+
+                Ok(CallToolResult::success(vec![Content::text(
+                    serde_json::to_string_pretty(&response).unwrap(),
+                )]))
+            }
+            Err(e) => {
+                let error_response = serde_json::json!({
+                    "success": false,
+                    "error": "Failed to get execution state",
+                    "details": e.to_string()
+                });
+                Ok(CallToolResult::error(vec![Content::text(
+                    serde_json::to_string_pretty(&error_response).unwrap(),
+                )]))
+            }
+        }
+    }
 }
 
 #[tool_handler]
@@ -816,7 +1159,7 @@ impl ServerHandler for TaskServer {
                 name: "vibe-kanban".to_string(),
                 version: "1.0.0".to_string(),
             },
-            instructions: Some("A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'get_task', 'update_task', 'delete_task'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string()),
+            instructions: Some("A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. This should be provided to you. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'get_task', 'update_task', 'delete_task', 'start_task_attempt', 'get_task_attempt_status'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string()),
         }
     }
 }

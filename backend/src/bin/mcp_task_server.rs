@@ -1,9 +1,10 @@
 use std::str::FromStr;
+use std::sync::Arc;
 
 use rmcp::{transport::stdio, ServiceExt};
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use tracing_subscriber::{prelude::*, EnvFilter};
-use vibe_kanban::{mcp::task_server::TaskServer, sentry_layer, utils::asset_dir};
+use vibe_kanban::{app_state::AppState, mcp::task_server::TaskServer, models::config::{Config, Environment}, sentry_layer, utils::{asset_dir, config_path}};
 
 fn main() -> anyhow::Result<()> {
     let environment = if cfg!(debug_assertions) {
@@ -44,7 +45,24 @@ fn main() -> anyhow::Result<()> {
             let options = SqliteConnectOptions::from_str(&database_url)?.create_if_missing(false);
             let pool = SqlitePool::connect_with(options).await?;
 
-            let service = TaskServer::new(pool)
+            // Load config
+            let config = match Config::load(&config_path()) {
+                Ok(config) => config,
+                Err(e) => {
+                    tracing::warn!("Failed to load config, using defaults: {}", e);
+                    Config::default()
+                }
+            };
+            let config = Arc::new(tokio::sync::RwLock::new(config));
+
+            // Create AppState
+            let env = std::env::var("ENVIRONMENT")
+                .unwrap_or_else(|_| "local".to_string());
+            let mode = env.parse().unwrap_or(Environment::Local);
+            tracing::info!("MCP server running in {mode} mode");
+            let app_state = AppState::new(pool.clone(), config, mode).await;
+
+            let service = TaskServer::new(pool, app_state)
                 .serve(stdio())
                 .await
                 .inspect_err(|e| {
