@@ -21,7 +21,7 @@ import {
   CreateProjectFromGitHub,
   Project,
   UpdateProject,
-} from '@/types/project-extensions';
+} from 'shared/types';
 import { projectsApi, configApi, githubApi, RepositoryInfo } from '@/lib/api';
 
 interface ProjectFormProps {

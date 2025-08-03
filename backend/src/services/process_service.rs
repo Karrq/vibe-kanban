@@ -45,6 +45,47 @@ impl ProcessService {
         
         Ok(false)
     }
+
+    /// Estimate approximate context usage based on output size
+    /// Returns a value between 0.0 and 1.0 representing the estimated context usage
+    fn estimate_context_usage(stdout: &str) -> f32 {
+        // Rough estimation: Claude Code has approximately 200k token context
+        // Average token is ~4 characters
+        // So roughly 800k characters max
+        const MAX_CHARS: usize = 800_000;
+        
+        let char_count = stdout.len();
+        let usage = char_count as f32 / MAX_CHARS as f32;
+        
+        usage.min(1.0)
+    }
+
+    /// Check if we should proactively compact the conversation
+    async fn should_compact_conversation(
+        pool: &SqlitePool,
+        execution_process_id: Uuid,
+    ) -> Result<bool, TaskAttemptError> {
+        let process = ExecutionProcess::find_by_id(pool, execution_process_id)
+            .await?
+            .ok_or(TaskAttemptError::ValidationError(
+                "Execution process not found".to_string(),
+            ))?;
+        
+        if let Some(stdout) = &process.stdout {
+            let usage = Self::estimate_context_usage(stdout);
+            
+            if usage >= 0.85 {
+                tracing::info!(
+                    "Context usage estimated at {:.1}% for process {}, recommending compaction",
+                    usage * 100.0,
+                    execution_process_id
+                );
+                return Ok(true);
+            }
+        }
+        
+        Ok(false)
+    }
     /// Run cleanup script if project has one configured
     pub async fn run_cleanup_script_if_configured(
         pool: &SqlitePool,
@@ -498,25 +539,66 @@ impl ProcessService {
             }
         };
 
-        // Check if the previous execution had a context limit error
+        // Check if the previous execution had a context limit error or is approaching the limit
         let had_context_limit_error = Self::has_context_limit_error(pool, most_recent_coding_agent.id)
             .await
             .unwrap_or(false);
+        
+        let should_compact = Self::should_compact_conversation(pool, most_recent_coding_agent.id)
+            .await
+            .unwrap_or(false);
 
-        // Try to use follow-up with session ID, but fall back to new session if it fails or if context limit was reached
+        // Determine how to proceed based on context state
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
             if had_context_limit_error {
-                // Previous session hit context limit, start new session
+                // Previous session hit context limit, start new session with summary
                 tracing::info!(
-                    "SESSION_FOLLOWUP: Previous session hit context limit, starting new session for attempt {} (worktree: {})",
+                    "SESSION_FOLLOWUP: Previous session hit context limit, starting new session with summary for attempt {} (worktree: {})",
                     attempt_id, worktree_path
                 );
+                
+                // Get the summary from the previous session if available
+                let summary = executor_session.summary.as_deref().unwrap_or("");
+                let context_prompt = if !summary.is_empty() {
+                    format!(
+                        "## Context from Previous Session\n\n{}\n\n## Current Request\n\n{}",
+                        summary, prompt
+                    )
+                } else {
+                    prompt.to_string()
+                };
+                
+                // Start new session with context from summary
                 crate::executor::ExecutorType::CodingAgent {
                     config: executor_config.clone(),
-                    follow_up: None,
+                    follow_up: Some(crate::executor::FollowUpInfo {
+                        session_id: String::new(), // Empty session ID forces new session
+                        prompt: context_prompt,
+                    }),
+                }
+            } else if should_compact {
+                // Approaching context limit, start new session with a compacting prompt
+                tracing::info!(
+                    "SESSION_FOLLOWUP: Approaching context limit (85%+), starting new session with compact prompt (attempt: {}, worktree: {})",
+                    attempt_id, worktree_path
+                );
+                
+                // Create a prompt that asks for summary and continues with the task
+                let compact_prompt = format!(
+                    "I'm starting a new session to continue our work. Please first provide a brief summary of what we've accomplished so far, then proceed with the following request:\n\n{}",
+                    prompt
+                );
+                
+                // Start new session with the compact prompt
+                crate::executor::ExecutorType::CodingAgent {
+                    config: executor_config.clone(),
+                    follow_up: Some(crate::executor::FollowUpInfo {
+                        session_id: String::new(), // Empty session ID forces new session
+                        prompt: compact_prompt,
+                    }),
                 }
             } else {
-                // Try with session ID for continuation
+                // Normal follow-up with session ID
                 debug!(
                     "SESSION_FOLLOWUP: Attempting follow-up execution with session ID: {} (attempt: {}, worktree: {})",
                     session_id, attempt_id, worktree_path

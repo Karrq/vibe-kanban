@@ -69,8 +69,8 @@ mod tests {
         assert!(result.is_ok());
         let cmd = result.unwrap();
 
-        // The command should contain either claude-code (PATH) or npx (fallback)
-        assert!(cmd.contains("claude-code") || cmd.contains("npx"));
+        // The command should contain either claude (PATH) or npx (fallback)
+        assert!(cmd.contains("claude") || cmd.contains("npx"));
         assert!(cmd.contains("--dangerously-skip-permissions"));
 
         // Test with additional args

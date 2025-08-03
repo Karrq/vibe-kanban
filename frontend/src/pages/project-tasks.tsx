@@ -39,8 +39,8 @@ import type {
   TaskStatus,
   TaskWithAttemptStatus,
   TaskTemplate,
+  ProjectWithBranch,
 } from 'shared/types';
-import type { ProjectWithBranch } from '@/types/project-extensions';
 import type { DragEndEvent } from '@/components/ui/shadcn-io/kanban';
 
 type Task = TaskWithAttemptStatus;

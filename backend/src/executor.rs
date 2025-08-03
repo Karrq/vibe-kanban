@@ -931,7 +931,6 @@ fn check_for_context_limit_error(line: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::executors::{AiderExecutor, AmpExecutor, ClaudeExecutor};
-    use crate::command_runner::CommandRunner;
 
     #[test]
     fn test_parse_claude_session_id() {

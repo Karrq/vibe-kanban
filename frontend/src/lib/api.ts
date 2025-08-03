@@ -24,14 +24,12 @@ import {
   UpdateTask,
   UpdateTaskTemplate,
   WorktreeDiff,
-} from 'shared/types';
-import {
   CreateProject,
   CreateProjectFromGitHub,
   Project,
   ProjectWithBranch,
   UpdateProject,
-} from '@/types/project-extensions';
+} from 'shared/types';
 
 export const makeRequest = async (url: string, options: RequestInit = {}) => {
   const headers = {
