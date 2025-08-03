@@ -16,6 +16,7 @@ import { configApi } from '@/lib/api';
 import * as Sentry from '@sentry/react';
 import { Loader } from '@/components/ui/loader';
 import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
+import { GlitterTrail } from '@/components/GlitterTrail';
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
@@ -134,6 +135,7 @@ function AppContent() {
   return (
     <ThemeProvider initialTheme={config?.theme || 'system'}>
       <div className="h-screen flex flex-col bg-background">
+        <GlitterTrail />
         <GitHubLoginDialog
           open={showGitHubLogin}
           onOpenChange={handleGitHubLoginComplete}
