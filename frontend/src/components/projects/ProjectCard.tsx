@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import {
+  Archive,
   Calendar,
   Edit,
   ExternalLink,
@@ -32,6 +33,8 @@ type Props = {
   setError: (error: string) => void;
   setEditingProject: (project: Project) => void;
   setShowForm: (show: boolean) => void;
+  onArchive: (projectId: string) => void;
+  isArchived: boolean;
 };
 
 function ProjectCard({
@@ -41,6 +44,8 @@ function ProjectCard({
   setError,
   setEditingProject,
   setShowForm,
+  onArchive,
+  isArchived,
 }: Props) {
   const navigate = useNavigate();
   const ref = useRef<HTMLDivElement>(null);
@@ -85,7 +90,7 @@ function ProjectCard({
 
   return (
     <Card
-      className={`hover:shadow-md transition-shadow cursor-pointer focus:ring-2 focus:ring-primary outline-none`}
+      className={`hover:shadow-md transition-shadow cursor-pointer focus:ring-2 focus:ring-primary outline-none ${isArchived ? 'opacity-60' : ''}`}
       onClick={() => navigate(`/projects/${project.id}/tasks`)}
       tabIndex={isFocused ? 0 : -1}
       ref={ref}
@@ -94,7 +99,11 @@ function ProjectCard({
         <div className="flex items-start justify-between">
           <CardTitle className="text-lg">{project.name}</CardTitle>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">Active</Badge>
+            {isArchived ? (
+              <Badge variant="secondary">Archived</Badge>
+            ) : (
+              <Badge variant="secondary">Active</Badge>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -128,6 +137,15 @@ function ProjectCard({
                 >
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onArchive(project.id);
+                  }}
+                >
+                  <Archive className="mr-2 h-4 w-4" />
+                  {isArchived ? 'Unarchive' : 'Archive'}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={(e) => {

@@ -13,6 +13,7 @@ import {
   useKeyboardShortcuts,
   useKanbanKeyboardNavigation,
 } from '@/lib/keyboard-shortcuts.ts';
+import { useArchive } from '@/hooks/useArchive';
 
 type Task = TaskWithAttemptStatus;
 
@@ -64,6 +65,7 @@ function TaskKanbanBoard({
     taskId?: string;
   }>();
   const navigate = useNavigate();
+  const { filterTasks, toggleTaskArchive, isTaskArchived } = useArchive();
 
   useKeyboardShortcuts({
     navigate,
@@ -74,19 +76,19 @@ function TaskKanbanBoard({
     taskId || null
   );
   const [focusedStatus, setFocusedStatus] = useState<TaskStatus | null>(null);
+  const [showArchivedIndicator, setShowArchivedIndicator] = useState(false);
 
-  // Memoize filtered tasks
-  const filteredTasks = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return tasks;
-    }
-    const query = searchQuery.toLowerCase();
-    return tasks.filter(
-      (task) =>
-        task.title.toLowerCase().includes(query) ||
-        (task.description && task.description.toLowerCase().includes(query))
-    );
-  }, [tasks, searchQuery]);
+  // Memoize filtered tasks with archive support
+  const { filteredTasks, hasOnlyArchived } = useMemo(() => {
+    // filterTasks already handles both archive filtering and search filtering
+    const { visible, hasOnlyArchived } = filterTasks(tasks, searchQuery, projectId);
+    return { filteredTasks: visible, hasOnlyArchived };
+  }, [tasks, searchQuery, filterTasks, projectId]);
+
+  // Update archived indicator
+  useEffect(() => {
+    setShowArchivedIndicator(hasOnlyArchived);
+  }, [hasOnlyArchived]);
 
   // Memoize grouped tasks
   const groupedTasks = useMemo(() => {
@@ -149,8 +151,16 @@ function TaskKanbanBoard({
   });
 
   return (
-    <KanbanProvider onDragEnd={onDragEnd}>
-      {Object.entries(groupedTasks).map(([status, statusTasks]) => (
+    <>
+      {showArchivedIndicator && searchQuery.trim() && (
+        <div className="mb-4 p-3 bg-muted/50 border border-muted rounded-md">
+          <p className="text-sm text-muted-foreground">
+            Showing archived tasks because only archived items match your search
+          </p>
+        </div>
+      )}
+      <KanbanProvider onDragEnd={onDragEnd}>
+        {Object.entries(groupedTasks).map(([status, statusTasks]) => (
         <KanbanBoard key={status} id={status as TaskStatus}>
           <KanbanHeader
             name={statusLabels[status as TaskStatus]}
@@ -165,6 +175,8 @@ function TaskKanbanBoard({
                 status={status}
                 onEdit={onEditTask}
                 onDelete={onDeleteTask}
+                onArchive={toggleTaskArchive}
+                isArchived={isTaskArchived(task.id)}
                 onViewDetails={onViewTaskDetails}
                 isFocused={focusedTaskId === task.id}
                 tabIndex={focusedTaskId === task.id ? 0 : -1}
@@ -172,8 +184,9 @@ function TaskKanbanBoard({
             ))}
           </KanbanCards>
         </KanbanBoard>
-      ))}
-    </KanbanProvider>
+        ))}
+      </KanbanProvider>
+    </>
   );
 }
 

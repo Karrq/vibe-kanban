@@ -11,6 +11,7 @@ import { OnboardingDialog } from '@/components/OnboardingDialog';
 import { PrivacyOptInDialog } from '@/components/PrivacyOptInDialog';
 import { ConfigProvider, useConfig } from '@/components/config-provider';
 import { ThemeProvider } from '@/components/theme-provider';
+import { ArchiveProvider } from '@/contexts/ArchiveContext';
 import type { EditorType, ExecutorConfig } from 'shared/types';
 import { configApi } from '@/lib/api';
 import * as Sentry from '@sentry/react';
@@ -178,7 +179,9 @@ function App() {
   return (
     <BrowserRouter>
       <ConfigProvider>
-        <AppContent />
+        <ArchiveProvider>
+          <AppContent />
+        </ArchiveProvider>
       </ConfigProvider>
     </BrowserRouter>
   );

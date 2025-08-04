@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { KanbanCard } from '@/components/ui/shadcn-io/kanban';
 import {
+  Archive,
   CheckCircle,
   Edit,
   Loader2,
@@ -27,6 +28,8 @@ interface TaskCardProps {
   status: string;
   onEdit: (task: Task) => void;
   onDelete: (taskId: string) => void;
+  onArchive: (taskId: string) => void;
+  isArchived: boolean;
   onViewDetails: (task: Task) => void;
   isFocused: boolean;
   tabIndex?: number;
@@ -38,6 +41,8 @@ export function TaskCard({
   status,
   onEdit,
   onDelete,
+  onArchive,
+  isArchived,
   onViewDetails,
   isFocused,
   tabIndex = -1,
@@ -77,7 +82,7 @@ export function TaskCard({
       forwardedRef={localRef}
       onKeyDown={handleKeyDown}
     >
-      <div className="space-y-2">
+      <div className={`space-y-2 ${isArchived ? 'opacity-60' : ''}`}>
         <div className="flex items-start justify-between">
           <div className="flex-1 pr-2">
             <div className="mb-1">
@@ -88,6 +93,11 @@ export function TaskCard({
                       PLAN
                     </Badge>
                   )}
+                {isArchived && (
+                  <Badge variant="secondary" className="text-xs font-medium px-1.5 py-0.5 h-4 text-[10px] mr-1">
+                    ARCHIVED
+                  </Badge>
+                )}
                 {task.title}
               </h4>
             </div>
@@ -126,6 +136,10 @@ export function TaskCard({
                   <DropdownMenuItem onClick={() => onEdit(task)}>
                     <Edit className="h-4 w-4 mr-2" />
                     Edit
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onArchive(task.id)}>
+                    <Archive className="h-4 w-4 mr-2" />
+                    {isArchived ? 'Unarchive' : 'Archive'}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => onDelete(task.id)}
