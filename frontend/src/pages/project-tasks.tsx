@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { FolderOpen, Plus, Settings, LibraryBig, Globe2 } from 'lucide-react';
+import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2 } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { projectsApi, tasksApi, templatesApi } from '@/lib/api';
 import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
@@ -11,6 +11,7 @@ import { ProjectForm } from '@/components/projects/project-form';
 import { TaskTemplateManager } from '@/components/TaskTemplateManager';
 import { useKeyboardShortcuts } from '@/lib/keyboard-shortcuts';
 import { useTaskPlan } from '@/components/context/TaskPlanContext';
+import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +34,7 @@ import {
 
 import TaskKanbanBoard from '@/components/tasks/TaskKanbanBoard';
 import { TaskDetailsPanel } from '@/components/tasks/TaskDetailsPanel';
+import { useArchive } from '@/hooks/useArchive';
 import type {
   CreateTaskAndStart,
   ExecutorConfig,
@@ -51,6 +53,7 @@ export function ProjectTasks() {
     taskId?: string;
   }>();
   const navigate = useNavigate();
+  const { filterTasks, showArchivedTasks, toggleShowArchivedTasks } = useArchive();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +66,12 @@ export function ProjectTasks() {
   const [selectedTemplate, setSelectedTemplate] = useState<TaskTemplate | null>(
     null
   );
+  
+  // Calculate project-specific archived count
+  const projectArchivedCount = useMemo(() => {
+    const { archivedCount } = filterTasks(tasks, '', projectId);
+    return archivedCount;
+  }, [tasks, projectId, filterTasks]);
 
   // Template management state
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
@@ -415,6 +424,19 @@ export function ProjectTasks() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-64"
             />
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={toggleShowArchivedTasks}
+              disabled={projectArchivedCount === 0 && !showArchivedTasks}
+              className={cn(
+                projectArchivedCount === 0 && !showArchivedTasks ? "opacity-50" : "",
+                showArchivedTasks && "bg-accent"
+              )}
+              title={showArchivedTasks ? `Hide archived tasks (${projectArchivedCount})` : `Show archived tasks (${projectArchivedCount})`}
+            >
+              <Archive className="h-4 w-4" />
+            </Button>
             <Button onClick={handleCreateNewTask}>
               <Plus className="h-4 w-4 mr-2" />
               Add Task
@@ -576,6 +598,7 @@ export function ProjectTasks() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

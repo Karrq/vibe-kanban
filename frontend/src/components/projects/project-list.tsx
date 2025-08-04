@@ -7,14 +7,24 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
 import { Project } from 'shared/types';
 import { ProjectForm } from './project-form';
 import { projectsApi } from '@/lib/api';
-import { AlertCircle, Loader2, Plus } from 'lucide-react';
+import { AlertCircle, Archive, Loader2, Plus, Search } from 'lucide-react';
 import ProjectCard from '@/components/projects/ProjectCard.tsx';
+import { useArchive } from '@/hooks/useArchive';
 
 export function ProjectList() {
   const navigate = useNavigate();
+  const {
+    filterProjects,
+    toggleProjectArchive,
+    isProjectArchived,
+    archivedCounts,
+    showArchivedProjects,
+    toggleShowArchivedProjects,
+  } = useArchive();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -22,6 +32,19 @@ export function ProjectList() {
   const [error, setError] = useState('');
   const [focusedProjectId, setFocusedProjectId] = useState<string | null>(null);
   const [focusedColumn, setFocusedColumn] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showArchivedIndicator, setShowArchivedIndicator] = useState(false);
+
+  // Filter projects based on archive status and search
+  const { visible: visibleProjects, hasOnlyArchived } = filterProjects(
+    projects,
+    searchQuery
+  );
+
+  // Update archived indicator
+  useEffect(() => {
+    setShowArchivedIndicator(hasOnlyArchived);
+  }, [hasOnlyArchived]);
 
   const fetchProjects = async () => {
     setLoading(true);
@@ -67,16 +90,16 @@ export function ProjectList() {
   };
 
   const columns = getGridColumns();
-  const groupedProjects = groupProjectsByColumns(projects, columns);
+  const groupedProjects = groupProjectsByColumns(visibleProjects, columns);
   const allColumnKeys = Object.keys(groupedProjects);
 
   // Set initial focus when projects are loaded
   useEffect(() => {
-    if (projects.length > 0 && !focusedProjectId) {
-      setFocusedProjectId(projects[0].id);
+    if (visibleProjects.length > 0 && !focusedProjectId) {
+      setFocusedProjectId(visibleProjects[0].id);
       setFocusedColumn('column-0');
     }
-  }, [projects, focusedProjectId]);
+  }, [visibleProjects, focusedProjectId]);
 
   const handleViewProjectDetails = (project: Project) => {
     navigate(`/projects/${project.id}/tasks`);
@@ -89,7 +112,7 @@ export function ProjectList() {
     focusedStatus: focusedColumn,
     setFocusedStatus: setFocusedColumn,
     groupedTasks: groupedProjects,
-    filteredTasks: projects,
+    filteredTasks: visibleProjects,
     allTaskStatuses: allColumnKeys,
     onViewTaskDetails: handleViewProjectDetails,
     preserveIndexOnColumnSwitch: true,
@@ -129,17 +152,40 @@ export function ProjectList() {
 
   return (
     <div className="space-y-6 p-8">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
           <p className="text-muted-foreground">
             Manage your projects and track their progress
           </p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Create Project
-        </Button>
+        <div className="flex items-center space-x-4">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search projects..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 w-64"
+            />
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={toggleShowArchivedProjects}
+            disabled={archivedCounts.projects === 0 && !showArchivedProjects}
+            className={`${
+              archivedCounts.projects === 0 && !showArchivedProjects ? "opacity-50" : ""
+            } ${showArchivedProjects ? "bg-accent" : ""}`}
+            title={showArchivedProjects ? `Hide archived projects (${archivedCounts.projects})` : `Show archived projects (${archivedCounts.projects})`}
+          >
+            <Archive className="h-4 w-4" />
+          </Button>
+          <Button onClick={() => setShowForm(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Project
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -154,36 +200,61 @@ export function ProjectList() {
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           Loading projects...
         </div>
-      ) : projects.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-              <Plus className="h-6 w-6" />
-            </div>
-            <h3 className="mt-4 text-lg font-semibold">No projects yet</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Get started by creating your first project.
-            </p>
-            <Button className="mt-4" onClick={() => setShowForm(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create your first project
-            </Button>
-          </CardContent>
-        </Card>
+      ) : visibleProjects.length === 0 ? (
+        projects.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                <Plus className="h-6 w-6" />
+              </div>
+              <h3 className="mt-4 text-lg font-semibold">No projects yet</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Get started by creating your first project.
+              </p>
+              <Button className="mt-4" onClick={() => setShowForm(true)}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create your first project
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <h3 className="mt-4 text-lg font-semibold">
+                All projects are archived
+              </h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Try searching to show archived projects that match your query.
+              </p>
+            </CardContent>
+          </Card>
+        )
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              isFocused={focusedProjectId === project.id}
-              setError={setError}
-              setEditingProject={setEditingProject}
-              setShowForm={setShowForm}
-              fetchProjects={fetchProjects}
-            />
-          ))}
-        </div>
+        <>
+          {showArchivedIndicator && (
+            <div className="mb-4 p-3 bg-muted/50 border border-muted rounded-md">
+              <p className="text-sm text-muted-foreground">
+                Showing archived projects because only archived items match your
+                search
+              </p>
+            </div>
+          )}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {visibleProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                isFocused={focusedProjectId === project.id}
+                setError={setError}
+                setEditingProject={setEditingProject}
+                setShowForm={setShowForm}
+                fetchProjects={fetchProjects}
+                onArchive={toggleProjectArchive}
+                isArchived={isProjectArchived(project.id)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <ProjectForm
@@ -195,6 +266,7 @@ export function ProjectList() {
         onSuccess={handleFormSuccess}
         project={editingProject}
       />
+
     </div>
   );
 }
