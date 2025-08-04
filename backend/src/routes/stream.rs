@@ -1,4 +1,6 @@
 use std::time::Duration;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use axum::{
     extract::{Path, Query, State},
@@ -15,6 +17,8 @@ use crate::{
     app_state::AppState,
     executors::gemini::GeminiExecutor,
     models::execution_process::{ExecutionProcess, ExecutionProcessStatus},
+    services::{CheckpointService, is_state_mutating_tool},
+    executor::NormalizedEntryType,
 };
 
 /// Interval for DB tail polling (ms) - now blazing fast for real-time updates
@@ -42,16 +46,37 @@ pub async fn normalized_logs_stream(
     Query(query): Query<StreamQuery>,
     State(app_state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, axum::Error>>> {
-    // Check if this is a Gemini executor (only executor with streaming support)
-    let is_gemini = match ExecutionProcess::find_by_id(&app_state.db_pool, process_id).await {
-        Ok(Some(process)) => process.executor_type.as_deref() == Some("gemini"),
+    // Get process info including task_attempt_id and working directory
+    let (is_gemini, task_attempt_id, working_dir, process_type) = match ExecutionProcess::find_by_id(&app_state.db_pool, process_id).await {
+        Ok(Some(process)) => (
+            process.executor_type.as_deref() == Some("gemini"),
+            process.task_attempt_id,
+            process.working_directory.clone(),
+            process.process_type.clone(),
+        ),
         _ => {
             tracing::warn!(
                 "Failed to find execution process {} for SSE streaming",
                 process_id
             );
-            false
+            (false, Uuid::new_v4(), String::new(), crate::models::execution_process::ExecutionProcessType::CodingAgent)
         }
+    };
+
+    // Initialize checkpoint service for CodingAgent processes
+    let checkpoint_service = if matches!(process_type, crate::models::execution_process::ExecutionProcessType::CodingAgent) {
+        match CheckpointService::new(&working_dir, task_attempt_id) {
+            Ok(service) => {
+                tracing::info!("Initialized checkpoint service for attempt {}", task_attempt_id);
+                Some(Arc::new(Mutex::new(service)))
+            }
+            Err(e) => {
+                tracing::warn!("Failed to initialize checkpoint service: {}", e);
+                None
+            }
+        }
+    } else {
+        None
     };
 
     // Use blazing fast polling interval for Gemini (only streaming executor)
@@ -201,15 +226,54 @@ pub async fn normalized_logs_stream(
                 if last_entry_count >= normalized.entries.len() {
                     continue;
                 }
-                let new_entries = [&normalized.entries[last_entry_count]];
-                let patches: Vec<Value> = new_entries
-                    .iter()
-                    .map(|entry| serde_json::json!({
-                        "op": "add",
-                        "path": "/entries/-",
-                        "value": entry
-                    }))
-                    .collect();
+                let new_entry = &normalized.entries[last_entry_count];
+                
+                // Check if this entry is a state-mutating tool use and trigger checkpoint
+                if let Some(checkpoint_svc) = &checkpoint_service {
+                    if let NormalizedEntryType::ToolUse { tool_name, .. } = &new_entry.entry_type {
+                        if is_state_mutating_tool(tool_name) {
+                            // Capture checkpoint state synchronously (critical section)
+                            let service = checkpoint_svc.lock().await;
+                            match service.capture_checkpoint_state(last_entry_count) {
+                                Ok(Some(commit_data)) => {
+                                    // Create commit asynchronously (non-critical section)
+                                    let tool_name_clone = tool_name.clone();
+                                    tokio::spawn(async move {
+                                        match CheckpointService::create_checkpoint_commit(commit_data).await {
+                                            Ok(_) => {
+                                                tracing::debug!(
+                                                    "Checkpoint commit created after tool: {}",
+                                                    tool_name_clone
+                                                );
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!(
+                                                    "Failed to create checkpoint commit after tool {}: {}",
+                                                    tool_name_clone, e
+                                                );
+                                            }
+                                        }
+                                    });
+                                }
+                                Ok(None) => {
+                                    // No changes detected, checkpoint skipped
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Failed to capture checkpoint state after tool {}: {}",
+                                        tool_name, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                let patches: Vec<Value> = vec![serde_json::json!({
+                    "op": "add",
+                    "path": "/entries/-",
+                    "value": new_entry
+                })];
 
                 // 6. Emit the batch
                 let batch_data = BatchData {
