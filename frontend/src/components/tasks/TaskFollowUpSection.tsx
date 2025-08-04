@@ -61,13 +61,15 @@ export function TaskFollowUpSection() {
       return false;
     }
 
-    const completedOrKilledCodingAgentProcesses = attemptData.processes.filter(
+    const resumableCodingAgentProcesses = attemptData.processes.filter(
       (process) =>
         process.process_type === 'codingagent' &&
-        (process.status === 'completed' || process.status === 'killed')
+        (process.status === 'completed' || 
+         process.status === 'killed' || 
+         process.status === 'failed')
     );
 
-    return completedOrKilledCodingAgentProcesses.length > 0;
+    return resumableCodingAgentProcesses.length > 0;
   }, [
     selectedAttempt,
     attemptData.processes,
