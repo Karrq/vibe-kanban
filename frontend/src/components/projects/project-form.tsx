@@ -28,6 +28,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
+import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
 
 interface ProjectFormProps {
   open: boolean;
@@ -353,6 +354,7 @@ export function ProjectForm({
                           onChange={(e) => setSetupScript(e.target.value)}
                           className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
                           rows={3}
+                          {...getTextareaNoAutoCorrect()}
                         />
                         <p className="text-sm text-muted-foreground">
                           This script will run after cloning the repository and before the
@@ -388,6 +390,7 @@ export function ProjectForm({
                           onChange={(e) => setDevScript(e.target.value)}
                           className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
                           rows={3}
+                          {...getTextareaNoAutoCorrect()}
                         />
                         <p className="text-sm text-muted-foreground">
                           This script can be run from task attempts to start a development
@@ -423,6 +426,7 @@ export function ProjectForm({
                           onChange={(e) => setCleanupScript(e.target.value)}
                           className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
                           rows={3}
+                          {...getTextareaNoAutoCorrect()}
                         />
                         <p className="text-sm text-muted-foreground">
                           This script will run after coding agent execution is complete. Use it
@@ -458,6 +462,7 @@ export function ProjectForm({
                           onChange={(e) => setExecutorEnvScript(e.target.value)}
                           className="w-full p-2 border border-input bg-background text-foreground rounded-md resize-none"
                           rows={3}
+                          {...getTextareaNoAutoCorrect()}
                         />
                         <p className="text-sm text-muted-foreground">
                           This script will run before the executor starts to set up environment

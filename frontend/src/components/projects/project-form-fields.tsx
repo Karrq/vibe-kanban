@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
 import { useState } from 'react';
+import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
 
 interface ProjectFormFieldsProps {
   isEditing: boolean;
@@ -234,6 +235,7 @@ export function ProjectFormFields({
                 placeholder={placeholders.setup}
                 rows={4}
                 className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+                {...getTextareaNoAutoCorrect()}
               />
               <p className="text-sm text-muted-foreground">
                 This script will run after creating the worktree and before the
@@ -269,6 +271,7 @@ export function ProjectFormFields({
                 placeholder={placeholders.dev}
                 rows={4}
                 className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+                {...getTextareaNoAutoCorrect()}
               />
               <p className="text-sm text-muted-foreground">
                 This script can be run from task attempts to start a development
@@ -307,6 +310,7 @@ export function ProjectFormFields({
                 placeholder={placeholders.cleanup}
                 rows={4}
                 className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+                {...getTextareaNoAutoCorrect()}
               />
               <p className="text-sm text-muted-foreground">
                 This script will run after coding agent execution is complete.
@@ -347,6 +351,7 @@ export function ProjectFormFields({
                 placeholder={placeholders.executorEnv}
                 rows={4}
                 className="w-full px-3 py-2 border border-input bg-background text-foreground rounded-md resize-vertical focus:outline-none focus:ring-2 focus:ring-ring"
+                {...getTextareaNoAutoCorrect()}
               />
               <p className="text-sm text-muted-foreground">
                 This script will run before the executor starts to set up

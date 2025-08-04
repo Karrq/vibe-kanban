@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
 
 interface AutoExpandingTextareaProps extends React.ComponentProps<'textarea'> {
   maxRows?: number;
@@ -8,7 +9,7 @@ interface AutoExpandingTextareaProps extends React.ComponentProps<'textarea'> {
 const AutoExpandingTextarea = React.forwardRef<
   HTMLTextAreaElement,
   AutoExpandingTextareaProps
->(({ className, maxRows = 10, ...props }, ref) => {
+>(({ className, maxRows = 10, style, ...props }, ref) => {
   const internalRef = React.useRef<HTMLTextAreaElement>(null);
 
   // Get the actual ref to use
@@ -52,6 +53,8 @@ const AutoExpandingTextarea = React.forwardRef<
     [adjustHeight, props.onInput]
   );
 
+  const noAutoCorrect = getTextareaNoAutoCorrect(style);
+  
   return (
     <textarea
       className={cn(
@@ -60,6 +63,7 @@ const AutoExpandingTextarea = React.forwardRef<
       )}
       ref={textareaRef}
       onInput={handleInput}
+      {...noAutoCorrect}
       {...props}
     />
   );
