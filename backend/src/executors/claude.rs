@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use async_trait::async_trait;
+use serde_json::Value;
 use uuid::Uuid;
 
 use super::build_agent_command;
@@ -8,7 +9,7 @@ use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
         ActionType, Executor, ExecutorError, NormalizedConversation, NormalizedEntry,
-        NormalizedEntryType,
+        NormalizedEntryType, ToolResult,
     },
     models::{project::Project, task::Task},
     utils::shell::get_shell_command,
@@ -94,9 +95,9 @@ impl Executor for ClaudeExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let prompt = if let Some(task_description) = task.description {
             format!(
@@ -153,9 +154,9 @@ Task title: {}"#,
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
 
@@ -197,8 +198,6 @@ Task title: {}"#,
         logs: &str,
         worktree_path: &str,
     ) -> Result<NormalizedConversation, String> {
-        use serde_json::Value;
-
         let mut entries = Vec::new();
         let mut session_id = None;
 
@@ -218,6 +217,7 @@ Task title: {}"#,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
                         metadata: None,
+                        tool_result: None,
                     });
                     continue;
                 }
@@ -253,6 +253,7 @@ Task title: {}"#,
                                                             NormalizedEntryType::AssistantMessage,
                                                         content: text.to_string(),
                                                         metadata: Some(content_item.clone()),
+                                                        tool_result: None,
                                                     });
                                                 }
                                             }
@@ -284,6 +285,7 @@ Task title: {}"#,
                                                         },
                                                         content,
                                                         metadata: Some(content_item.clone()),
+                                                        tool_result: None,
                                                     });
                                                 }
                                             }
@@ -303,17 +305,71 @@ Task title: {}"#,
                                     if let Some(content_type) =
                                         content_item.get("type").and_then(|t| t.as_str())
                                     {
-                                        if content_type == "text" {
-                                            if let Some(text) =
-                                                content_item.get("text").and_then(|t| t.as_str())
-                                            {
-                                                entries.push(NormalizedEntry {
-                                                    timestamp: None,
-                                                    entry_type: NormalizedEntryType::UserMessage,
-                                                    content: text.to_string(),
-                                                    metadata: Some(content_item.clone()),
-                                                });
+                                        match content_type {
+                                            "text" => {
+                                                if let Some(text) = content_item
+                                                    .get("text")
+                                                    .and_then(|t| t.as_str())
+                                                {
+                                                    entries.push(NormalizedEntry {
+                                                        timestamp: None,
+                                                        entry_type:
+                                                            NormalizedEntryType::UserMessage,
+                                                        content: text.to_string(),
+                                                        metadata: Some(content_item.clone()),
+                                                        tool_result: None,
+                                                    });
+                                                }
                                             }
+                                            "tool_result" => {
+                                                // Parse tool result and associate it with the previously seen tool_use
+                                                if let Some(tool_use_id) = content_item
+                                                    .get("tool_use_id")
+                                                    .and_then(|id| id.as_str())
+                                                {
+                                                    let content = content_item
+                                                        .get("content")
+                                                        .and_then(|c| c.as_str())
+                                                        .map(|s| s.to_string());
+                                                    let is_error = content_item
+                                                        .get("is_error")
+                                                        .and_then(|e| e.as_bool())
+                                                        .unwrap_or(false);
+
+                                                    let tool_result = ToolResult {
+                                                        content,
+                                                        is_error,
+                                                        exit_code: if is_error {
+                                                            Some(1)
+                                                        } else {
+                                                            Some(0)
+                                                        },
+                                                    };
+
+                                                    // Find the corresponding tool_use entry by searching backwards
+                                                    // (tool_use always appears before its tool_result)
+                                                    for entry in entries.iter_mut().rev() {
+                                                        if let NormalizedEntryType::ToolUse {
+                                                            ..
+                                                        } = &entry.entry_type
+                                                        {
+                                                            if entry
+                                                                .metadata
+                                                                .as_ref()
+                                                                .and_then(|m| m.get("id"))
+                                                                .and_then(|id| id.as_str())
+                                                                == Some(tool_use_id)
+                                                                && entry.tool_result.is_none()
+                                                            {
+                                                                entry.tool_result =
+                                                                    Some(tool_result);
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            _ => {}
                                         }
                                     }
                                 }
@@ -334,9 +390,15 @@ Task title: {}"#,
                                             .unwrap_or("unknown")
                                     ),
                                     metadata: Some(json.clone()),
+                                    tool_result: None,
                                 });
                             }
                         }
+                        true
+                    }
+                    "result" => {
+                        // This is the final result message from Claude
+                        // We don't need to display it as it duplicates the assistant's final message
                         true
                     }
                     _ => false,
@@ -346,19 +408,13 @@ Task title: {}"#,
             };
 
             // If JSON didn't match expected patterns, add it as unrecognized JSON
-            // Skip JSON with type "result" as requested
             if !processed {
-                if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
-                    if msg_type == "result" {
-                        // Skip result entries
-                        continue;
-                    }
-                }
                 entries.push(NormalizedEntry {
                     timestamp: None,
                     entry_type: NormalizedEntryType::SystemMessage,
                     content: format!("Unrecognized JSON: {}", trimmed),
                     metadata: Some(json),
+                    tool_result: None,
                 });
             }
         }

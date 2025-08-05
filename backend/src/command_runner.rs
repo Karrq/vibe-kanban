@@ -274,11 +274,10 @@ impl CommandRunner {
             // Create a temporary file for the setup script
             let temp_dir = std::env::temp_dir();
             let script_path = temp_dir.join(format!("vibe-env-setup-{}.sh", uuid::Uuid::new_v4()));
-            
+
             // Write the script to the file
-            std::fs::write(&script_path, script)
-                .map_err(|e| CommandError::IoError { error: e })?;
-            
+            std::fs::write(&script_path, script).map_err(|e| CommandError::IoError { error: e })?;
+
             // Make the script executable
             #[cfg(unix)]
             {
@@ -290,11 +289,11 @@ impl CommandRunner {
                 std::fs::set_permissions(&script_path, perms)
                     .map_err(|e| CommandError::IoError { error: e })?;
             }
-            
+
             // The setup script becomes the command, with the original command and args as parameters
             let mut new_args = vec![std::mem::take(&mut request.command)];
             new_args.extend(std::mem::take(&mut request.args));
-            
+
             request.command = script_path.to_string_lossy().into_owned();
             request.args = new_args;
         }

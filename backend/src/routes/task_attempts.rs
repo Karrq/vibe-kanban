@@ -157,6 +157,7 @@ async fn normalize_process_logs(
                             entry_type: NormalizedEntryType::ErrorMessage,
                             content: filtered_content.trim().to_string(),
                             metadata: None,
+                            tool_result: None,
                         });
                     }
                 }
@@ -328,12 +329,13 @@ pub async fn merge_task_attempt(
     });
 
     match TaskAttempt::merge_changes(
-        &app_state.db_pool, 
-        task_attempt.id, 
-        task.id, 
+        &app_state.db_pool,
+        task_attempt.id,
+        task.id,
         project.id,
-        custom_commit_message
-    ).await
+        custom_commit_message,
+    )
+    .await
     {
         Ok(_) => {
             // Update task status to Done

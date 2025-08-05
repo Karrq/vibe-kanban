@@ -44,9 +44,9 @@ impl Executor for GeminiExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let prompt = if let Some(task_description) = task.description {
             format!(
@@ -65,7 +65,8 @@ Task title: {}"#,
             )
         };
 
-        let mut command = Self::create_gemini_command(worktree_path, project.executor_env_script.clone());
+        let mut command =
+            Self::create_gemini_command(worktree_path, project.executor_env_script.clone());
         command.stdin(&prompt);
 
         let proc = command.start().await.map_err(|e| {
@@ -121,16 +122,21 @@ Task title: {}"#,
             .map_err(|_| ExecutorError::InvalidSessionId(session_id.to_string()))?;
 
         let task = self.load_task(pool, task_id).await?;
-        
+
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
-        
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
+
         let resume_context = self.collect_resume_context(pool, &task, attempt_id).await?;
         let comprehensive_prompt = self.build_comprehensive_prompt(&task, &resume_context, prompt);
-        self.spawn_process(worktree_path, &comprehensive_prompt, attempt_id, project.executor_env_script)
-            .await
+        self.spawn_process(
+            worktree_path,
+            &comprehensive_prompt,
+            attempt_id,
+            project.executor_env_script,
+        )
+        .await
     }
 
     async fn execute_followup_streaming(
@@ -201,6 +207,7 @@ Task title: {}"#,
                             entry_type: NormalizedEntryType::SystemMessage,
                             content: format!("Raw output: {}", trimmed),
                             metadata: None,
+                            tool_result: None,
                         };
                         entries.push(fallback_entry);
                     }
@@ -212,6 +219,7 @@ Task title: {}"#,
                     entry_type: NormalizedEntryType::AssistantMessage,
                     content: trimmed.to_string(),
                     metadata: None,
+                    tool_result: None,
                 };
                 entries.push(text_entry);
             }
@@ -246,7 +254,10 @@ Task title: {}"#,
 
 impl GeminiExecutor {
     /// Create a standardized Gemini CLI command
-    fn create_gemini_command(worktree_path: &str, executor_env_script: Option<String>) -> CommandRunner {
+    fn create_gemini_command(
+        worktree_path: &str,
+        executor_env_script: Option<String>,
+    ) -> CommandRunner {
         let (shell_cmd, shell_arg) = get_shell_command();
         let gemini_command = build_agent_command("gemini", None)
             .unwrap_or_else(|_| "npx @google/gemini-cli@latest --yolo".to_string());
@@ -259,7 +270,7 @@ impl GeminiExecutor {
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1")
             .env_setup_script(executor_env_script);
-        
+
         command
     }
 

@@ -368,6 +368,7 @@ fn format_diff_as_normalized_json(
         },
         content: format!("`{}`", path),
         metadata: None,
+        tool_result: None,
     };
 
     serde_json::to_string(&normalized_entry).unwrap() + "\n"
@@ -421,6 +422,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 entry_type: NormalizedEntryType::SystemMessage,
                 content: trimmed.to_string(),
                 metadata: None,
+                tool_result: None,
             }
         } else if AiderFilter::is_error(trimmed) {
             NormalizedEntry {
@@ -428,6 +430,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 entry_type: NormalizedEntryType::ErrorMessage,
                 content: trimmed.to_string(),
                 metadata: None,
+                tool_result: None,
             }
         } else {
             // Regular assistant message
@@ -436,6 +439,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 entry_type: NormalizedEntryType::AssistantMessage,
                 content: trimmed.to_string(),
                 metadata: None,
+                tool_result: None,
             }
         };
 
@@ -482,9 +486,9 @@ impl Executor for AiderExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let prompt = if let Some(task_description) = task.description {
             format!("{}\n{}", task.title, task_description)
@@ -724,9 +728,9 @@ impl Executor for AiderExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let base_dir = TaskAttempt::get_worktree_base_dir();
 

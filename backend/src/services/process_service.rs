@@ -597,7 +597,6 @@ impl ProcessService {
 
         tracing::info!("Starting {} for task attempt {}", activity_note, attempt_id);
 
-
         // Execute the process
         let child = Self::execute_process(
             &executor_type,
@@ -889,7 +888,6 @@ impl ProcessService {
             .await;
     }
 
-    
     /// Create execution process database record with delegation context
     async fn create_execution_process_record_with_delegation(
         pool: &SqlitePool,

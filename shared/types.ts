@@ -120,11 +120,25 @@ export type UpdateExecutorSession = { session_id: string | null, prompt: string 
 
 export type NormalizedConversation = { entries: Array<NormalizedEntry>, session_id: string | null, executor_type: string, prompt: string | null, summary: string | null, };
 
-export type NormalizedEntry = { timestamp: string | null, entry_type: NormalizedEntryType, content: string, };
+export type NormalizedEntry = { timestamp: string | null, entry_type: NormalizedEntryType, content: string, tool_result: ToolResult | null, };
 
 export type NormalizedEntryType = { "type": "user_message" } | { "type": "assistant_message" } | { "type": "tool_use", tool_name: string, action_type: ActionType, } | { "type": "system_message" } | { "type": "error_message" } | { "type": "thinking" };
 
 export type ActionType = { "action": "file_read", path: string, } | { "action": "file_write", path: string, } | { "action": "command_run", command: string, } | { "action": "search", query: string, } | { "action": "web_fetch", url: string, } | { "action": "task_create", description: string, } | { "action": "plan_presentation", plan: string, } | { "action": "other", description: string, };
+
+export type ToolResult = { 
+/**
+ * Raw content from the tool (could be stdout, API response, etc.)
+ */
+content: string | null, 
+/**
+ * Whether this represents an error response
+ */
+is_error: boolean, 
+/**
+ * Optional exit code for command-line tools
+ */
+exit_code: number | null, };
 
 // Generated constants
 export const EXECUTOR_TYPES: string[] = [
