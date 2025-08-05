@@ -32,6 +32,7 @@ import { useTheme } from '@/components/theme-provider';
 import { useConfig } from '@/components/config-provider';
 import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
 import { TaskTemplateManager } from '@/components/TaskTemplateManager';
+import { usePixieMode } from '@/hooks/usePixieMode';
 
 export function Settings() {
   const { config, updateConfig, saveConfig, loading, updateAndSaveConfig } =
@@ -41,6 +42,7 @@ export function Settings() {
   const [success, setSuccess] = useState(false);
   const { setTheme } = useTheme();
   const [showGitHubLogin, setShowGitHubLogin] = useState(false);
+  const { pixieMode, setPixieMode } = usePixieMode();
 
   const playSound = async (soundFile: SoundFile) => {
     const audio = new Audio(`/api/sounds/${soundFile}.wav`);
@@ -185,6 +187,21 @@ export function Settings() {
                 <p className="text-sm text-muted-foreground">
                   Choose your preferred color scheme.
                 </p>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="pixie-mode"
+                  checked={pixieMode}
+                  onCheckedChange={(checked: boolean) => setPixieMode(checked)}
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="pixie-mode" className="cursor-pointer">
+                    Pixie Mode
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Enable pink glitter mouse trail effect for a magical experience.
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

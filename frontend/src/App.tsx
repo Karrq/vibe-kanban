@@ -17,11 +17,13 @@ import * as Sentry from '@sentry/react';
 import { Loader } from '@/components/ui/loader';
 import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
 import { GlitterTrail } from '@/components/GlitterTrail';
+import { usePixieMode } from '@/hooks/usePixieMode';
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
 function AppContent() {
   const { config, updateConfig, loading } = useConfig();
+  const { pixieMode } = usePixieMode();
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showPrivacyOptIn, setShowPrivacyOptIn] = useState(false);
@@ -135,7 +137,7 @@ function AppContent() {
   return (
     <ThemeProvider initialTheme={config?.theme || 'system'}>
       <div className="h-screen flex flex-col bg-background">
-        <GlitterTrail />
+        {pixieMode && <GlitterTrail />}
         <GitHubLoginDialog
           open={showGitHubLogin}
           onOpenChange={handleGitHubLoginComplete}
