@@ -203,9 +203,9 @@ impl Executor for CodexExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let prompt = if let Some(task_description) = task.description {
             format!(
@@ -257,9 +257,9 @@ Task description: {}"#,
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
         // Find the rollout file for this session
         let rollout_file_path =
             find_rollout_file_path(session_id).map_err(ExecutorError::InvalidSessionId)?;
@@ -422,6 +422,7 @@ Task description: {}"#,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
                         metadata: None,
+                        tool_result: None,
                     });
                     continue;
                 }
@@ -467,6 +468,7 @@ Task description: {}"#,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content,
                         metadata: Some(json.clone()),
+                        tool_result: None,
                     });
                     continue;
                 }
@@ -492,6 +494,7 @@ Task description: {}"#,
                                     entry_type: NormalizedEntryType::Thinking,
                                     content: text.to_string(),
                                     metadata: Some(json.clone()),
+                                    tool_result: None,
                                 });
                             }
                         }
@@ -533,6 +536,7 @@ Task description: {}"#,
                                     },
                                     content: format!("`{}`", command),
                                     metadata: Some(json.clone()),
+                                    tool_result: None,
                                 });
                             }
                         }
@@ -555,6 +559,7 @@ Task description: {}"#,
                                     entry_type: NormalizedEntryType::AssistantMessage,
                                     content: message.to_string(),
                                     metadata: Some(json.clone()),
+                                    tool_result: None,
                                 });
                             }
                         }
@@ -577,6 +582,7 @@ Task description: {}"#,
                                         },
                                         content: format!("`{}`", relative_path),
                                         metadata: Some(json.clone()),
+                                        tool_result: None,
                                     });
                                 }
                             }
@@ -593,6 +599,7 @@ Task description: {}"#,
                                     entry_type: NormalizedEntryType::ErrorMessage,
                                     content: error_message.to_string(),
                                     metadata: Some(json.clone()),
+                                    tool_result: None,
                                 });
                             } else {
                                 entries.push(NormalizedEntry {
@@ -600,6 +607,7 @@ Task description: {}"#,
                                     entry_type: NormalizedEntryType::ErrorMessage,
                                     content: "Unknown error occurred".to_string(),
                                     metadata: Some(json.clone()),
+                                    tool_result: None,
                                 });
                             }
                         }
@@ -610,6 +618,7 @@ Task description: {}"#,
                                 entry_type: NormalizedEntryType::SystemMessage,
                                 content: format!("Unknown message type: {}", msg_type),
                                 metadata: Some(json.clone()),
+                                tool_result: None,
                             });
                         }
                     }
@@ -621,6 +630,7 @@ Task description: {}"#,
                     entry_type: NormalizedEntryType::SystemMessage,
                     content: format!("Unrecognized JSON: {}", trimmed),
                     metadata: Some(json),
+                    tool_result: None,
                 });
             }
         }

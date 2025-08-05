@@ -160,6 +160,7 @@ impl AmpContentItem {
                     entry_type,
                     content: text.clone(),
                     metadata: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
+                    tool_result: None,
                 })
             }
             AmpContentItem::Thinking { thinking } => Some(NormalizedEntry {
@@ -167,6 +168,7 @@ impl AmpContentItem {
                 entry_type: NormalizedEntryType::Thinking,
                 content: thinking.clone(),
                 metadata: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
+                tool_result: None,
             }),
             AmpContentItem::ToolUse { name, input, .. } => {
                 let action_type = executor.extract_action_type(name, input, worktree_path);
@@ -181,6 +183,7 @@ impl AmpContentItem {
                     },
                     content,
                     metadata: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
+                    tool_result: None,
                 })
             }
             AmpContentItem::ToolResult { .. } => None,
@@ -202,9 +205,9 @@ impl Executor for AmpExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let prompt = if let Some(task_description) = task.description {
             format!(
@@ -263,9 +266,9 @@ Task title: {}"#,
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
         let continue_args = format!("threads continue {} --format=jsonl", session_id);
@@ -336,6 +339,7 @@ Task title: {}"#,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
                         metadata: None,
+                        tool_result: None,
                     });
                     continue;
                 }

@@ -1,11 +1,13 @@
 import { useContext, useMemo, useState } from 'react';
 import { DiffCard } from './DiffCard';
+import { ToolResultDisplay } from './ToolResultDisplay';
 import MarkdownRenderer from '@/components/ui/markdown-renderer.tsx';
 import {
   AlertCircle,
   Bot,
   Brain,
   CheckSquare,
+  ChevronDown,
   ChevronRight,
   ChevronUp,
   Edit,
@@ -270,6 +272,7 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
 function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
+  const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(new Set());
 
   const toggleErrorExpansion = (index: number) => {
     setExpandedErrors((prev) => {
@@ -283,13 +286,31 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
     });
   };
 
+  const toggleToolResultExpansion = (index: number) => {
+    setExpandedToolResults((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
+
   const isErrorMessage = entry.entry_type.type === 'error_message';
   const isExpanded = expandedErrors.has(index);
   const hasMultipleLines = isErrorMessage && entry.content.includes('\n');
+  
   const isFileModification = useMemo(
     () => isFileModificationToolCall(entry.entry_type),
     [entry.entry_type]
   );
+
+  // Check if this is a command run tool call with results
+  const hasToolResult = entry.tool_result !== null && entry.tool_result !== undefined && entry.entry_type.type === 'tool_use';
+  const isToolResultExpanded = expandedToolResults.has(index);
 
   // Extract file path from this specific tool call
   const modifiedFilePath = useMemo(
@@ -320,6 +341,23 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
               className="transition-colors hover:opacity-70"
             >
               {getEntryIcon(entry.entry_type)}
+            </button>
+          ) : hasToolResult ? (
+            <button
+              onClick={() => toggleToolResultExpansion(index)}
+              className="relative group transition-opacity"
+              title={isToolResultExpanded ? "Hide output" : "Show output"}
+            >
+              <div className="relative">
+                {getEntryIcon(entry.entry_type)}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-900 rounded">
+                  {isToolResultExpanded ? (
+                    <ChevronUp className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                  )}
+                </div>
+              </div>
             </button>
           ) : (
             getEntryIcon(entry.entry_type)
@@ -363,7 +401,14 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
             </div>
           ) : (
             <div className={getContentClassName(entry.entry_type)}>
-              {shouldRenderMarkdown(entry.entry_type) ? (
+              {hasToolResult && entry.entry_type.type === 'tool_use' && entry.tool_result ? (
+                // For tool uses with results, use the component
+                <ToolResultDisplay 
+                  toolResult={entry.tool_result}
+                  actionType={entry.entry_type.action_type}
+                  expanded={isToolResultExpanded}
+                />
+              ) : shouldRenderMarkdown(entry.entry_type) ? (
                 <MarkdownRenderer
                   content={entry.content}
                   className="whitespace-pre-wrap break-words"
@@ -375,6 +420,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
           )}
         </div>
       </div>
+
 
       {/* Render incremental diff card inline after file modification entries */}
       {shouldShowDiff && incrementalDiff && (

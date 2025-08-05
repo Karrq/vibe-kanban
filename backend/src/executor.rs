@@ -29,6 +29,18 @@ pub struct NormalizedConversation {
     pub summary: Option<String>,
 }
 
+/// Tool execution result with flexible content
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ToolResult {
+    /// Raw content from the tool (could be stdout, API response, etc.)
+    pub content: Option<String>,
+    /// Whether this represents an error response
+    pub is_error: bool,
+    /// Optional exit code for command-line tools
+    pub exit_code: Option<i32>,
+}
+
 /// Individual entry in a normalized conversation
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -38,6 +50,7 @@ pub struct NormalizedEntry {
     pub content: String,
     #[ts(skip)]
     pub metadata: Option<serde_json::Value>,
+    pub tool_result: Option<ToolResult>,
 }
 
 /// Types of entries in a normalized conversation
@@ -867,13 +880,13 @@ fn parse_session_id_from_line(line: &str) -> Option<String> {
     None
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::executors::{AiderExecutor, AmpExecutor, ClaudeExecutor};
-    use crate::command_runner::CommandRunner;
+    use crate::{
+        command_runner::CommandRunner,
+        executors::{AiderExecutor, AmpExecutor, ClaudeExecutor},
+    };
 
     #[test]
     fn test_parse_claude_session_id() {

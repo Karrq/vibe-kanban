@@ -7,7 +7,10 @@ use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{Executor, ExecutorError, NormalizedConversation, NormalizedEntry},
-    models::{execution_process::ExecutionProcess, executor_session::ExecutorSession, project::Project, task::Task},
+    models::{
+        execution_process::ExecutionProcess, executor_session::ExecutorSession, project::Project,
+        task::Task,
+    },
     utils::shell::get_shell_command,
 };
 
@@ -251,9 +254,9 @@ impl Executor for SstOpencodeExecutor {
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
 
         let prompt = if let Some(task_description) = task.description {
             format!(
@@ -412,9 +415,9 @@ Task title: {}"#,
             .ok_or(ExecutorError::TaskNotFound)?;
 
         // Get the project to fetch the executor environment script
-        let project = Project::find_by_id(pool, task.project_id)
-            .await?
-            .ok_or(ExecutorError::ContextCollectionFailed("Project not found".to_string()))?;
+        let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+            ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+        )?;
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
         let opencode_command = format!("{} --session {}", self.command, session_id);
