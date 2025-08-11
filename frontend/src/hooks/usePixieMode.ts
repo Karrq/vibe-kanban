@@ -11,6 +11,8 @@ export function usePixieMode() {
   const setPixieMode = (enabled: boolean) => {
     setPixieModeState(enabled);
     localStorage.setItem(PIXIE_MODE_KEY, String(enabled));
+    // Dispatch a custom event to notify other components
+    window.dispatchEvent(new Event('pixie-mode-changed'));
   };
 
   useEffect(() => {

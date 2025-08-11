@@ -18,18 +18,40 @@ import * as Sentry from '@sentry/react';
 import { Loader } from '@/components/ui/loader';
 import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
 import { GlitterTrail } from '@/components/GlitterTrail';
-import { usePixieMode } from '@/hooks/usePixieMode';
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
 function AppContent() {
   const { config, updateConfig, loading } = useConfig();
-  const { pixieMode } = usePixieMode();
+  const [localPixieMode, setLocalPixieMode] = useState<boolean>(() => {
+    const stored = localStorage.getItem('vibe-kanban-pixie-mode');
+    return stored === 'true';
+  });
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showPrivacyOptIn, setShowPrivacyOptIn] = useState(false);
   const [showGitHubLogin, setShowGitHubLogin] = useState(false);
   const showNavbar = true;
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'vibe-kanban-pixie-mode') {
+        setLocalPixieMode(e.newValue === 'true');
+      }
+    };
+
+    const handleCustomEvent = () => {
+      const stored = localStorage.getItem('vibe-kanban-pixie-mode');
+      setLocalPixieMode(stored === 'true');
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('pixie-mode-changed', handleCustomEvent);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('pixie-mode-changed', handleCustomEvent);
+    };
+  }, []);
 
   useEffect(() => {
     if (config) {
@@ -138,7 +160,7 @@ function AppContent() {
   return (
     <ThemeProvider initialTheme={config?.theme || 'system'}>
       <div className="h-screen flex flex-col bg-background">
-        {pixieMode && <GlitterTrail />}
+        {localPixieMode && <GlitterTrail />}
         <GitHubLoginDialog
           open={showGitHubLogin}
           onOpenChange={handleGitHubLoginComplete}
