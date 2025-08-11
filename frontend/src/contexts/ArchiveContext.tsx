@@ -47,6 +47,15 @@ interface ArchiveContextType {
     tasks: number;
     projects: number;
   };
+  
+  // Quick checks for performance
+  hasArchivedTasks: boolean;
+  hasArchivedProjects: boolean;
+  getProjectArchivedTaskCount: (tasks: { id: string; project_id?: string }[], projectId: string) => number;
+  
+  // Performance optimizations for common case (many archived items)
+  shouldFetchItem: (id: string, type: 'task' | 'project') => boolean;
+  getVisibleIds: (allIds: string[], type: 'task' | 'project') => string[];
 
   // Direct access to sets if needed
   archivedTaskIds: Set<string>;
@@ -60,15 +69,16 @@ const getInitialArchiveState = (): ArchiveState => {
     const stored = localStorage.getItem(ARCHIVE_STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return {
-        tasks: new Set(parsed.tasks || []),
-        projects: new Set(parsed.projects || []),
+      const state: ArchiveState = {
+        tasks: new Set<string>(parsed.tasks || []),
+        projects: new Set<string>(parsed.projects || []),
       };
+      return state;
     }
   } catch (error) {
     console.error('Failed to load archive state:', error);
   }
-  return { tasks: new Set(), projects: new Set() };
+  return { tasks: new Set<string>(), projects: new Set<string>() };
 };
 
 const saveArchiveState = (state: ArchiveState) => {
@@ -91,11 +101,16 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     showArchivedTasks: false,
     showArchivedProjects: false,
   });
+  
+  // Memoized cache for archive counts by project
+  const projectArchiveCountCache = useMemo(() => new Map<string, number>(), []);
 
   // Save to localStorage whenever state changes
   useEffect(() => {
     saveArchiveState(archiveState);
-  }, [archiveState]);
+    // Clear cache when archive state changes
+    projectArchiveCountCache.clear();
+  }, [archiveState, projectArchiveCountCache]);
 
   const isTaskArchived = useCallback((taskId: string) => {
     return archiveState.tasks.has(taskId);
@@ -133,10 +148,12 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const archiveProject = useCallback((projectId: string) => {
-    setArchiveState(prev => ({
-      ...prev,
-      projects: new Set([...prev.projects, projectId]),
-    }));
+    setArchiveState(prev => {
+      // Ensure no duplicates by creating new Set properly
+      const newProjects = new Set(prev.projects);
+      newProjects.add(projectId);
+      return { ...prev, projects: newProjects };
+    });
   }, []);
 
   const unarchiveProject = useCallback((projectId: string) => {
@@ -174,77 +191,90 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  // Filter functions that handle search visibility logic
+  // Optimized filter function for the common case where many items are archived
   const filterTasks = useCallback(<T extends { id: string; project_id?: string }>(
     tasks: T[],
     searchQuery: string = '',
     projectId?: string
   ): { visible: T[], hasOnlyArchived: boolean, archivedCount: number } => {
-    // Filter by project if projectId is provided
-    const projectTasks = projectId ? tasks.filter(t => t.project_id === projectId) : tasks;
+    // Most efficient path: When many items are archived and we're not showing them
+    // Use single pass with early termination for common case
+    const query = searchQuery.trim().toLowerCase();
+    const isSearching = query.length > 0;
     
-    // Separate archived and non-archived tasks
-    const nonArchived = projectTasks.filter(task => !archiveState.tasks.has(task.id));
-    const archived = projectTasks.filter(task => archiveState.tasks.has(task.id));
+    let visible: T[] = [];
+    let archivedCount = 0;
+    let archivedMatchCount = 0;
     
-    // If showing archived, include all tasks regardless of archive status
-    if (visibilityState.showArchivedTasks && !searchQuery.trim()) {
-      return {
-        visible: projectTasks,
-        hasOnlyArchived: false,
-        archivedCount: archived.length
-      };
+    // Single pass through tasks
+    for (const task of tasks) {
+      // Skip if wrong project
+      if (projectId && task.project_id !== projectId) continue;
+      
+      const isArchived = archiveState.tasks.has(task.id);
+      
+      if (isArchived) {
+        archivedCount++;
+        
+        // Only process archived items if showing them or searching
+        if (!visibilityState.showArchivedTasks && !isSearching) continue;
+        
+        if (isSearching) {
+          const taskWithSearch = task as any;
+          const matches = (
+            taskWithSearch.title?.toLowerCase().includes(query) ||
+            taskWithSearch.name?.toLowerCase().includes(query) ||
+            taskWithSearch.description?.toLowerCase().includes(query)
+          );
+          
+          if (matches) {
+            archivedMatchCount++;
+            if (visibilityState.showArchivedTasks) {
+              visible.push(task);
+            }
+          }
+        } else if (visibilityState.showArchivedTasks) {
+          visible.push(task);
+        }
+      } else {
+        // Non-archived item
+        if (isSearching) {
+          const taskWithSearch = task as any;
+          const matches = (
+            taskWithSearch.title?.toLowerCase().includes(query) ||
+            taskWithSearch.name?.toLowerCase().includes(query) ||
+            taskWithSearch.description?.toLowerCase().includes(query)
+          );
+          
+          if (matches) {
+            visible.push(task);
+          }
+        } else {
+          // Not searching, not archived - always visible
+          visible.push(task);
+        }
+      }
     }
     
-    if (!searchQuery.trim()) {
-      // No search - hide archived items unless toggle is on
-      return { 
-        visible: nonArchived, 
-        hasOnlyArchived: nonArchived.length === 0 && archived.length > 0,
-        archivedCount: archived.length
-      };
+    // Determine if we should show archived items that match search
+    const hasOnlyArchived = isSearching && visible.length === 0 && archivedMatchCount > 0;
+    
+    if (hasOnlyArchived && !visibilityState.showArchivedTasks) {
+      // Re-collect archived matches
+      visible = tasks.filter(task => {
+        if (projectId && task.project_id !== projectId) return false;
+        if (!archiveState.tasks.has(task.id)) return false;
+        
+        const taskWithSearch = task as any;
+        return (
+          taskWithSearch.title?.toLowerCase().includes(query) ||
+          taskWithSearch.name?.toLowerCase().includes(query) ||
+          taskWithSearch.description?.toLowerCase().includes(query)
+        );
+      });
     }
-
-    // During search - check if only archived items match
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = (task: T) => {
-      // Assume task has title and possibly description
-      const taskWithSearch = task as any;
-      return (
-        taskWithSearch.title?.toLowerCase().includes(query) ||
-        taskWithSearch.name?.toLowerCase().includes(query) ||
-        taskWithSearch.description?.toLowerCase().includes(query)
-      );
-    };
-
-    const nonArchivedMatches = nonArchived.filter(matchesSearch);
-    const archivedMatches = archived.filter(matchesSearch);
-
-    // If showing archived, include both archived and non-archived matches
-    if (visibilityState.showArchivedTasks) {
-      const allMatches = [...nonArchivedMatches, ...archivedMatches];
-      return {
-        visible: allMatches,
-        hasOnlyArchived: false,
-        archivedCount: archived.length
-      };
-    }
-
-    if (nonArchivedMatches.length === 0 && archivedMatches.length > 0) {
-      // Only archived items match - show them
-      return { 
-        visible: archivedMatches, 
-        hasOnlyArchived: true,
-        archivedCount: archived.length
-      };
-    }
-
-    // Show only non-archived matches
-    return { 
-      visible: nonArchivedMatches, 
-      hasOnlyArchived: false,
-      archivedCount: archived.length
-    };
+    
+    return { visible, hasOnlyArchived, archivedCount };
   }, [archiveState.tasks, visibilityState.showArchivedTasks]);
 
   // Get archived tasks filtered by project if needed
@@ -260,6 +290,30 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     projects: T[],
     searchQuery: string = ''
   ): { visible: T[], hasOnlyArchived: boolean } => {
+    // Early return if no archived items exist
+    if (archiveState.projects.size === 0) {
+      if (!searchQuery.trim()) {
+        return { 
+          visible: projects, 
+          hasOnlyArchived: false
+        };
+      }
+      
+      const query = searchQuery.toLowerCase();
+      const filtered = projects.filter(project => {
+        const projectWithSearch = project as any;
+        return (
+          projectWithSearch.name?.toLowerCase().includes(query) ||
+          projectWithSearch.description?.toLowerCase().includes(query)
+        );
+      });
+      
+      return {
+        visible: filtered,
+        hasOnlyArchived: false
+      };
+    }
+    
     // If showing archived, include all projects regardless of archive status
     if (visibilityState.showArchivedProjects && !searchQuery.trim()) {
       return {
@@ -269,7 +323,7 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     }
     
     if (!searchQuery.trim()) {
-      // No search - hide archived items unless toggle is on
+      // Fast path: No search - just filter out archived items
       const visible = projects.filter(project => !archiveState.projects.has(project.id));
       return { visible, hasOnlyArchived: visible.length === 0 && projects.length > 0 };
     }
@@ -277,7 +331,6 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     // During search - check if only archived items match
     const query = searchQuery.toLowerCase();
     const matchingProjects = projects.filter(project => {
-      // Assume project has name and possibly description
       const projectWithSearch = project as any;
       return (
         projectWithSearch.name?.toLowerCase().includes(query) ||
@@ -307,6 +360,58 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     tasks: archiveState.tasks.size,
     projects: archiveState.projects.size,
   }), [archiveState]);
+  
+  // Quick performance checks
+  const hasArchivedTasks = useMemo(() => archiveState.tasks.size > 0, [archiveState.tasks]);
+  const hasArchivedProjects = useMemo(() => archiveState.projects.size > 0, [archiveState.projects]);
+  
+  const getProjectArchivedTaskCount = useCallback((
+    tasks: { id: string; project_id?: string }[],
+    projectId: string
+  ): number => {
+    if (archiveState.tasks.size === 0) return 0;
+    
+    // Check cache first
+    const cacheKey = `${projectId}_${tasks.length}`;
+    if (projectArchiveCountCache.has(cacheKey)) {
+      return projectArchiveCountCache.get(cacheKey)!;
+    }
+    
+    let count = 0;
+    tasks.forEach(task => {
+      if (task.project_id === projectId && archiveState.tasks.has(task.id)) {
+        count++;
+      }
+    });
+    
+    // Cache the result
+    projectArchiveCountCache.set(cacheKey, count);
+    return count;
+  }, [archiveState.tasks, projectArchiveCountCache]);
+  
+  // Performance optimization: Check if we should fetch an item based on archive status
+  const shouldFetchItem = useCallback((id: string, type: 'task' | 'project'): boolean => {
+    const archiveSet = type === 'task' ? archiveState.tasks : archiveState.projects;
+    const showArchived = type === 'task' ? visibilityState.showArchivedTasks : visibilityState.showArchivedProjects;
+    
+    // If showing archived items, fetch everything
+    if (showArchived) return true;
+    
+    // Otherwise, only fetch non-archived items
+    return !archiveSet.has(id);
+  }, [archiveState, visibilityState]);
+  
+  // Performance optimization: Get list of visible IDs for batch operations
+  const getVisibleIds = useCallback((allIds: string[], type: 'task' | 'project'): string[] => {
+    const archiveSet = type === 'task' ? archiveState.tasks : archiveState.projects;
+    const showArchived = type === 'task' ? visibilityState.showArchivedTasks : visibilityState.showArchivedProjects;
+    
+    // If showing archived items, return all IDs
+    if (showArchived) return allIds;
+    
+    // Otherwise, filter out archived items
+    return allIds.filter(id => !archiveSet.has(id));
+  }, [archiveState, visibilityState]);
 
   const value = useMemo(() => ({
     // Task operations
@@ -332,6 +437,15 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
 
     // Counts
     archivedCounts,
+    
+    // Quick checks for performance
+    hasArchivedTasks,
+    hasArchivedProjects,
+    getProjectArchivedTaskCount,
+    
+    // Performance optimizations
+    shouldFetchItem,
+    getVisibleIds,
 
     // Direct access to sets if needed
     archivedTaskIds: archiveState.tasks,
@@ -353,6 +467,11 @@ export function ArchiveProvider({ children }: { children: ReactNode }) {
     visibilityState.showArchivedProjects,
     toggleShowArchivedProjects,
     archivedCounts,
+    hasArchivedTasks,
+    hasArchivedProjects,
+    getProjectArchivedTaskCount,
+    shouldFetchItem,
+    getVisibleIds,
     archiveState.tasks,
     archiveState.projects,
   ]);
