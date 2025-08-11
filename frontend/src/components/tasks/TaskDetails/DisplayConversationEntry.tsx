@@ -273,6 +273,17 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(new Set());
+  
+  // Check if this entry is a file modification to set initial expanded state
+  const isFileModEntry = isFileModificationToolCall(entry.entry_type);
+  const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => {
+    // Initialize with current index if it's a file modification (expanded by default)
+    const initialSet = new Set<number>();
+    if (isFileModEntry) {
+      initialSet.add(index);
+    }
+    return initialSet;
+  });
 
   const toggleErrorExpansion = (index: number) => {
     setExpandedErrors((prev) => {
@@ -298,6 +309,18 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
     });
   };
 
+  const toggleDiffExpansion = (index: number) => {
+    setExpandedDiffs((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
+  };
+
 
   const isErrorMessage = entry.entry_type.type === 'error_message';
   const isExpanded = expandedErrors.has(index);
@@ -308,9 +331,24 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
     [entry.entry_type]
   );
 
-  // Check if this is a command run tool call with results
-  const hasToolResult = entry.tool_result !== null && entry.tool_result !== undefined && entry.entry_type.type === 'tool_use';
+  // Check if this is a tool with TodoWrite/TodoRead
+  const isTodoTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && (
+      entry.entry_type.tool_name.toLowerCase() === 'todowrite' ||
+      entry.entry_type.tool_name.toLowerCase() === 'todoread' ||
+      entry.entry_type.tool_name.toLowerCase() === 'todo_write' ||
+      entry.entry_type.tool_name.toLowerCase() === 'todo_read'
+    );
+
+  // Check if this is a command run (Bash), file read (Read), or TodoWrite tool call with results
+  const hasCollapsibleToolResult = entry.tool_result !== null && 
+    entry.tool_result !== undefined && 
+    entry.entry_type.type === 'tool_use' && 
+    (entry.entry_type.action_type.action === 'command_run' || 
+     entry.entry_type.action_type.action === 'file_read' ||
+     isTodoTool);
   const isToolResultExpanded = expandedToolResults.has(index);
+  const isDiffExpanded = expandedDiffs.has(index);
 
   // Extract file path from this specific tool call
   const modifiedFilePath = useMemo(
@@ -342,7 +380,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
             >
               {getEntryIcon(entry.entry_type)}
             </button>
-          ) : hasToolResult ? (
+          ) : hasCollapsibleToolResult ? (
             <button
               onClick={() => toggleToolResultExpansion(index)}
               className="relative group transition-opacity"
@@ -352,6 +390,23 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
                 {getEntryIcon(entry.entry_type)}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-900 rounded">
                   {isToolResultExpanded ? (
+                    <ChevronUp className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-700 dark:text-gray-300" />
+                  )}
+                </div>
+              </div>
+            </button>
+          ) : isFileModification ? (
+            <button
+              onClick={() => toggleDiffExpansion(index)}
+              className="relative group transition-opacity"
+              title={isDiffExpanded ? "Hide diff" : "Show diff"}
+            >
+              <div className="relative">
+                {getEntryIcon(entry.entry_type)}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-gray-900 rounded">
+                  {isDiffExpanded ? (
                     <ChevronUp className="h-4 w-4 text-gray-700 dark:text-gray-300" />
                   ) : (
                     <ChevronDown className="h-4 w-4 text-gray-700 dark:text-gray-300" />
@@ -401,12 +456,14 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
             </div>
           ) : (
             <div className={getContentClassName(entry.entry_type)}>
-              {hasToolResult && entry.entry_type.type === 'tool_use' && entry.tool_result ? (
-                // For tool uses with results, use the component
+              {hasCollapsibleToolResult && entry.entry_type.type === 'tool_use' ? (
+                // For Bash/Read/TodoWrite/Edit tools with results, use the special component
                 <ToolResultDisplay 
-                  toolResult={entry.tool_result}
+                  toolResult={entry.tool_result!}
                   actionType={entry.entry_type.action_type}
                   expanded={isToolResultExpanded}
+                  toolName={entry.entry_type.tool_name}
+                  content={entry.content}
                 />
               ) : shouldRenderMarkdown(entry.entry_type) ? (
                 <MarkdownRenderer
@@ -423,7 +480,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
 
 
       {/* Render incremental diff card inline after file modification entries */}
-      {shouldShowDiff && incrementalDiff && (
+      {shouldShowDiff && incrementalDiff && isDiffExpanded && (
         <div className="mt-4 mb-2">
           <DiffCard
             diff={incrementalDiff}
