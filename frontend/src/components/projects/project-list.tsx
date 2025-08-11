@@ -24,6 +24,7 @@ export function ProjectList() {
     archivedCounts,
     showArchivedProjects,
     toggleShowArchivedProjects,
+    hasArchivedProjects,
   } = useArchive();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
@@ -173,11 +174,11 @@ export function ProjectList() {
             variant="ghost" 
             size="icon"
             onClick={toggleShowArchivedProjects}
-            disabled={archivedCounts.projects === 0 && !showArchivedProjects}
+            disabled={!hasArchivedProjects}
             className={`${
-              archivedCounts.projects === 0 && !showArchivedProjects ? "opacity-50" : ""
-            } ${showArchivedProjects ? "bg-accent" : ""}`}
-            title={showArchivedProjects ? `Hide archived projects (${archivedCounts.projects})` : `Show archived projects (${archivedCounts.projects})`}
+              !hasArchivedProjects ? "opacity-50" : ""
+            } ${showArchivedProjects && hasArchivedProjects ? "bg-accent" : ""}`}
+            title={showArchivedProjects ? `Hide archived projects${hasArchivedProjects ? ` (${archivedCounts.projects})` : ''}` : `Show archived projects${hasArchivedProjects ? ` (${archivedCounts.projects})` : ''}`}
           >
             <Archive className="h-4 w-4" />
           </Button>

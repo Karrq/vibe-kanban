@@ -53,7 +53,7 @@ export function ProjectTasks() {
     taskId?: string;
   }>();
   const navigate = useNavigate();
-  const { filterTasks, showArchivedTasks, toggleShowArchivedTasks } = useArchive();
+  const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount } = useArchive();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,11 +67,12 @@ export function ProjectTasks() {
     null
   );
   
-  // Calculate project-specific archived count
+  // Calculate project-specific archived count efficiently
   const projectArchivedCount = useMemo(() => {
-    const { archivedCount } = filterTasks(tasks, '', projectId);
-    return archivedCount;
-  }, [tasks, projectId, filterTasks]);
+    if (!hasArchivedTasks || !projectId) return 0;
+    // Only calculate if there are archived tasks
+    return getProjectArchivedTaskCount(tasks, projectId);
+  }, [tasks, projectId, hasArchivedTasks, getProjectArchivedTaskCount]);
 
   // Template management state
   const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
@@ -428,12 +429,12 @@ export function ProjectTasks() {
               variant="ghost" 
               size="icon"
               onClick={toggleShowArchivedTasks}
-              disabled={projectArchivedCount === 0 && !showArchivedTasks}
+              disabled={projectArchivedCount === 0}
               className={cn(
-                projectArchivedCount === 0 && !showArchivedTasks ? "opacity-50" : "",
-                showArchivedTasks && "bg-accent"
+                projectArchivedCount === 0 ? "opacity-50" : "",
+                showArchivedTasks && projectArchivedCount > 0 && "bg-accent"
               )}
-              title={showArchivedTasks ? `Hide archived tasks (${projectArchivedCount})` : `Show archived tasks (${projectArchivedCount})`}
+              title={showArchivedTasks ? `Hide archived tasks${projectArchivedCount > 0 ? ` (${projectArchivedCount})` : ''}` : `Show archived tasks${projectArchivedCount > 0 ? ` (${projectArchivedCount})` : ''}`}
             >
               <Archive className="h-4 w-4" />
             </Button>
