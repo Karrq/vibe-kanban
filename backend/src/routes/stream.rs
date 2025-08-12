@@ -226,66 +226,82 @@ pub async fn normalized_logs_stream(
                 if last_entry_count >= normalized.entries.len() {
                     continue;
                 }
-                let new_entry = &normalized.entries[last_entry_count];
                 
-                // Check if this entry is a state-mutating tool use and trigger checkpoint
-                if let Some(checkpoint_svc) = &checkpoint_service {
-                    if let NormalizedEntryType::ToolUse { tool_name, .. } = &new_entry.entry_type {
+                // Process ALL new entries in batch
+                let new_entries = &normalized.entries[last_entry_count..];
+                if new_entries.is_empty() {
+                    continue;
+                }
+                
+                // Build patches and check if any state-mutating tools are present
+                let mut patches: Vec<Value> = Vec::new();
+                let mut has_state_mutating_tool = false;
+                
+                for entry in new_entries.iter() {
+                    patches.push(serde_json::json!({
+                        "op": "add",
+                        "path": "/entries/-",
+                        "value": entry
+                    }));
+                    
+                    // Check if this is a state-mutating tool
+                    if let NormalizedEntryType::ToolUse { tool_name, .. } = &entry.entry_type {
                         if is_state_mutating_tool(tool_name) {
-                            // Capture checkpoint state synchronously (critical section)
-                            let service = checkpoint_svc.lock().await;
-                            match service.capture_checkpoint_state(last_entry_count) {
-                                Ok(Some(commit_data)) => {
-                                    // Create commit asynchronously (non-critical section)
-                                    let tool_name_clone = tool_name.clone();
-                                    tokio::spawn(async move {
-                                        match CheckpointService::create_checkpoint_commit(commit_data).await {
-                                            Ok(_) => {
-                                                tracing::debug!(
-                                                    "Checkpoint commit created after tool: {}",
-                                                    tool_name_clone
-                                                );
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!(
-                                                    "Failed to create checkpoint commit after tool {}: {}",
-                                                    tool_name_clone, e
-                                                );
-                                            }
-                                        }
-                                    });
-                                }
-                                Ok(None) => {
-                                    // No changes detected, checkpoint skipped
-                                }
-                                Err(e) => {
-                                    tracing::warn!(
-                                        "Failed to capture checkpoint state after tool {}: {}",
-                                        tool_name, e
-                                    );
-                                }
-                            }
+                            has_state_mutating_tool = true;
                         }
                     }
                 }
                 
-                let patches: Vec<Value> = vec![serde_json::json!({
-                    "op": "add",
-                    "path": "/entries/-",
-                    "value": new_entry
-                })];
+                // 6. Create checkpoint BEFORE sending batch (checkpointing is time-sensitive!)
+                // Checkpoint captures state after all entries in the batch
+                if let Some(checkpoint_svc) = &checkpoint_service {
+                    if has_state_mutating_tool {
+                        let checkpoint_index = normalized.entries.len();
+                        let service = checkpoint_svc.lock().await;
+                        match service.capture_checkpoint_state(checkpoint_index) {
+                            Ok(Some(commit_data)) => {
+                                // Create commit asynchronously (non-critical section)
+                                tokio::spawn(async move {
+                                    match CheckpointService::create_checkpoint_commit(commit_data).await {
+                                        Ok(_) => {
+                                            tracing::debug!(
+                                                "Checkpoint commit created at index {}",
+                                                checkpoint_index
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Failed to create checkpoint commit: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                });
+                            }
+                            Ok(None) => {
+                                // No changes detected, checkpoint skipped
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Failed to capture checkpoint state: {}",
+                                    e
+                                );
+                            }
+                        }
+                    }
+                }
 
-                // 6. Emit the batch
+                // 7. Emit the batch with all new entries (after checkpointing)
                 let batch_data = BatchData {
-                    batch_id: fallback_batch_id - 1,
+                    batch_id: fallback_batch_id,
                     patches,
                 };
                 let json = serde_json::to_string(&batch_data).unwrap_or_default();
                 yield Ok(Event::default().event("patch").data(json));
 
-                // 7. Update our cursors
+                // 8. Update our cursors for the entire batch
                 fallback_batch_id += 1;
-                last_entry_count += 1;
+                last_entry_count = normalized.entries.len();
                 last_len = stdout.len();
             }
 
