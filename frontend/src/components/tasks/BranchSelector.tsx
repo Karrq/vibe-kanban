@@ -69,11 +69,15 @@ function BranchSelector({
   const displayName = useMemo(() => {
     if (!selectedBranch) return placeholder;
 
-    // For remote branches, show just the branch name without the remote prefix
-    if (selectedBranch.includes('/')) {
-      const parts = selectedBranch.split('/');
-      return parts[parts.length - 1];
+    // For remote branches, skip the first segment (the remote name)
+    // but preserve the rest of the branch structure
+    const parts = selectedBranch.split('/');
+    if (parts.length > 2) {
+      // Has multiple segments like "origin/feat/my-feature"
+      // Skip the first part (remote) and keep the rest
+      return parts.slice(1).join('/');
     }
+    
     return selectedBranch;
   }, [selectedBranch, placeholder]);
 
