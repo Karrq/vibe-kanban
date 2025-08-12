@@ -84,6 +84,12 @@ export type DeviceStartResponse = { device_code: string, user_code: string, veri
 
 export type RepositoryInfo = { id: bigint, name: string, full_name: string, owner: string, description: string | null, clone_url: string, ssh_url: string, default_branch: string, private: boolean, };
 
+export type CommitAuthor = { name: string, email: string, date: string | null, };
+
+export type FileChange = { filename: string, additions: bigint, deletions: bigint, patch: string | null, status: string, };
+
+export type CommitDetails = { sha: string, message: string, author: CommitAuthor | null, files: Array<FileChange>, };
+
 export type ProcessLogsResponse = { id: string, process_type: ExecutionProcessType, command: string, executor_type: string | null, status: ExecutionProcessStatus, normalized_conversation: NormalizedConversation, };
 
 export type DiffChunkType = "Equal" | "Insert" | "Delete";

@@ -236,24 +236,24 @@ function DiffFile({
           </p>
           {collapsedFiles.has(file.path) && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
-              <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-1 py-0.5 rounded text-xs">
-                +
-                {file.chunks
-                  .filter((c) => c.chunk_type === 'Insert')
-                  .reduce(
-                    (acc, c) => acc + c.content.split('\n').length - 1,
-                    0
-                  )}
-              </span>
-              <span className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 px-1 py-0.5 rounded text-xs">
-                -
-                {file.chunks
-                  .filter((c) => c.chunk_type === 'Delete')
-                  .reduce(
-                    (acc, c) => acc + c.content.split('\n').length - 1,
-                    0
-                  )}
-              </span>
+              {(() => {
+                const additions = file.chunks.filter((c) => c.chunk_type === 'Insert').length;
+                const deletions = file.chunks.filter((c) => c.chunk_type === 'Delete').length;
+                return (
+                  <>
+                    {additions > 0 && (
+                      <span className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-1 py-0.5 rounded text-xs">
+                        +{additions}
+                      </span>
+                    )}
+                    {deletions > 0 && (
+                      <span className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 px-1 py-0.5 rounded text-xs">
+                        -{deletions}
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>

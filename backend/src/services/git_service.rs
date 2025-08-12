@@ -5,12 +5,41 @@ use git2::{
     FetchOptions, RemoteCallbacks, Repository, WorktreeAddOptions,
 };
 use regex;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
+use ts_rs::TS;
 
 use crate::{
     models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, WorktreeDiff},
     utils::worktree_manager::WorktreeManager,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CommitAuthor {
+    pub name: String,
+    pub email: String,
+    pub date: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FileChange {
+    pub filename: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub patch: Option<String>,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CommitDetails {
+    pub sha: String,
+    pub message: String,
+    pub author: Option<CommitAuthor>,
+    pub files: Vec<FileChange>,
+}
 
 #[derive(Debug)]
 pub enum GitServiceError {
@@ -1067,6 +1096,136 @@ impl GitService {
     }
 
     /// Extract GitHub owner and repo name from git repo path
+    pub fn get_commit_details(&self, commit_sha: &str) -> Result<CommitDetails, GitServiceError> {
+        
+        let repo = self.open_repo()?;
+        
+        // Parse the commit SHA to get the Oid
+        let oid = git2::Oid::from_str(commit_sha)
+            .map_err(|e| GitServiceError::Git(e))?;
+        
+        // Get the commit
+        let commit = repo.find_commit(oid)
+            .map_err(|e| GitServiceError::Git(e))?;
+        
+        // Get commit details
+        let sha = commit.id().to_string();
+        let message = commit.message().unwrap_or("").to_string();
+        
+        // Get author information
+        let git_author = commit.author();
+        let author = Some(CommitAuthor {
+            name: git_author.name().unwrap_or("").to_string(),
+            email: git_author.email().unwrap_or("").to_string(),
+            date: Some(chrono::DateTime::from_timestamp(git_author.when().seconds(), 0)
+                .unwrap_or_else(|| chrono::Utc::now())),
+        });
+        
+        // Get the diff between this commit and its parent
+        let mut files = Vec::new();
+        
+        // Get parent commit (if any)
+        let parent = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?)
+        } else {
+            None
+        };
+        
+        // Get trees for diff
+        let tree = commit.tree()?;
+        let parent_tree = parent.as_ref().map(|p| p.tree()).transpose()?;
+        
+        // Compute the diff
+        let mut diff_options = git2::DiffOptions::new();
+        let diff = repo.diff_tree_to_tree(
+            parent_tree.as_ref(),
+            Some(&tree),
+            Some(&mut diff_options),
+        )?;
+        
+        // Process each file in the diff
+        let mut diff_files = Vec::new();
+        diff.foreach(
+            &mut |delta, _| {
+                let file_path = delta.new_file().path()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                
+                let status = match delta.status() {
+                    git2::Delta::Added => "added",
+                    git2::Delta::Deleted => "deleted",
+                    git2::Delta::Modified => "modified",
+                    git2::Delta::Renamed => "renamed",
+                    git2::Delta::Copied => "copied",
+                    _ => "unknown",
+                }.to_string();
+                
+                diff_files.push((file_path, status));
+                true
+            },
+            None,
+            None,
+            None,
+        )?;
+        
+        // Get the patch for each file to get additions/deletions and the patch content
+        for (file_path, status) in diff_files {
+            let mut additions = 0;
+            let mut deletions = 0;
+            // Get the patch for this specific file
+            let mut patch_options = git2::DiffOptions::new();
+            patch_options.pathspec(&file_path);
+            
+            let file_diff = repo.diff_tree_to_tree(
+                parent_tree.as_ref(),
+                Some(&tree),
+                Some(&mut patch_options),
+            )?;
+            
+            let mut patch_buf = Vec::new();
+            file_diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+                // Count actual content lines, not header lines
+                match line.origin() {
+                    '+' => {
+                        // Don't count +++ header lines
+                        let content = std::str::from_utf8(line.content()).unwrap_or("");
+                        if !content.starts_with("++") {
+                            additions += 1;
+                        }
+                    },
+                    '-' => {
+                        // Don't count --- header lines
+                        let content = std::str::from_utf8(line.content()).unwrap_or("");
+                        if !content.starts_with("--") {
+                            deletions += 1;
+                        }
+                    },
+                    _ => {}
+                }
+                patch_buf.extend_from_slice(line.content());
+                true
+            })?;
+            
+            let patch_content = String::from_utf8_lossy(&patch_buf).to_string();
+            
+            files.push(FileChange {
+                filename: file_path,
+                additions: additions as i64,
+                deletions: deletions as i64,
+                patch: if !patch_content.is_empty() { Some(patch_content) } else { None },
+                status,
+            });
+        }
+        
+        Ok(CommitDetails {
+            sha,
+            message,
+            author,
+            files,
+        })
+    }
+
     pub fn get_github_repo_info(&self) -> Result<(String, String), GitServiceError> {
         let repo = self.open_repo()?;
         let remote = repo.find_remote("origin").map_err(|_| {

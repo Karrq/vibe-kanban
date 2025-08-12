@@ -90,6 +90,7 @@ pub struct RepositoryInfo {
     pub private: bool,
 }
 
+
 #[derive(Debug, Clone)]
 pub struct GitHubService {
     client: Octocrab,
@@ -291,6 +292,7 @@ impl GitHubService {
 
         Ok(pr_info)
     }
+
 
     /// List repositories for the authenticated user with pagination
     pub async fn list_repositories(

@@ -6,6 +6,7 @@ import {
   ProjectWithBranch,
   UpdateProject,
   BranchStatus,
+  CommitDetails,
   Config,
   ConfigConstants,
   CreateBranch,
@@ -513,6 +514,18 @@ export const attemptsApi = {
       `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/logs`
     );
     return handleApiResponse(response);
+  },
+
+  getCommitDetails: async (
+    projectId: string,
+    taskId: string,
+    attemptId: string,
+    commitSha: string
+  ): Promise<CommitDetails> => {
+    const response = await makeRequest(
+      `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/commit/${commitSha}`
+    );
+    return handleApiResponse<CommitDetails>(response);
   },
 };
 
