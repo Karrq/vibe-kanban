@@ -52,15 +52,26 @@ function BranchSelector({
     });
   }, []);
 
+  // Helper function to check if a branch is a VK branch
+  const isVKBranch = (branchName: string): boolean => {
+    // Check if branch starts with vk- or has vk- after the remote name (e.g., origin/vk-)
+    return branchName.startsWith('vk-') || branchName.includes('/vk-');
+  };
+
   // Filter branches based on search term and options
   const filteredBranches = useMemo(() => {
     let filtered = branches;
 
-    // Don't filter out current branch, we'll handle it in the UI
-    if (branchSearchTerm.trim()) {
+    const searchTerm = branchSearchTerm.trim();
+    
+    if (searchTerm) {
+      // When searching, show all branches that match (including VK branches)
       filtered = filtered.filter((branch) =>
-        branch.name.toLowerCase().includes(branchSearchTerm.toLowerCase())
+        branch.name.toLowerCase().includes(searchTerm.toLowerCase())
       );
+    } else {
+      // When not searching, hide VK branches by default
+      filtered = filtered.filter((branch) => !isVKBranch(branch.name));
     }
 
     return filtered;
