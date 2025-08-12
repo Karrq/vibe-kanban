@@ -26,7 +26,7 @@ impl Executor for DevServerExecutor {
             .await?
             .ok_or(ExecutorError::TaskNotFound)?;
 
-        let _project = Project::find_by_id(pool, task.project_id)
+        let project = Project::find_by_id(pool, task.project_id)
             .await?
             .ok_or(ExecutorError::TaskNotFound)?; // Reuse TaskNotFound for simplicity
 
@@ -36,7 +36,8 @@ impl Executor for DevServerExecutor {
             .command(shell_cmd)
             .arg(shell_arg)
             .arg(&self.script)
-            .working_dir(worktree_path);
+            .working_dir(worktree_path)
+            .env_setup_script(project.executor_env_script.clone());
 
         let process = runner.start().await.map_err(|e| {
             crate::executor::SpawnContext::from_command(&runner, "DevServer")
