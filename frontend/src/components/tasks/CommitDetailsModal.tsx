@@ -27,7 +27,7 @@ export function CommitDetailsModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [modalWidth, setModalWidth] = useState(896); // Default to original max-w-4xl (896px)
+  const [modalWidth, setModalWidth] = useState(672); // Default to max-w-2xl (672px) for better initial size
   const [isResizing, setIsResizing] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const startXRef = useRef(0);
@@ -98,7 +98,7 @@ export function CommitDetailsModal({
   const handleResizeMove = useCallback((e: MouseEvent) => {
     if (!isResizing) return;
     const deltaX = (e.clientX - startXRef.current) * 2; // Multiply by 2 since we're resizing from the center
-    const newWidth = Math.max(896, Math.min(window.innerWidth - 100, startWidthRef.current + deltaX));
+    const newWidth = Math.max(672, Math.min(window.innerWidth - 100, startWidthRef.current + deltaX));
     setModalWidth(newWidth);
   }, [isResizing]);
 
