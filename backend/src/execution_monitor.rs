@@ -27,6 +27,28 @@ struct DelegationOperationParams {
     additional: Option<serde_json::Value>,
 }
 
+/// Check if the stdout contains an error_during_execution result message
+fn check_for_error_during_execution(stdout: &str) -> bool {
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        
+        // Try to parse as JSON
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            // Check if this is a result message with error_during_execution subtype
+            if json.get("type").and_then(|t| t.as_str()) == Some("result") {
+                if json.get("subtype").and_then(|s| s.as_str()) == Some("error_during_execution") {
+                    tracing::info!("Detected error_during_execution in Claude Code output");
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Parse delegation context from process args JSON
 fn parse_delegation_context(args_json: &str) -> Option<DelegationContext> {
     // Parse the args JSON array
@@ -839,6 +861,20 @@ async fn handle_coding_agent_completion(
     success: bool,
     exit_code: Option<i64>,
 ) {
+    // Check if this was a Claude executor that encountered error_during_execution
+    let should_auto_continue = if execution_process.executor_type.as_deref() == Some("claude") || 
+                                 execution_process.executor_type.as_deref() == Some("Claude Code") ||
+                                 execution_process.executor_type.as_deref() == Some("ClaudePlan") {
+        // Check stdout for error_during_execution
+        if let Some(stdout) = &execution_process.stdout {
+            check_for_error_during_execution(stdout)
+        } else {
+            false
+        }
+    } else {
+        false
+    };
+
     // Extract and store assistant message from execution logs
     let summary = if let Some(stdout) = &execution_process.stdout {
         if let Some(assistant_message) = crate::executor::parse_assistant_message_from_logs(stdout)
@@ -897,6 +933,45 @@ async fn handle_coding_agent_completion(
             );
         }
 
+        // Check if we should auto-continue due to error_during_execution
+        if should_auto_continue {
+            tracing::info!(
+                "Auto-continuing task attempt {} after error_during_execution",
+                task_attempt_id
+            );
+            
+            // Get the task to continue execution
+            if let Ok(Some(task)) = Task::find_by_id(&app_state.db_pool, task_attempt.task_id).await {
+                // Auto-continue with a simple prompt
+                let continue_prompt = "Please continue working on the task.";
+                
+                // Start follow-up execution
+                if let Err(e) = ProcessService::start_followup_execution_direct(
+                    &app_state.db_pool,
+                    app_state,
+                    task_attempt_id,
+                    task.id,
+                    task.project_id,
+                    continue_prompt,
+                )
+                .await
+                {
+                    tracing::error!(
+                        "Failed to auto-continue after error_during_execution for attempt {}: {}",
+                        task_attempt_id,
+                        e
+                    );
+                } else {
+                    tracing::info!(
+                        "Successfully started auto-continue for attempt {} after error_during_execution",
+                        task_attempt_id
+                    );
+                    // Exit early - don't run cleanup or finalize since we're continuing
+                    return;
+                }
+            }
+        }
+        
         // Coding agent execution completed
         tracing::info!(
             "Task attempt {} set to paused after coding agent completion",
