@@ -90,8 +90,15 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString();
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return dateString; // Return original string if invalid date
+      }
+      return date.toLocaleString();
+    } catch {
+      return dateString; // Return original string on error
+    }
   };
 
   const fetchProcesses = useCallback(async () => {
@@ -298,8 +305,8 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-sm">
-                                  {process.process_type === 'devserver' && process.task_title ? (
-                                    <>Task: {process.task_title}</>
+                                  {(process.process_type === 'devserver' || process.process_type === 'codingagent') && process.task_title ? (
+                                    <>{process.task_title}</>
                                   ) : (
                                     process.process_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
                                   )}
@@ -332,15 +339,6 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
                                     <span>Completed: {formatDate(process.completed_at)}</span>
                                   )}
                                 </div>
-                                {process.process_type === 'devserver' ? (
-                                  <div className="mt-1">
-                                    Path: {process.working_directory}
-                                  </div>
-                                ) : (
-                                  <div className="mt-1 font-mono text-xs">
-                                    {process.working_directory}
-                                  </div>
-                                )}
                               </div>
                               {process.exit_code !== null && process.exit_code !== undefined && (
                                 <div className="mt-2">
