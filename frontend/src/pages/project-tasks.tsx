@@ -294,32 +294,75 @@ export function ProjectTasks() {
       if (!over || !active.data.current) return;
 
       const taskId = active.id as string;
-      const newStatus = over.id as Task['status'];
       const task = tasks.find((t) => t.id === taskId);
 
-      if (!task || task.status === newStatus) return;
+      if (!task) return;
 
-      // Optimistically update the UI immediately
-      const previousStatus = task.status;
-      setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-      );
+      // Check if we're reordering within the same column or moving to a different column
+      const overData = over.data?.current;
+      const activeData = active.data.current;
+      
+      // If dropping on another task (reordering within column or moving to different column)
+      if (overData && overData.index !== undefined) {
+        const overTaskId = over.id as string;
+        const overTask = tasks.find((t) => t.id === overTaskId);
+        
+        if (overTask) {
+          // Moving to a different column (status change)
+          if (task.status !== overTask.status) {
+            const previousStatus = task.status;
+            setTasks((prev) =>
+              prev.map((t) => (t.id === taskId ? { ...t, status: overTask.status } : t))
+            );
 
-      try {
-        await tasksApi.update(projectId!, taskId, {
-          title: task.title,
-          description: task.description,
-          status: newStatus,
-          parent_task_attempt: task.parent_task_attempt,
-        });
-      } catch (err) {
-        // Revert the optimistic update if the API call failed
+            try {
+              await tasksApi.update(projectId!, taskId, {
+                title: task.title,
+                description: task.description,
+                status: overTask.status,
+                parent_task_attempt: task.parent_task_attempt,
+              });
+            } catch (err) {
+              // Revert the optimistic update if the API call failed
+              setTasks((prev) =>
+                prev.map((t) =>
+                  t.id === taskId ? { ...t, status: previousStatus } : t
+                )
+              );
+              setError('Failed to update task status');
+            }
+          }
+          // Reordering within the same column - handled by TaskOrder hook
+          // The reordering will be persisted in localStorage
+        }
+      } else {
+        // Dropping on a column (not on a specific task)
+        const newStatus = over.id as Task['status'];
+        
+        if (task.status === newStatus) return;
+
+        // Optimistically update the UI immediately
+        const previousStatus = task.status;
         setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId ? { ...t, status: previousStatus } : t
-          )
+          prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
         );
-        setError('Failed to update task status');
+
+        try {
+          await tasksApi.update(projectId!, taskId, {
+            title: task.title,
+            description: task.description,
+            status: newStatus,
+            parent_task_attempt: task.parent_task_attempt,
+          });
+        } catch (err) {
+          // Revert the optimistic update if the API call failed
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === taskId ? { ...t, status: previousStatus } : t
+            )
+          );
+          setError('Failed to update task status');
+        }
       }
     },
     [projectId, tasks]
