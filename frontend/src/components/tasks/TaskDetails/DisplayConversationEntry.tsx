@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Copy,
   Edit,
   Eye,
   Globe,
@@ -273,6 +274,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(new Set());
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   
   // Check if this entry is a file modification to set initial expanded state
   const isFileModEntry = isFileModificationToolCall(entry.entry_type);
@@ -319,6 +321,26 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
       }
       return newSet;
     });
+  };
+
+  const copyToClipboard = async () => {
+    try {
+      let textToCopy = entry.content;
+      
+      // For command_run tool use, copy just the command
+      if (entry.entry_type.type === 'tool_use' && 
+          entry.entry_type.action_type.action === 'command_run') {
+        textToCopy = entry.entry_type.action_type.command;
+      }
+      
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedIndex(index);
+      setTimeout(() => {
+        setCopiedIndex(null);
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
   };
 
 
@@ -370,7 +392,20 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
     isFileModification && incrementalDiff && incrementalDiff.files.length > 0;
 
   return (
-    <div key={index}>
+    <div key={index} className="relative group">
+      {/* Copy button positioned at top right */}
+      <button
+        onClick={copyToClipboard}
+        className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 z-10"
+        title="Copy message"
+      >
+        {copiedIndex === index ? (
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Copied!</span>
+        ) : (
+          <Copy className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
+        )}
+      </button>
+      
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
           {isErrorMessage && hasMultipleLines ? (
