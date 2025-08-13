@@ -24,12 +24,12 @@ pub struct CommitAuthor {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
-pub struct FileChange {
+pub struct FileChangeMetadata {
     pub filename: String,
     pub additions: i64,
     pub deletions: i64,
-    pub patch: Option<String>,
     pub status: String,
+    pub chunks: Vec<DiffChunk>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -38,7 +38,7 @@ pub struct CommitDetails {
     pub sha: String,
     pub message: String,
     pub author: Option<CommitAuthor>,
-    pub files: Vec<FileChange>,
+    pub files: Vec<FileChangeMetadata>,
 }
 
 #[derive(Debug)]
@@ -776,9 +776,12 @@ impl GitService {
             }
         };
 
-        // Process the patch hunks
+        // Process the patch hunks, grouping consecutive lines of the same type
         for hunk_idx in 0..patch.num_hunks() {
             let (_hunk, hunk_lines) = patch.hunk(hunk_idx)?;
+            
+            let mut current_chunk_type: Option<DiffChunkType> = None;
+            let mut current_lines: Vec<String> = Vec::new();
 
             for line_idx in 0..hunk_lines {
                 let line = patch.line_in_hunk(hunk_idx, line_idx)?;
@@ -791,10 +794,33 @@ impl GitService {
                     _ => continue,
                 };
 
-                chunks.push(DiffChunk {
-                    chunk_type,
-                    content,
-                });
+                // Check if we need to flush the current chunk
+                if let Some(ref current_type) = current_chunk_type {
+                    if *current_type != chunk_type {
+                        // Type changed, flush the current chunk
+                        chunks.push(DiffChunk {
+                            chunk_type: *current_type,
+                            content: current_lines.join(""),
+                        });
+                        current_lines.clear();
+                        current_chunk_type = Some(chunk_type);
+                    }
+                } else {
+                    current_chunk_type = Some(chunk_type);
+                }
+
+                // Add line to current chunk
+                current_lines.push(content);
+            }
+
+            // Flush any remaining lines
+            if let Some(ref chunk_type) = current_chunk_type {
+                if !current_lines.is_empty() {
+                    chunks.push(DiffChunk {
+                        chunk_type: *chunk_type,
+                        content: current_lines.join(""),
+                    });
+                }
             }
         }
 
@@ -1122,7 +1148,7 @@ impl GitService {
         });
         
         // Get the diff between this commit and its parent
-        let mut files = Vec::new();
+        let files;
         
         // Get parent commit (if any)
         let parent = if commit.parent_count() > 0 {
@@ -1169,54 +1195,54 @@ impl GitService {
             None,
         )?;
         
-        // Get the patch for each file to get additions/deletions and the patch content
-        for (file_path, status) in diff_files {
-            let mut additions = 0;
-            let mut deletions = 0;
-            // Get the patch for this specific file
-            let mut patch_options = git2::DiffOptions::new();
-            patch_options.pathspec(&file_path);
-            
-            let file_diff = repo.diff_tree_to_tree(
-                parent_tree.as_ref(),
-                Some(&tree),
-                Some(&mut patch_options),
-            )?;
-            
-            let mut patch_buf = Vec::new();
-            file_diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
-                // Count actual content lines, not header lines
-                match line.origin() {
-                    '+' => {
-                        // Don't count +++ header lines
-                        let content = std::str::from_utf8(line.content()).unwrap_or("");
-                        if !content.starts_with("++") {
-                            additions += 1;
-                        }
-                    },
-                    '-' => {
-                        // Don't count --- header lines
-                        let content = std::str::from_utf8(line.content()).unwrap_or("");
-                        if !content.starts_with("--") {
-                            deletions += 1;
-                        }
-                    },
-                    _ => {}
+        // Process each file to generate diff chunks
+        let mut processed_files = Vec::new();
+        diff.foreach(
+            &mut |delta, _| {
+                if let Some(path_str) = delta.new_file().path().and_then(|p| p.to_str()) {
+                    let old_file = delta.old_file();
+                    let new_file = delta.new_file();
+                    
+                    if let Ok(diff_chunks) =
+                        self.generate_git_diff_chunks(&repo, &old_file, &new_file, path_str)
+                    {
+                        // Count additions and deletions from chunks
+                        let additions = diff_chunks.iter()
+                            .filter(|c| c.chunk_type == DiffChunkType::Insert)
+                            .map(|c| c.content.lines().count())
+                            .sum::<usize>() as i64;
+                            
+                        let deletions = diff_chunks.iter()
+                            .filter(|c| c.chunk_type == DiffChunkType::Delete)
+                            .map(|c| c.content.lines().count())
+                            .sum::<usize>() as i64;
+                        
+                        let status = match delta.status() {
+                            git2::Delta::Added => "added",
+                            git2::Delta::Deleted => "deleted",
+                            git2::Delta::Modified => "modified",
+                            git2::Delta::Renamed => "renamed",
+                            git2::Delta::Copied => "copied",
+                            _ => "unknown",
+                        }.to_string();
+                        
+                        processed_files.push(FileChangeMetadata {
+                            filename: path_str.to_string(),
+                            additions,
+                            deletions,
+                            status,
+                            chunks: diff_chunks,
+                        });
+                    }
                 }
-                patch_buf.extend_from_slice(line.content());
                 true
-            })?;
-            
-            let patch_content = String::from_utf8_lossy(&patch_buf).to_string();
-            
-            files.push(FileChange {
-                filename: file_path,
-                additions: additions as i64,
-                deletions: deletions as i64,
-                patch: if !patch_content.is_empty() { Some(patch_content) } else { None },
-                status,
-            });
-        }
+            },
+            None,
+            None,
+            None,
+        )?;
+        
+        files = processed_files;
         
         Ok(CommitDetails {
             sha,

@@ -237,8 +237,25 @@ function DiffFile({
           {collapsedFiles.has(file.path) && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
               {(() => {
-                const additions = file.chunks.filter((c) => c.chunk_type === 'Insert').length;
-                const deletions = file.chunks.filter((c) => c.chunk_type === 'Delete').length;
+                // All diffs now use the grouped format: chunks contain multiple lines
+                const additions = file.chunks
+                  .filter((c) => c.chunk_type === 'Insert')
+                  .reduce((sum, chunk) => {
+                    if (!chunk.content) return sum;
+                    const lines = chunk.content.split('\n');
+                    // Don't count empty last element from trailing newline
+                    return sum + (lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
+                  }, 0);
+                  
+                const deletions = file.chunks
+                  .filter((c) => c.chunk_type === 'Delete')
+                  .reduce((sum, chunk) => {
+                    if (!chunk.content) return sum;
+                    const lines = chunk.content.split('\n');
+                    // Don't count empty last element from trailing newline
+                    return sum + (lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
+                  }, 0);
+                
                 return (
                   <>
                     {additions > 0 && (

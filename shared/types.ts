@@ -86,9 +86,9 @@ export type RepositoryInfo = { id: bigint, name: string, full_name: string, owne
 
 export type CommitAuthor = { name: string, email: string, date: string | null, };
 
-export type FileChange = { filename: string, additions: bigint, deletions: bigint, patch: string | null, status: string, };
+export type FileChangeMetadata = { filename: string, additions: bigint, deletions: bigint, status: string, chunks: Array<DiffChunk>, };
 
-export type CommitDetails = { sha: string, message: string, author: CommitAuthor | null, files: Array<FileChange>, };
+export type CommitDetails = { sha: string, message: string, author: CommitAuthor | null, files: Array<FileChangeMetadata>, };
 
 export type ProcessLogsResponse = { id: string, process_type: ExecutionProcessType, command: string, executor_type: string | null, status: ExecutionProcessStatus, normalized_conversation: NormalizedConversation, };
 

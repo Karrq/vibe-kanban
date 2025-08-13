@@ -8,7 +8,7 @@ import {
 import { Loader } from '@/components/ui/loader';
 import { attemptsApi } from '@/lib/api';
 import { DiffCard } from '@/components/tasks/TaskDetails/DiffCard';
-import type { CommitDetails, WorktreeDiff, FileDiff, DiffChunk } from 'shared/types';
+import type { CommitDetails, WorktreeDiff, FileDiff } from 'shared/types';
 import { GitCommit, Check } from 'lucide-react';
 
 interface CommitDetailsModalProps {
@@ -84,97 +84,10 @@ export function CommitDetailsModal({
   const diffData = useMemo<WorktreeDiff | null>(() => {
     if (!commitDetails?.files) return null;
     
-    const files: FileDiff[] = commitDetails.files.map(file => {
-      const chunks: DiffChunk[] = [];
-      
-      if (file.patch) {
-        // Check if this is a new file
-        const isNewFile = file.status === 'added' || file.patch.includes('new file mode');
-        
-        // Parse the git patch format
-        const lines = file.patch.split('\n');
-        let inHunk = false;
-        
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          
-          // Check for hunk header
-          if (line.startsWith('@@')) {
-            inHunk = true;
-            // Parse the hunk header to understand if this is an addition-only hunk
-            // Format: @@ -0,0 +1,3 @@ means adding 3 lines starting at line 1
-            continue;
-          }
-          
-          // Skip everything before the first hunk (git headers)
-          if (!inHunk) {
-            continue;
-          }
-          
-          // Skip the "\ No newline at end of file" message
-          if (line === '\\ No newline at end of file') {
-            continue;
-          }
-          
-          // For new files, the backend sometimes sends lines without + prefix
-          // We need to detect this case
-          const hasPrefix = line.startsWith('+') || line.startsWith('-') || line.startsWith(' ');
-          
-          if (!hasPrefix && isNewFile) {
-            // New file content without prefix - treat as addition
-            // Skip empty last line from split
-            if (i === lines.length - 1 && line === '') {
-              continue;
-            }
-            chunks.push({ 
-              chunk_type: 'Insert', 
-              content: line 
-            });
-          } else if (line.startsWith('+')) {
-            // Addition line - strip the + and add as Insert
-            chunks.push({ 
-              chunk_type: 'Insert', 
-              content: line.substring(1) 
-            });
-          } else if (line.startsWith('-')) {
-            // Deletion line - strip the - and add as Delete
-            chunks.push({ 
-              chunk_type: 'Delete', 
-              content: line.substring(1) 
-            });
-          } else if (line.startsWith(' ')) {
-            // Context line - strip the space and add as Equal
-            chunks.push({ 
-              chunk_type: 'Equal', 
-              content: line.substring(1) 
-            });
-          } else if (line === '') {
-            // Empty line
-            if (i === lines.length - 1) {
-              // Skip empty last line from split
-              continue;
-            }
-            // Real empty line in content
-            if (isNewFile) {
-              chunks.push({ 
-                chunk_type: 'Insert', 
-                content: '' 
-              });
-            } else {
-              chunks.push({ 
-                chunk_type: 'Equal', 
-                content: '' 
-              });
-            }
-          }
-        }
-      }
-      
-      return {
-        path: file.filename,
-        chunks
-      };
-    });
+    const files: FileDiff[] = commitDetails.files.map(file => ({
+      path: file.filename,
+      chunks: file.chunks || []
+    }));
     
     return { files };
   }, [commitDetails]);
