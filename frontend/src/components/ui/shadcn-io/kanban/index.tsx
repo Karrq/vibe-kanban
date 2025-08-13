@@ -80,12 +80,19 @@ export const KanbanCard = ({
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id,
-      data: { index, parent },
+      data: { index, parent, type: 'task' },
     });
+  
+  // Also make the card a drop target for reordering
+  const { isOver, setNodeRef: setDroppableNodeRef } = useDroppable({
+    id,
+    data: { index, parent, type: 'task' },
+  });
 
-  // Combine DnD ref and forwarded ref
+  // Combine DnD refs and forwarded ref
   const combinedRef = (node: HTMLDivElement | null) => {
     setNodeRef(node);
+    setDroppableNodeRef(node);
     if (typeof forwardedRef === 'function') {
       forwardedRef(node);
     } else if (forwardedRef && typeof forwardedRef === 'object') {
@@ -98,7 +105,8 @@ export const KanbanCard = ({
     <Card
       className={cn(
         'rounded-md p-3 shadow-sm focus:ring-2 focus:ring-primary outline-none',
-        isDragging && 'cursor-grabbing',
+        isDragging && 'cursor-grabbing opacity-50',
+        isOver && 'ring-2 ring-primary',
         className
       )}
       style={{

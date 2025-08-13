@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   useKanbanKeyboardNavigation,
@@ -12,8 +12,18 @@ import { Project } from 'shared/types';
 import { ProjectForm } from './project-form';
 import { projectsApi } from '@/lib/api';
 import { AlertCircle, Archive, Loader2, Plus, Search } from 'lucide-react';
-import ProjectCard from '@/components/projects/ProjectCard.tsx';
+// ProjectCard is imported indirectly through DraggableProjectCard
+import { DraggableProjectCard } from '@/components/projects/DraggableProjectCard';
 import { useArchive } from '@/hooks/useArchive';
+import { useProjectOrder } from '@/hooks/useProjectOrder';
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  rectIntersection,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
 
 export function ProjectList() {
   const navigate = useNavigate();
@@ -26,6 +36,7 @@ export function ProjectList() {
     toggleShowArchivedProjects,
     hasArchivedProjects,
   } = useArchive();
+  const { sortProjects, updateProjectOrder } = useProjectOrder();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -36,11 +47,12 @@ export function ProjectList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showArchivedIndicator, setShowArchivedIndicator] = useState(false);
 
-  // Filter projects based on archive status and search
-  const { visible: visibleProjects, hasOnlyArchived } = filterProjects(
+  // Filter projects based on archive status and search, then sort by saved order
+  const { visible: filteredProjects, hasOnlyArchived } = filterProjects(
     projects,
     searchQuery
   );
+  const visibleProjects = sortProjects(filteredProjects);
 
   // Update archived indicator
   useEffect(() => {
@@ -67,6 +79,35 @@ export function ProjectList() {
     setEditingProject(null);
     fetchProjects();
   };
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (!over || !active.data.current) return;
+
+      const activeId = active.id as string;
+      const overId = over.id as string;
+
+      if (activeId === overId) return;
+
+      // Reorder projects
+      const reorderedProjects = updateProjectOrder(visibleProjects, activeId, overId);
+      // Update local state to reflect the new order
+      const newProjects = projects.map(p => {
+        const reordered = reorderedProjects.find(rp => rp.id === p.id);
+        return reordered || p;
+      });
+      setProjects(newProjects);
+    },
+    [visibleProjects, projects, updateProjectOrder]
+  );
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   // Group projects by grid columns (3 columns for lg, 2 for md, 1 for sm)
   const getGridColumns = () => {
@@ -240,21 +281,28 @@ export function ProjectList() {
               </p>
             </div>
           )}
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {visibleProjects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                isFocused={focusedProjectId === project.id}
-                setError={setError}
-                setEditingProject={setEditingProject}
-                setShowForm={setShowForm}
-                fetchProjects={fetchProjects}
-                onArchive={toggleProjectArchive}
-                isArchived={isProjectArchived(project.id)}
-              />
-            ))}
-          </div>
+          <DndContext
+            collisionDetection={rectIntersection}
+            onDragEnd={handleDragEnd}
+            sensors={sensors}
+          >
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {visibleProjects.map((project, index) => (
+                <DraggableProjectCard
+                  key={project.id}
+                  project={project}
+                  index={index}
+                  isFocused={focusedProjectId === project.id}
+                  setError={setError}
+                  setEditingProject={setEditingProject}
+                  setShowForm={setShowForm}
+                  fetchProjects={fetchProjects}
+                  onArchive={toggleProjectArchive}
+                  isArchived={isProjectArchived(project.id)}
+                />
+              ))}
+            </div>
+          </DndContext>
         </>
       )}
 

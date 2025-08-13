@@ -35,6 +35,7 @@ import {
 import TaskKanbanBoard from '@/components/tasks/TaskKanbanBoard';
 import { TaskDetailsPanel } from '@/components/tasks/TaskDetailsPanel';
 import { useArchive } from '@/hooks/useArchive';
+import { useTaskOrder } from '@/hooks/useTaskOrder';
 import type {
   CreateTaskAndStart,
   ExecutorConfig,
@@ -54,6 +55,7 @@ export function ProjectTasks() {
   }>();
   const navigate = useNavigate();
   const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount } = useArchive();
+  const { sortTasks, updateTaskOrder } = useTaskOrder(projectId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
   const [loading, setLoading] = useState(true);
@@ -300,10 +302,9 @@ export function ProjectTasks() {
 
       // Check if we're reordering within the same column or moving to a different column
       const overData = over.data?.current;
-      const activeData = active.data.current;
       
       // If dropping on another task (reordering within column or moving to different column)
-      if (overData && overData.index !== undefined) {
+      if (overData && overData.type === 'task') {
         const overTaskId = over.id as string;
         const overTask = tasks.find((t) => t.id === overTaskId);
         
@@ -331,9 +332,11 @@ export function ProjectTasks() {
               );
               setError('Failed to update task status');
             }
+          } else {
+            // Reordering within the same column
+            const reorderedTasks = updateTaskOrder(tasks, taskId, overTaskId);
+            setTasks(reorderedTasks);
           }
-          // Reordering within the same column - handled by TaskOrder hook
-          // The reordering will be persisted in localStorage
         }
       } else {
         // Dropping on a column (not on a specific task)
@@ -570,7 +573,7 @@ export function ProjectTasks() {
           <div className="px-8 overflow-x-auto overflow-y-hidden my-4 h-[calc(100vh-16rem)]">
             <div className="min-w-[900px] max-w-[2000px] relative h-full">
               <TaskKanbanBoard
-                tasks={tasks}
+                tasks={sortTasks(tasks)}
                 searchQuery={searchQuery}
                 onDragEnd={handleDragEnd}
                 onEditTask={handleEditTask}
