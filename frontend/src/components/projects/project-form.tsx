@@ -53,6 +53,12 @@ export function ProjectForm({
   const [executorEnvScript, setExecutorEnvScript] = useState(
     project?.executor_env_script ?? ''
   );
+  const [promptTemplate, setPromptTemplate] = useState(
+    project?.prompt_template ?? `project_id: $VK_PROJECT_ID
+
+Task title: $VK_TASK_TITLE
+Task description: $VK_TASK_DESCRIPTION`
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showFolderPicker, setShowFolderPicker] = useState(false);
@@ -101,6 +107,7 @@ export function ProjectForm({
       setDevScript(project.dev_script ?? '');
       setCleanupScript(project.cleanup_script ?? '');
       setExecutorEnvScript(project.executor_env_script ?? '');
+      setPromptTemplate(project.prompt_template ?? '');
     } else {
       setName('');
       setGitRepoPath('');
@@ -108,6 +115,7 @@ export function ProjectForm({
       setDevScript('');
       setCleanupScript('');
       setExecutorEnvScript('');
+      setPromptTemplate('');
       setSelectedRepository(null);
     }
   }, [project]);
@@ -150,6 +158,7 @@ export function ProjectForm({
           dev_script: devScript.trim() || null,
           cleanup_script: cleanupScript.trim() || null,
           executor_env_script: executorEnvScript.trim() || null,
+          prompt_template: promptTemplate.trim() || '',  // Empty string means the user cleared it
         };
 
         await projectsApi.update(project.id, updateData);
@@ -170,6 +179,7 @@ export function ProjectForm({
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
             executor_env_script: executorEnvScript.trim() || null,
+            prompt_template: promptTemplate.trim() || null,  // Backend will provide default if null
           };
 
           await githubApi.createProjectFromRepository(githubData);
@@ -191,6 +201,7 @@ export function ProjectForm({
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
             executor_env_script: executorEnvScript.trim() || null,
+            prompt_template: promptTemplate.trim() || null,  // Backend will provide default if null
           };
 
           await projectsApi.create(createData);
@@ -205,6 +216,7 @@ export function ProjectForm({
       setDevScript('');
       setCleanupScript('');
       setExecutorEnvScript('');
+      setPromptTemplate('');
       setParentPath('');
       setFolderName('');
       setSelectedRepository(null);
@@ -223,6 +235,7 @@ export function ProjectForm({
       setDevScript(project.dev_script ?? '');
       setCleanupScript(project.cleanup_script ?? '');
       setExecutorEnvScript(project.executor_env_script ?? '');
+      setPromptTemplate(project.prompt_template ?? '');
     } else {
       setName('');
       setGitRepoPath('');
@@ -230,6 +243,7 @@ export function ProjectForm({
       setDevScript('');
       setCleanupScript('');
       setExecutorEnvScript('');
+      setPromptTemplate('');
     }
     setParentPath('');
     setFolderName('');
@@ -282,6 +296,8 @@ export function ProjectForm({
                   setCleanupScript={setCleanupScript}
                   executorEnvScript={executorEnvScript}
                   setExecutorEnvScript={setExecutorEnvScript}
+                  promptTemplate={promptTemplate}
+                  setPromptTemplate={setPromptTemplate}
                   error={error}
                 />
                 <DialogFooter>
@@ -497,6 +513,8 @@ export function ProjectForm({
                 setCleanupScript={setCleanupScript}
                 executorEnvScript={executorEnvScript}
                 setExecutorEnvScript={setExecutorEnvScript}
+                promptTemplate={promptTemplate}
+                setPromptTemplate={setPromptTemplate}
                 error={error}
               />
             )}
