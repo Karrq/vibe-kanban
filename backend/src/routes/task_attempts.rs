@@ -6,8 +6,10 @@ use axum::{
     routing::get,
     Extension, Json, Router,
 };
+use futures_util::future;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use ts_rs::TS;
 use uuid::Uuid;
 
@@ -73,13 +75,21 @@ async fn normalize_process_logs(
     db_pool: &SqlitePool,
     process: &ExecutionProcess,
 ) -> NormalizedConversation {
-    use crate::models::{
-        execution_process::ExecutionProcessType, executor_session::ExecutorSession,
-    };
+    use crate::models::executor_session::ExecutorSession;
     let executor_session = ExecutorSession::find_by_execution_process_id(db_pool, process.id)
         .await
         .ok()
         .flatten();
+    
+    normalize_process_logs_with_session(process, executor_session.as_ref()).await
+}
+
+// Helper to normalize logs with an already fetched session (avoids extra DB calls)
+async fn normalize_process_logs_with_session(
+    process: &ExecutionProcess,
+    executor_session: Option<&crate::models::executor_session::ExecutorSession>,
+) -> NormalizedConversation {
+    use crate::models::execution_process::ExecutionProcessType;
 
     let has_stdout = process
         .stdout
@@ -197,6 +207,8 @@ pub async fn get_task_attempt_all_logs(
     Extension(task_attempt): Extension<TaskAttempt>,
     State(app_state): State<AppState>,
 ) -> Result<Json<ApiResponse<Vec<ProcessLogsResponse>>>, StatusCode> {
+    use crate::models::executor_session::ExecutorSession;
+    
     // Fetch all execution processes for this attempt
     let processes = match ExecutionProcess::find_by_task_attempt_id(
         &app_state.db_pool,
@@ -207,19 +219,50 @@ pub async fn get_task_attempt_all_logs(
         Ok(list) => list,
         Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
-    // For each process, normalize logs
-    let mut result = Vec::new();
-    for process in processes {
-        let normalized_conversation = normalize_process_logs(&app_state.db_pool, &process).await;
-        result.push(ProcessLogsResponse {
-            id: process.id,
-            process_type: process.process_type.clone(),
-            command: process.command.clone(),
-            executor_type: process.executor_type.clone(),
-            status: process.status.clone(),
-            normalized_conversation,
-        });
-    }
+    
+    // Fetch all executor sessions for this attempt in a single query
+    let all_sessions = match ExecutorSession::find_by_task_attempt_id(
+        &app_state.db_pool,
+        task_attempt.id,
+    )
+    .await
+    {
+        Ok(sessions) => sessions,
+        Err(e) => {
+            tracing::warn!("Failed to fetch executor sessions: {}", e);
+            vec![]
+        }
+    };
+    
+    // Create a map of execution_process_id to session for quick lookup
+    let sessions_map: HashMap<Uuid, ExecutorSession> = all_sessions
+        .into_iter()
+        .map(|session| (session.execution_process_id, session))
+        .collect();
+    
+    // Process all logs in parallel using futures
+    let futures: Vec<_> = processes
+        .into_iter()
+        .map(|process| {
+            let session = sessions_map.get(&process.id).cloned();
+            let process_clone = process.clone();
+            async move {
+                let normalized_conversation = normalize_process_logs_with_session(&process_clone, session.as_ref()).await;
+                ProcessLogsResponse {
+                    id: process_clone.id,
+                    process_type: process_clone.process_type,
+                    command: process_clone.command,
+                    executor_type: process_clone.executor_type,
+                    status: process_clone.status,
+                    normalized_conversation,
+                }
+            }
+        })
+        .collect();
+    
+    // Execute all futures concurrently
+    let result = future::join_all(futures).await;
+    
     Ok(Json(ApiResponse::success(result)))
 }
 

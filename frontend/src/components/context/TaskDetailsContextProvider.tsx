@@ -228,28 +228,34 @@ const TaskDetailsProvider: FC<{
             (process) => process.status === 'running'
           );
 
-          const runningProcessDetails: Record<string, ExecutionProcess> = {};
-
-          // Fetch details for running processes
-          for (const process of runningProcesses) {
-            const result = await executionProcessesApi.getDetails(process.id);
-
-            if (result !== undefined) {
-              runningProcessDetails[process.id] = result;
-            }
-          }
-
-          // Also fetch setup script process details if it exists in the processes
+          // Also include setup script process
           const setupProcess = processesResult.find(
             (process) => process.process_type === 'setupscript'
           );
-          if (setupProcess && !runningProcessDetails[setupProcess.id]) {
-            const result = await executionProcessesApi.getDetails(
-              setupProcess.id
-            );
+          
+          // Collect all processes that need details fetched
+          const processesToFetch = [
+            ...runningProcesses,
+            ...(setupProcess && !runningProcesses.find(p => p.id === setupProcess.id) ? [setupProcess] : [])
+          ];
 
-            if (result !== undefined) {
-              runningProcessDetails[setupProcess.id] = result;
+          // Fetch all process details in parallel
+          const detailsPromises = processesToFetch.map(process =>
+            executionProcessesApi.getDetails(process.id)
+              .then(result => result !== undefined ? { id: process.id, details: result } : null)
+              .catch(err => {
+                console.error(`Failed to fetch details for process ${process.id}:`, err);
+                return null;
+              })
+          );
+
+          const detailsResults = await Promise.all(detailsPromises);
+          
+          // Build the runningProcessDetails map from successful results
+          const runningProcessDetails: Record<string, ExecutionProcess> = {};
+          for (const result of detailsResults) {
+            if (result) {
+              runningProcessDetails[result.id] = result.details;
             }
           }
 
