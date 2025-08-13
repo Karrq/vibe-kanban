@@ -149,7 +149,19 @@ const BranchSelector = memo(({
   }, [branches, nonVkBranches, branchSearchTerm]);
 
   const displayName = useMemo(() => {
-    if (!selectedBranch) return placeholder;
+    if (!selectedBranch) {
+      // If no branch is selected, try to show the current branch
+      const currentBranch = branches.find((b) => b.is_current);
+      if (currentBranch) {
+        // For remote branches, skip the first segment
+        const parts = currentBranch.name.split('/');
+        if (parts.length > 2) {
+          return parts.slice(1).join('/');
+        }
+        return currentBranch.name;
+      }
+      return placeholder;
+    }
 
     // For remote branches, skip the first segment (the remote name)
     // but preserve the rest of the branch structure
@@ -161,7 +173,7 @@ const BranchSelector = memo(({
     }
     
     return selectedBranch;
-  }, [selectedBranch, placeholder]);
+  }, [selectedBranch, placeholder, branches]);
 
   const handleBranchSelect = useCallback((branchName: string) => {
     onBranchSelect(branchName);

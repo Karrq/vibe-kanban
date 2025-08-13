@@ -63,6 +63,7 @@ pub struct CreateTaskAndStart {
     pub description: Option<String>,
     pub parent_task_attempt: Option<Uuid>,
     pub executor: Option<crate::executor::ExecutorConfig>,
+    pub base_branch: Option<String>,
 }
 
 #[derive(Debug, Deserialize, TS)]
