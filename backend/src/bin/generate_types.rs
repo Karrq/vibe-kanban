@@ -147,6 +147,7 @@ fn generate_types_content() -> String {
         vibe_kanban::models::execution_process::ExecutionProcessType::decl(),
         vibe_kanban::models::execution_process::CreateExecutionProcess::decl(),
         vibe_kanban::models::execution_process::UpdateExecutionProcess::decl(),
+        vibe_kanban::routes::processes::ExecutionProcessWithTask::decl(),
         vibe_kanban::models::executor_session::ExecutorSession::decl(),
         vibe_kanban::models::executor_session::CreateExecutorSession::decl(),
         vibe_kanban::models::executor_session::UpdateExecutorSession::decl(),

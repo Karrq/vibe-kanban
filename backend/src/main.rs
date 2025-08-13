@@ -207,6 +207,7 @@ fn main() -> anyhow::Result<()> {
                 .merge(config::config_router())
                 .merge(auth::auth_router())
                 .route("/sounds/:filename", get(serve_sound_file))
+                .route("/processes/:process_id/kill", post(routes::processes::kill_process))
                 .merge(
                     Router::new()
                         .route("/execution-processes/:process_id", get(task_attempts::get_execution_process))
@@ -236,7 +237,8 @@ fn main() -> anyhow::Result<()> {
             let project_routes = Router::new()
                 .merge(projects::projects_base_router())
                 .merge(projects::projects_with_id_router()
-                    .layer(from_fn_with_state(app_state.clone(), load_project_middleware)));
+                    .layer(from_fn_with_state(app_state.clone(), load_project_middleware)))
+                .route("/projects/:project_id/processes", get(routes::processes::list_project_processes));
 
             // Task routes with appropriate middleware
             let task_routes = Router::new()

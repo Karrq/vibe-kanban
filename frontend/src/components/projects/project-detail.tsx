@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProjectWithBranch } from 'shared/types';
 import { ProjectForm } from './project-form';
+import { ProcessesDialog } from './ProcessesDialog';
 import { projectsApi } from '@/lib/api';
 import {
   AlertCircle,
@@ -22,6 +23,7 @@ import {
   Edit,
   Loader2,
   Trash2,
+  Terminal,
 } from 'lucide-react';
 import { useKeyboardShortcuts } from '@/lib/keyboard-shortcuts';
 
@@ -35,6 +37,7 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
   const [loading, setLoading] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
+  const [showProcessesDialog, setShowProcessesDialog] = useState(false);
   const [error, setError] = useState('');
 
   useKeyboardShortcuts({
@@ -148,6 +151,10 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
             <CheckSquare className="mr-2 h-4 w-4" />
             View Tasks
           </Button>
+          <Button variant="outline" onClick={() => setShowProcessesDialog(true)}>
+            <Terminal className="mr-2 h-4 w-4" />
+            Processes
+          </Button>
           <Button variant="outline" onClick={() => setShowEditForm(true)}>
             <Edit className="mr-2 h-4 w-4" />
             Edit
@@ -245,6 +252,12 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
         onClose={() => setShowEditForm(false)}
         onSuccess={handleEditSuccess}
         project={project}
+      />
+      
+      <ProcessesDialog
+        projectId={projectId}
+        open={showProcessesDialog}
+        onClose={() => setShowProcessesDialog(false)}
       />
     </div>
   );
