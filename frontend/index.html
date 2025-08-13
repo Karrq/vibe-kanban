@@ -11,6 +11,26 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>vibe-kanban</title>
+    <script>
+      // Apply theme immediately to prevent flash of wrong theme
+      (function() {
+        const storedTheme = localStorage.getItem('vibe-kanban-theme');
+        const validThemes = ['light', 'dark', 'system', 'purple', 'green', 'blue', 'orange', 'red'];
+        
+        if (storedTheme && validThemes.includes(storedTheme)) {
+          if (storedTheme === 'system') {
+            const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            document.documentElement.classList.add(systemTheme);
+          } else {
+            document.documentElement.classList.add(storedTheme);
+          }
+        } else {
+          // Default to system preference if no theme is stored
+          const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          document.documentElement.classList.add(systemTheme);
+        }
+      })();
+    </script>
 </head>
 <body>
 <div id="root"></div>
