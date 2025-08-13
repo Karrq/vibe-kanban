@@ -185,7 +185,7 @@ export function ProjectTasks() {
   );
 
   const handleCreateTask = useCallback(
-    async (title: string, description: string) => {
+    async (title: string, description: string, branch?: string) => {
       try {
         const createdTask = await tasksApi.create(projectId!, {
           project_id: projectId!,
@@ -193,6 +193,12 @@ export function ProjectTasks() {
           description: description || null,
           parent_task_attempt: null,
         });
+        
+        // Store the branch selection for this task if provided
+        if (branch && createdTask.id) {
+          sessionStorage.setItem(`task-branch-${createdTask.id}`, branch);
+        }
+        
         await fetchTasks();
         // Open the newly created task in the details panel
         navigate(`/projects/${projectId}/tasks/${createdTask.id}`, {
@@ -206,7 +212,7 @@ export function ProjectTasks() {
   );
 
   const handleCreateAndStartTask = useCallback(
-    async (title: string, description: string, executor?: ExecutorConfig) => {
+    async (title: string, description: string, executor?: ExecutorConfig, branch?: string) => {
       try {
         const payload: CreateTaskAndStart = {
           project_id: projectId!,
@@ -214,8 +220,15 @@ export function ProjectTasks() {
           description: description || null,
           parent_task_attempt: null,
           executor: executor || null,
+          base_branch: branch || null,
         };
         const result = await tasksApi.createAndStart(projectId!, payload);
+        
+        // Store the branch selection for this task if provided
+        if (branch && result.id) {
+          sessionStorage.setItem(`task-branch-${result.id}`, branch);
+        }
+        
         await fetchTasks();
         // Open the newly created task in the details panel
         handleViewTaskDetails(result);

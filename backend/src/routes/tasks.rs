@@ -108,7 +108,7 @@ pub async fn create_task_and_start(
     let executor_string = payload.executor.as_ref().map(|exec| exec.to_string());
     let attempt_payload = CreateTaskAttempt {
         executor: executor_string.clone(),
-        base_branch: None, // Not supported in task creation endpoint, only in task attempts
+        base_branch: payload.base_branch,
     };
 
     match TaskAttempt::create(&app_state.db_pool, &attempt_payload, task_id).await {

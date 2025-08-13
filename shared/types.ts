@@ -50,7 +50,7 @@ export type CreateBranch = { name: string, base_branch: string | null, };
 
 export type CreateTask = { project_id: string, title: string, description: string | null, parent_task_attempt: string | null, };
 
-export type CreateTaskAndStart = { project_id: string, title: string, description: string | null, parent_task_attempt: string | null, executor: ExecutorConfig | null, };
+export type CreateTaskAndStart = { project_id: string, title: string, description: string | null, parent_task_attempt: string | null, executor: ExecutorConfig | null, base_branch: string | null, };
 
 export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
 
