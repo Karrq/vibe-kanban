@@ -279,7 +279,8 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
   // Check if this entry is a file modification to set initial expanded state
   const isFileModEntry = isFileModificationToolCall(entry.entry_type);
   const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => {
-    // Initialize with current index if it's a file modification (expanded by default)
+    // The edit tool collapsible should always be expanded by default
+    // Only the file diffs inside DiffCard will be collapsed based on user preference
     const initialSet = new Set<number>();
     if (isFileModEntry) {
       initialSet.add(index);
