@@ -861,10 +861,23 @@ async fn handle_coding_agent_completion(
     success: bool,
     exit_code: Option<i64>,
 ) {
-    // Check if this was a Claude executor that encountered error_during_execution
-    let should_auto_continue = if execution_process.executor_type.as_deref() == Some("claude") || 
-                                 execution_process.executor_type.as_deref() == Some("Claude Code") ||
-                                 execution_process.executor_type.as_deref() == Some("ClaudePlan") {
+    // Get app config to check autocontinue setting
+    let autocontinue_enabled = {
+        let config = app_state.get_config().read().await;
+        config.autocontinue_enabled
+    };
+    
+    // Get task attempt for later use
+    let task_attempt_option = TaskAttempt::find_by_id(&app_state.db_pool, task_attempt_id)
+        .await
+        .ok()
+        .flatten();
+
+    // Check if this was a Claude executor that encountered error_during_execution AND autocontinue is enabled
+    let should_auto_continue = if autocontinue_enabled &&
+                                 (execution_process.executor_type.as_deref() == Some("claude") || 
+                                  execution_process.executor_type.as_deref() == Some("Claude Code") ||
+                                  execution_process.executor_type.as_deref() == Some("ClaudePlan")) {
         // Check stdout for error_during_execution
         if let Some(stdout) = &execution_process.stdout {
             check_for_error_during_execution(stdout)
@@ -909,10 +922,8 @@ async fn handle_coding_agent_completion(
     // Note: Notifications and status updates moved to cleanup completion handler
     // to ensure they only fire after all processing (including cleanup) is complete
 
-    // Get task attempt to access worktree path for committing changes
-    if let Ok(Some(task_attempt)) =
-        TaskAttempt::find_by_id(&app_state.db_pool, task_attempt_id).await
-    {
+    // Use task attempt to access worktree path for committing changes
+    if let Some(task_attempt) = task_attempt_option {
         // Commit any unstaged changes after execution completion
         if let Err(e) = commit_execution_changes(
             &task_attempt.worktree_path,

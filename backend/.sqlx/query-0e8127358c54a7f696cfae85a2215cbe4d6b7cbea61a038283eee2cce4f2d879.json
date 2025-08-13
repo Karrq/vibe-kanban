@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "UPDATE projects SET name = $2, git_repo_path = $3, setup_script = $4, dev_script = $5, cleanup_script = $6, executor_env_script = $7 WHERE id = $1 RETURNING id as \"id!: Uuid\", name, git_repo_path, setup_script, dev_script, cleanup_script, executor_env_script, created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
+  "query": "INSERT INTO projects (id, name, git_repo_path, setup_script, dev_script, cleanup_script, executor_env_script, autocontinue_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id as \"id!: Uuid\", name, git_repo_path, setup_script, dev_script, cleanup_script, executor_env_script, autocontinue_enabled as \"autocontinue_enabled!: bool\", created_at as \"created_at!: DateTime<Utc>\", updated_at as \"updated_at!: DateTime<Utc>\"",
   "describe": {
     "columns": [
       {
@@ -39,18 +39,23 @@
         "type_info": "Text"
       },
       {
-        "name": "created_at!: DateTime<Utc>",
+        "name": "autocontinue_enabled!: bool",
         "ordinal": 7,
+        "type_info": "Bool"
+      },
+      {
+        "name": "created_at!: DateTime<Utc>",
+        "ordinal": 8,
         "type_info": "Text"
       },
       {
         "name": "updated_at!: DateTime<Utc>",
-        "ordinal": 8,
+        "ordinal": 9,
         "type_info": "Text"
       }
     ],
     "parameters": {
-      "Right": 7
+      "Right": 8
     },
     "nullable": [
       true,
@@ -61,8 +66,9 @@
       true,
       true,
       false,
+      false,
       false
     ]
   },
-  "hash": "d9a03d42078eb58ede429d0ed580889bd662a099f5febc1e1329c5cafb721776"
+  "hash": "0e8127358c54a7f696cfae85a2215cbe4d6b7cbea61a038283eee2cce4f2d879"
 }

@@ -478,6 +478,39 @@ export function Settings() {
 
           <Card>
             <CardHeader>
+              <CardTitle>Experimental Features</CardTitle>
+              <CardDescription>
+                Try out new features that are still in development.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="autocontinue-enabled"
+                  checked={config.autocontinue_enabled}
+                  onCheckedChange={(checked: boolean) =>
+                    updateConfig({ autocontinue_enabled: checked })
+                  }
+                />
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="autocontinue-enabled"
+                    className="cursor-pointer"
+                  >
+                    Enable Autocontinue
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    When enabled, Claude Code will automatically continue working after
+                    encountering an error during execution. This feature is experimental
+                    and only works with Claude-based executors.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle>Privacy</CardTitle>
               <CardDescription>
                 Help improve Vibe-Kanban by sharing anonymous usage data.

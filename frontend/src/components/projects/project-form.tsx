@@ -170,7 +170,7 @@ export function ProjectForm({
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
             executor_env_script: executorEnvScript.trim() || null,
-          };
+            };
 
           await githubApi.createProjectFromRepository(githubData);
         } else {
@@ -191,7 +191,7 @@ export function ProjectForm({
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
             executor_env_script: executorEnvScript.trim() || null,
-          };
+            };
 
           await projectsApi.create(createData);
         }
@@ -473,6 +473,7 @@ export function ProjectForm({
                     </CollapsibleContent>
                   </Collapsible>
                 </div>
+
               </>
             ) : (
               // Local mode: Show existing form

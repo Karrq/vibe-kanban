@@ -246,10 +246,12 @@ pub async fn update_project(
         dev_script,
         cleanup_script,
         executor_env_script,
+        autocontinue_enabled,
     } = payload;
 
     let name = name.unwrap_or(existing_project.name);
     let git_repo_path = git_repo_path.unwrap_or(existing_project.git_repo_path);
+    let autocontinue_enabled = autocontinue_enabled.unwrap_or(existing_project.autocontinue_enabled);
 
     match Project::update(
         &app_state.db_pool,
@@ -260,6 +262,7 @@ pub async fn update_project(
         dev_script,
         cleanup_script,
         executor_env_script,
+        autocontinue_enabled,
     )
     .await
     {
