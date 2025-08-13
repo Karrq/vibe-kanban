@@ -63,6 +63,16 @@ const getEntryIcon = (entryType: NormalizedEntryType) => {
       return <CheckSquare className="h-4 w-4 text-purple-600" />;
     }
 
+    // Special handling for BashOutput tool
+    if (tool_name && tool_name.toLowerCase() === 'bashoutput') {
+      return <Terminal className="h-4 w-4 text-yellow-600" />;
+    }
+
+    // Special handling for KillBash tool
+    if (tool_name && tool_name.toLowerCase() === 'killbash') {
+      return <Terminal className="h-4 w-4 text-red-600" />;
+    }
+
     if (action_type.action === 'file_read') {
       return <Eye className="h-4 w-4 text-orange-600" />;
     }
@@ -261,6 +271,8 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
         entryType.tool_name.toLowerCase() === 'multiedit' ||
         entryType.tool_name.toLowerCase() === 'bash' ||
         entryType.tool_name.toLowerCase() === 'run_command' ||
+        entryType.tool_name.toLowerCase() === 'bashoutput' ||
+        entryType.tool_name.toLowerCase() === 'killbash' ||
         entryType.tool_name.toLowerCase() === 'grep' ||
         entryType.tool_name.toLowerCase() === 'search' ||
         entryType.tool_name.toLowerCase() === 'webfetch' ||
@@ -340,13 +352,23 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
       entry.entry_type.tool_name.toLowerCase() === 'todo_read'
     );
 
-  // Check if this is a command run (Bash), file read (Read), or TodoWrite tool call with results
+  // Check if this is a BashOutput or KillBash tool
+  const isBashOutputTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && 
+    entry.entry_type.tool_name.toLowerCase() === 'bashoutput';
+  const isKillBashTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && 
+    entry.entry_type.tool_name.toLowerCase() === 'killbash';
+
+  // Check if this is a command run (Bash), file read (Read), TodoWrite, BashOutput, or KillBash tool call with results
   const hasCollapsibleToolResult = entry.tool_result !== null && 
     entry.tool_result !== undefined && 
     entry.entry_type.type === 'tool_use' && 
     (entry.entry_type.action_type.action === 'command_run' || 
      entry.entry_type.action_type.action === 'file_read' ||
-     isTodoTool);
+     isTodoTool ||
+     isBashOutputTool ||
+     isKillBashTool);
   const isToolResultExpanded = expandedToolResults.has(index);
   const isDiffExpanded = expandedDiffs.has(index);
 
@@ -464,6 +486,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
                   expanded={isToolResultExpanded}
                   toolName={entry.entry_type.tool_name}
                   content={entry.content}
+                  toolArgs={entry.tool_args}
                 />
               ) : shouldRenderMarkdown(entry.entry_type) ? (
                 <MarkdownRenderer

@@ -8,9 +8,10 @@ interface ToolResultDisplayProps {
   expanded: boolean;
   toolName?: string;
   content?: string;
+  toolArgs?: any;
 }
 
-export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, content }: ToolResultDisplayProps) {
+export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, content, toolArgs }: ToolResultDisplayProps) {
   if (!toolResult) {
     return null;
   }
@@ -23,9 +24,15 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
     toolName.toLowerCase() === 'todo_read'
   );
 
-  // Only show special formatting for command_run (Bash), file_read (Read), and TodoWrite tools
+  // Check if this is a BashOutput tool
+  const isBashOutputTool = toolName && toolName.toLowerCase() === 'bashoutput';
+
+  // Check if this is a KillBash tool
+  const isKillBashTool = toolName && toolName.toLowerCase() === 'killbash';
+
+  // Only show special formatting for command_run (Bash), file_read (Read), TodoWrite, BashOutput, and KillBash tools
   // For other tools, return null to let the parent component handle display
-  if (actionType.action !== 'command_run' && actionType.action !== 'file_read' && !isTodoTool) {
+  if (actionType.action !== 'command_run' && actionType.action !== 'file_read' && !isTodoTool && !isBashOutputTool && !isKillBashTool) {
     return null;
   }
   
@@ -85,6 +92,50 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
         </div>
       );
     }
+  } else if (isBashOutputTool) {
+    // For BashOutput: parse bash_id from tool args
+    const bashId = toolArgs?.bash_id || toolArgs?.shell_id;
+    displayContent = (
+      <span className="text-sm">
+        Bash output retrieval{bashId && (
+          <span className="ml-1 bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono text-xs">
+            {bashId}
+          </span>
+        )}
+      </span>
+    );
+    // Use standard pre-formatted output similar to Bash command
+    outputContent = toolResult.content && (
+      <pre className={`text-xs font-mono whitespace-pre-wrap break-words p-3 ${
+        toolResult.is_error 
+          ? 'text-red-700 dark:text-red-300' 
+          : 'text-gray-700 dark:text-gray-300'
+      }`}>
+        {toolResult.content}
+      </pre>
+    );
+  } else if (isKillBashTool) {
+    // For KillBash: parse bash_id or shell_id from tool args  
+    const bashId = toolArgs?.shell_id || toolArgs?.bash_id;
+    displayContent = (
+      <span className="text-sm">
+        Kill bash session{bashId && (
+          <span className="ml-1 bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono text-xs">
+            {bashId}
+          </span>
+        )}
+      </span>
+    );
+    // Show the result message
+    outputContent = toolResult.content && (
+      <pre className={`text-xs font-mono whitespace-pre-wrap break-words p-3 ${
+        toolResult.is_error 
+          ? 'text-red-700 dark:text-red-300' 
+          : 'text-gray-700 dark:text-gray-300'
+      }`}>
+        {toolResult.content}
+      </pre>
+    );
   }
   
   return (

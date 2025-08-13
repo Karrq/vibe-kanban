@@ -218,6 +218,7 @@ Task title: {}"#,
                         content: format!("Raw output: {}", trimmed),
                         metadata: None,
                         tool_result: None,
+                        tool_args: None,
                     });
                     continue;
                 }
@@ -254,6 +255,7 @@ Task title: {}"#,
                                                         content: text.to_string(),
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: None,
                                                     });
                                                 }
                                             }
@@ -286,6 +288,7 @@ Task title: {}"#,
                                                         content,
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: Some(input.clone()),
                                                     });
                                                 }
                                             }
@@ -318,6 +321,7 @@ Task title: {}"#,
                                                         content: text.to_string(),
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: None,
                                                     });
                                                 }
                                             }
@@ -391,6 +395,7 @@ Task title: {}"#,
                                     ),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                                    tool_args: None,
                                 });
                             }
                         }
@@ -415,6 +420,7 @@ Task title: {}"#,
                     content: format!("Unrecognized JSON: {}", trimmed),
                     metadata: Some(json),
                     tool_result: None,
+                    tool_args: None,
                 });
             }
         }
