@@ -11,19 +11,18 @@ import { TaskAttemptDataContext } from '@/components/context/taskDetailsContext.
 import { useTaskPlan } from '@/components/context/TaskPlanContext.ts';
 import { Loader } from '@/components/ui/loader.tsx';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, ChevronDown } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
 
 function Conversation() {
-  const { attemptData, isAttemptRunning, loadAllLogs, allLogsLoaded } = useContext(TaskAttemptDataContext);
+  const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
   const { isPlanningMode, latestProcessHasNoPlan } = useTaskPlan();
   const [shouldAutoScrollLogs, setShouldAutoScrollLogs] = useState(true);
   const [conversationUpdateTrigger, setConversationUpdateTrigger] = useState(0);
   const [visibleCount, setVisibleCount] = useState(100);
   const [visibleRunningEntriesCount, setVisibleRunningEntriesCount] =
     useState(0);
-  const [isLoadingAllLogs, setIsLoadingAllLogs] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -52,15 +51,6 @@ function Conversation() {
       }
     }
   }, [shouldAutoScrollLogs]);
-  
-  const handleLoadAllLogs = useCallback(async () => {
-    setIsLoadingAllLogs(true);
-    try {
-      await loadAllLogs();
-    } finally {
-      setIsLoadingAllLogs(false);
-    }
-  }, [loadAllLogs]);
 
   // Find main and follow-up processes from allLogs
   const mainCodingAgentLog = useMemo(
@@ -81,17 +71,6 @@ function Conversation() {
       ),
     [attemptData.allLogs]
   );
-  
-  // Check if there are more processes available to load
-  const hasMoreProcesses = useMemo(() => {
-    const totalProcesses = attemptData.processes.filter(
-      p => p.process_type === 'codingagent'
-    ).length;
-    const loadedProcesses = attemptData.allLogs.filter(
-      log => log.process_type.toLowerCase() === 'codingagent'
-    ).length;
-    return totalProcesses > loadedProcesses && !allLogsLoaded;
-  }, [attemptData.processes, attemptData.allLogs, allLogsLoaded]);
 
   // Combine all logs in order (main first, then follow-ups)
   const allProcessLogs = useMemo(
@@ -232,27 +211,6 @@ function Conversation() {
               <Loader size={32} message="Waiting for agent to start..." />
             </div>
           )}
-          
-        {/* Show button to load more processes if available */}
-        {hasMoreProcesses && !isLoadingAllLogs && (
-          <div className="flex justify-center py-4 border-t">
-            <Button
-              onClick={handleLoadAllLogs}
-              variant="outline"
-              size="sm"
-              className="gap-2"
-            >
-              <ChevronDown className="h-4 w-4" />
-              Load All Previous Conversations
-            </Button>
-          </div>
-        )}
-        
-        {isLoadingAllLogs && (
-          <div className="flex justify-center py-4">
-            <Loader size={24} message="Loading all conversations..." />
-          </div>
-        )}
       </div>
     </div>
   );

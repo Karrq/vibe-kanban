@@ -514,29 +514,6 @@ export const attemptsApi = {
     );
     return handleApiResponse(response);
   },
-  
-  getLatestLogs: async (
-    projectId: string,
-    taskId: string,
-    attemptId: string
-  ): Promise<ProcessLogsResponse[]> => {
-    const response = await makeRequest(
-      `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/logs/latest`
-    );
-    return handleApiResponse(response);
-  },
-  
-  getProcessLogs: async (
-    projectId: string,
-    taskId: string,
-    attemptId: string,
-    processId: string
-  ): Promise<ProcessLogsResponse> => {
-    const response = await makeRequest(
-      `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/execution-processes/${processId}/logs`
-    );
-    return handleApiResponse(response);
-  },
 };
 
 // Execution Process APIs

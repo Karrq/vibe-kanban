@@ -57,41 +57,6 @@ impl ExecutorSession {
         .await
     }
 
-    /// Find executor sessions by multiple execution process IDs
-    pub async fn find_by_process_ids(
-        pool: &SqlitePool,
-        process_ids: &[Uuid],
-    ) -> Result<Vec<Self>, sqlx::Error> {
-        if process_ids.is_empty() {
-            return Ok(vec![]);
-        }
-        
-        // Build the IN clause placeholders
-        let placeholders: Vec<String> = process_ids.iter().enumerate()
-            .map(|(i, _)| format!("${}", i + 1))
-            .collect();
-        let in_clause = placeholders.join(", ");
-        
-        // Build the query dynamically
-        let query_str = format!(
-            r#"SELECT
-                id, task_attempt_id, execution_process_id,
-                session_id, prompt, summary,
-                created_at, updated_at
-               FROM executor_sessions
-               WHERE execution_process_id IN ({})"#,
-            in_clause
-        );
-        
-        // Build the query
-        let mut query = sqlx::query_as::<_, Self>(&query_str);
-        for id in process_ids {
-            query = query.bind(id);
-        }
-        
-        query.fetch_all(pool).await
-    }
-    
     /// Find executor session by execution process ID
     pub async fn find_by_execution_process_id(
         pool: &SqlitePool,
@@ -117,7 +82,6 @@ impl ExecutorSession {
     }
 
     /// Find all executor sessions for a task attempt
-    #[allow(dead_code)]
     pub async fn find_by_task_attempt_id(
         pool: &SqlitePool,
         task_attempt_id: Uuid,

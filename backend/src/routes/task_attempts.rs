@@ -70,20 +70,6 @@ pub struct ProcessLogsResponse {
     pub normalized_conversation: NormalizedConversation,
 }
 
-// Helper to normalize logs for a process (extracted from get_execution_process_normalized_logs)
-async fn normalize_process_logs(
-    db_pool: &SqlitePool,
-    process: &ExecutionProcess,
-) -> NormalizedConversation {
-    use crate::models::executor_session::ExecutorSession;
-    let executor_session = ExecutorSession::find_by_execution_process_id(db_pool, process.id)
-        .await
-        .ok()
-        .flatten();
-    
-    normalize_process_logs_with_session(process, executor_session.as_ref()).await
-}
-
 // Helper to normalize logs with an already fetched session (avoids extra DB calls)
 async fn normalize_process_logs_with_session(
     process: &ExecutionProcess,
@@ -200,111 +186,8 @@ async fn normalize_process_logs_with_session(
     }
 }
 
-/// Get latest/active normalized logs for a task attempt (optimized version)
-pub async fn get_task_attempt_latest_logs(
-    Extension(_project): Extension<Project>,
-    Extension(_task): Extension<Task>,
-    Extension(task_attempt): Extension<TaskAttempt>,
-    State(app_state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<ProcessLogsResponse>>>, StatusCode> {
-    use crate::models::executor_session::ExecutorSession;
-    
-    // Fetch all execution processes for this attempt
-    let mut processes = match ExecutionProcess::find_by_task_attempt_id(
-        &app_state.db_pool,
-        task_attempt.id,
-    )
-    .await
-    {
-        Ok(list) => list,
-        Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
-    };
-    
-    // Sort by created_at descending to get the latest first
-    processes.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-    
-    // Filter to get only the latest process and any running processes
-    let mut selected_processes = Vec::new();
-    let mut has_latest = false;
-    
-    for process in processes {
-        // Always include running processes
-        if process.status == ExecutionProcessStatus::Running {
-            selected_processes.push(process);
-        } 
-        // Include the latest non-running process
-        else if !has_latest {
-            selected_processes.push(process);
-            has_latest = true;
-        }
-    }
-    
-    if selected_processes.is_empty() {
-        return Ok(Json(ApiResponse::success(vec![])));
-    }
-    
-    // Fetch executor sessions only for selected processes
-    let process_ids: Vec<Uuid> = selected_processes.iter().map(|p| p.id).collect();
-    let sessions = ExecutorSession::find_by_process_ids(&app_state.db_pool, &process_ids)
-        .await
-        .unwrap_or_default();
-    
-    // Create a map for quick lookup
-    let sessions_map: HashMap<Uuid, ExecutorSession> = sessions
-        .into_iter()
-        .map(|session| (session.execution_process_id, session))
-        .collect();
-    
-    // Process logs in parallel
-    let futures: Vec<_> = selected_processes
-        .into_iter()
-        .map(|process| {
-            let session = sessions_map.get(&process.id).cloned();
-            let process_clone = process.clone();
-            async move {
-                let normalized_conversation = normalize_process_logs_with_session(&process_clone, session.as_ref()).await;
-                ProcessLogsResponse {
-                    id: process_clone.id,
-                    process_type: process_clone.process_type,
-                    command: process_clone.command,
-                    executor_type: process_clone.executor_type,
-                    status: process_clone.status,
-                    normalized_conversation,
-                }
-            }
-        })
-        .collect();
-    
-    let result = future::join_all(futures).await;
-    Ok(Json(ApiResponse::success(result)))
-}
-
-/// Get normalized logs for a specific execution process
-pub async fn get_execution_process_logs(
-    Extension(execution_process): Extension<ExecutionProcess>,
-    State(app_state): State<AppState>,
-) -> Result<Json<ApiResponse<ProcessLogsResponse>>, StatusCode> {
-    use crate::models::executor_session::ExecutorSession;
-    
-    // Fetch the executor session for this process
-    let executor_session = ExecutorSession::find_by_execution_process_id(&app_state.db_pool, execution_process.id)
-        .await
-        .ok()
-        .flatten();
-    
-    let normalized_conversation = normalize_process_logs_with_session(&execution_process, executor_session.as_ref()).await;
-    
-    Ok(Json(ApiResponse::success(ProcessLogsResponse {
-        id: execution_process.id,
-        process_type: execution_process.process_type.clone(),
-        command: execution_process.command.clone(),
-        executor_type: execution_process.executor_type.clone(),
-        status: execution_process.status.clone(),
-        normalized_conversation,
-    })))
-}
-
-/// Get all normalized logs for all execution processes of a task attempt (legacy - kept for compatibility)
+/// Get all normalized logs for all execution processes of a task attempt
+/// Optimized to only normalize logs that have content (stdout/stderr)
 pub async fn get_task_attempt_all_logs(
     Extension(_project): Extension<Project>,
     Extension(_task): Extension<Task>,
@@ -344,9 +227,15 @@ pub async fn get_task_attempt_all_logs(
         .map(|session| (session.execution_process_id, session))
         .collect();
     
-    // Process all logs in parallel using futures
+    // Process logs in parallel, but only normalize those with content
     let futures: Vec<_> = processes
         .into_iter()
+        .filter(|process| {
+            // Only normalize processes that have logs or are running
+            process.status == ExecutionProcessStatus::Running ||
+            process.stdout.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false) ||
+            process.stderr.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+        })
         .map(|process| {
             let session = sessions_map.get(&process.id).cloned();
             let process_clone = process.clone();
@@ -1276,19 +1165,11 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
                     "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/execution-processes/:process_id/stop",
                     post(stop_execution_process),
                 )
-                .route(
-                    "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/execution-processes/:process_id/logs",
-                    get(get_execution_process_logs),
-                )
                 .route_layer(from_fn_with_state(_state.clone(), load_execution_process_with_context_middleware))
         )
         .route(
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/logs",
             get(get_task_attempt_all_logs),
-        )
-        .route(
-            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/logs/latest",
-            get(get_task_attempt_latest_logs),
         )
         .route(
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/follow-up",
