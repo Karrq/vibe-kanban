@@ -4,11 +4,13 @@ use axum::{
     response::Json,
 };
 use serde::Serialize;
+use ts_rs::TS;
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 use crate::{
     app_state::AppState,
-    models::execution_process::{ExecutionProcess, ExecutionProcessStatus},
+    models::execution_process::{ExecutionProcess, ExecutionProcessStatus, ExecutionProcessType},
 };
 
 #[derive(Serialize)]
@@ -20,16 +22,58 @@ pub struct ApiResponse<T> {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ExecutionProcessWithTask {
+    pub id: Uuid,
+    pub task_attempt_id: Uuid,
+    pub process_type: ExecutionProcessType,
+    pub executor_type: Option<String>,
+    pub status: ExecutionProcessStatus,
+    pub command: String,
+    pub args: Option<String>,
+    pub working_directory: String,
+    pub exit_code: Option<i64>,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // Task information
+    pub task_id: Option<Uuid>,
+    pub task_title: Option<String>,
+}
+
 pub async fn list_project_processes(
     Path(project_id): Path<Uuid>,
     State(app_state): State<AppState>,
-) -> Result<Json<ApiResponse<Vec<ExecutionProcess>>>, StatusCode> {
-    let processes = ExecutionProcess::find_by_project(&app_state.db_pool, project_id)
+) -> Result<Json<ApiResponse<Vec<ExecutionProcessWithTask>>>, StatusCode> {
+    let processes_with_tasks = ExecutionProcess::find_by_project_with_task_info(&app_state.db_pool, project_id)
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch processes for project {}: {:?}", project_id, e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    let processes: Vec<ExecutionProcessWithTask> = processes_with_tasks
+        .into_iter()
+        .map(|(process, task_id, task_title)| ExecutionProcessWithTask {
+            id: process.id,
+            task_attempt_id: process.task_attempt_id,
+            process_type: process.process_type,
+            executor_type: process.executor_type,
+            status: process.status,
+            command: process.command,
+            args: process.args,
+            working_directory: process.working_directory,
+            exit_code: process.exit_code,
+            started_at: process.started_at,
+            completed_at: process.completed_at,
+            created_at: process.created_at,
+            updated_at: process.updated_at,
+            task_id,
+            task_title,
+        })
+        .collect();
 
     Ok(Json(ApiResponse {
         success: true,

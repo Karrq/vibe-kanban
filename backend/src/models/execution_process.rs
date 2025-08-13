@@ -244,41 +244,6 @@ impl ExecutionProcess {
         .await
     }
 
-    /// Find running dev servers for a specific project
-    pub async fn find_running_dev_servers_by_project(
-        pool: &SqlitePool,
-        project_id: Uuid,
-    ) -> Result<Vec<Self>, sqlx::Error> {
-        sqlx::query_as!(
-            ExecutionProcess,
-            r#"SELECT 
-                ep.id as "id!: Uuid", 
-                ep.task_attempt_id as "task_attempt_id!: Uuid", 
-                ep.process_type as "process_type!: ExecutionProcessType",
-                ep.executor_type,
-                ep.status as "status!: ExecutionProcessStatus",
-                ep.command, 
-                ep.args, 
-                ep.working_directory, 
-                ep.stdout, 
-                ep.stderr, 
-                ep.exit_code,
-                ep.started_at as "started_at!: DateTime<Utc>",
-                ep.completed_at as "completed_at?: DateTime<Utc>",
-                ep.created_at as "created_at!: DateTime<Utc>", 
-                ep.updated_at as "updated_at!: DateTime<Utc>"
-               FROM execution_processes ep
-               JOIN task_attempts ta ON ep.task_attempt_id = ta.id
-               JOIN tasks t ON ta.task_id = t.id
-               WHERE ep.status = 'running' 
-               AND ep.process_type = 'devserver'
-               AND t.project_id = $1
-               ORDER BY ep.created_at ASC"#,
-            project_id
-        )
-        .fetch_all(pool)
-        .await
-    }
 
     /// Create a new execution process
     pub async fn create(
@@ -428,41 +393,85 @@ impl ExecutionProcess {
         Ok(())
     }
 
-    pub async fn find_by_project(
+
+    pub async fn find_by_project_with_task_info(
         pool: &SqlitePool,
         project_id: Uuid,
-    ) -> Result<Vec<ExecutionProcess>, sqlx::Error> {
-        let records = sqlx::query_as!(
-            ExecutionProcess,
+    ) -> Result<Vec<(ExecutionProcess, Option<Uuid>, Option<String>)>, sqlx::Error> {
+        #[derive(sqlx::FromRow)]
+        struct ProcessWithTask {
+            // Process fields
+            id: Uuid,
+            task_attempt_id: Uuid,
+            process_type: ExecutionProcessType,
+            executor_type: Option<String>,
+            status: ExecutionProcessStatus,
+            command: String,
+            args: Option<String>,
+            working_directory: String,
+            stdout: Option<String>,
+            stderr: Option<String>,
+            exit_code: Option<i64>,
+            started_at: DateTime<Utc>,
+            completed_at: Option<DateTime<Utc>>,
+            created_at: DateTime<Utc>,
+            updated_at: DateTime<Utc>,
+            // Task fields
+            task_id: Option<Uuid>,
+            task_title: Option<String>,
+        }
+
+        let records = sqlx::query_as::<_, ProcessWithTask>(
             r#"
             SELECT 
-                ep.id as "id!: Uuid",
-                ep.task_attempt_id as "task_attempt_id!: Uuid",
-                ep.process_type as "process_type!: ExecutionProcessType",
+                ep.id,
+                ep.task_attempt_id,
+                ep.process_type,
                 ep.executor_type,
-                ep.status as "status!: ExecutionProcessStatus",
+                ep.status,
                 ep.command,
                 ep.args,
                 ep.working_directory,
                 ep.stdout,
                 ep.stderr,
                 ep.exit_code,
-                ep.started_at as "started_at!: DateTime<Utc>",
-                ep.completed_at as "completed_at?: DateTime<Utc>",
-                ep.created_at as "created_at!: DateTime<Utc>",
-                ep.updated_at as "updated_at!: DateTime<Utc>"
+                ep.started_at,
+                ep.completed_at,
+                ep.created_at,
+                ep.updated_at,
+                t.id as task_id,
+                t.title as task_title
             FROM execution_processes ep
             JOIN task_attempts ta ON ep.task_attempt_id = ta.id
             JOIN tasks t ON ta.task_id = t.id
-            WHERE t.project_id = $1
+            WHERE t.project_id = ?
             ORDER BY ep.started_at DESC
             "#,
-            project_id
         )
+        .bind(project_id)
         .fetch_all(pool)
         .await?;
 
-        Ok(records)
+        Ok(records.into_iter().map(|r| {
+            let process = ExecutionProcess {
+                id: r.id,
+                task_attempt_id: r.task_attempt_id,
+                process_type: r.process_type,
+                executor_type: r.executor_type,
+                status: r.status,
+                command: r.command,
+                args: r.args,
+                working_directory: r.working_directory,
+                stdout: r.stdout,
+                stderr: r.stderr,
+                exit_code: r.exit_code,
+                started_at: r.started_at,
+                completed_at: r.completed_at,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            };
+            (process, r.task_id, r.task_title)
+        }).collect())
     }
 
     pub async fn update_status(

@@ -118,6 +118,8 @@ export type CreateExecutionProcess = { task_attempt_id: string, process_type: Ex
 
 export type UpdateExecutionProcess = { status: ExecutionProcessStatus | null, exit_code: bigint | null, completed_at: string | null, };
 
+export type ExecutionProcessWithTask = { id: string, task_attempt_id: string, process_type: ExecutionProcessType, executor_type: string | null, status: ExecutionProcessStatus, command: string, args: string | null, working_directory: string, exit_code: bigint | null, started_at: string, completed_at: string | null, created_at: string, updated_at: string, task_id: string | null, task_title: string | null, };
+
 export type ExecutorSession = { id: string, task_attempt_id: string, execution_process_id: string, session_id: string | null, prompt: string | null, summary: string | null, created_at: string, updated_at: string, };
 
 export type CreateExecutorSession = { task_attempt_id: string, execution_process_id: string, prompt: string | null, };

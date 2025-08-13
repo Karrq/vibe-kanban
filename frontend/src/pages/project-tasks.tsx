@@ -618,9 +618,8 @@ export function ProjectTasks() {
         open={showProcessesDialog}
         onClose={() => setShowProcessesDialog(false)}
         onProcessKilled={() => {
-          // Refresh tasks when a process is killed
-          fetchTasks(true);
-          // Also trigger task details refresh
+          // Only trigger task details refresh when a process is killed
+          // fetchAttemptData in TaskDetailsContextProvider will update the process status
           setTaskDetailsRefreshTrigger(prev => prev + 1);
         }}
       />

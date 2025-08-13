@@ -20,6 +20,7 @@ import {
   type EditorType,
   ExecutionProcess,
   ExecutionProcessSummary,
+  ExecutionProcessWithTask,
   GitBranch,
   ProcessLogsResponse,
   Task,
@@ -539,9 +540,9 @@ export const executionProcessesApi = {
 
 // Processes APIs
 export const processesApi = {
-  listByProject: async (projectId: string): Promise<ExecutionProcess[]> => {
+  listByProject: async (projectId: string): Promise<ExecutionProcessWithTask[]> => {
     const response = await makeRequest(`/api/projects/${projectId}/processes`);
-    return handleApiResponse<ExecutionProcess[]>(response);
+    return handleApiResponse<ExecutionProcessWithTask[]>(response);
   },
   
   kill: async (processId: string): Promise<void> => {

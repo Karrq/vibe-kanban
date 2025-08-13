@@ -29,7 +29,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { processesApi } from '@/lib/api';
-import type { ExecutionProcessStatus, ExecutionProcess } from 'shared/types';
+import type { ExecutionProcessStatus, ExecutionProcessWithTask } from 'shared/types';
 
 interface ProcessesDialogProps {
   projectId: string;
@@ -48,11 +48,11 @@ const categoryLabels: Record<ProcessCategory, string> = {
 };
 
 export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: ProcessesDialogProps) {
-  const [processes, setProcesses] = useState<ExecutionProcess[]>([]);
+  const [processes, setProcesses] = useState<ExecutionProcessWithTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [killingProcessId, setKillingProcessId] = useState<string | null>(null);
-  const [openSections, setOpenSections] = useState<Set<ProcessCategory>>(new Set());
+  const [openSections, setOpenSections] = useState<Set<ProcessCategory>>(new Set(['devserver']));
 
   const getProcessIcon = (processType: string, executorType?: string | null) => {
     if (processType === 'devserver') {
@@ -141,7 +141,8 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
       return;
     }
 
-    if (!confirm(`Kill ${devServers.length} dev server(s)?`)) return;
+    // TODO: Replace with custom confirm modal to avoid alert text clipping issues
+    if (!window.confirm(`Kill ${devServers.length} dev server(s)?`)) return;
 
     setLoading(true);
     try {
@@ -181,7 +182,7 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
     }
     acc[category].push(process);
     return acc;
-  }, {} as Record<ProcessCategory, ExecutionProcess[]>);
+  }, {} as Record<ProcessCategory, ExecutionProcessWithTask[]>);
 
   const runningProcesses = processes.filter(p => p.status === 'running');
   const devServerCount = runningProcesses.filter(
@@ -297,7 +298,11 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-sm">
-                                  {process.process_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                                  {process.process_type === 'devserver' && process.task_title ? (
+                                    <>Task: {process.task_title}</>
+                                  ) : (
+                                    process.process_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                                  )}
                                 </h3>
                                 {process.executor_type && (
                                   <Badge variant="outline" className="text-xs">
@@ -308,13 +313,17 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
                                   {process.status}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-muted-foreground mt-1 font-mono">
-                                {process.command}
-                              </p>
-                              {process.args && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Args: {process.args}
-                                </p>
+                              {process.process_type !== 'devserver' && (
+                                <>
+                                  <p className="text-sm text-muted-foreground mt-1 font-mono">
+                                    {process.command}
+                                  </p>
+                                  {process.args && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      Args: {process.args}
+                                    </p>
+                                  )}
+                                </>
                               )}
                               <div className="mt-2 text-xs text-muted-foreground">
                                 <div className="flex gap-4">
@@ -323,9 +332,15 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
                                     <span>Completed: {formatDate(process.completed_at)}</span>
                                   )}
                                 </div>
-                                <div className="mt-1 font-mono text-xs">
-                                  {process.working_directory}
-                                </div>
+                                {process.process_type === 'devserver' ? (
+                                  <div className="mt-1">
+                                    Path: {process.working_directory}
+                                  </div>
+                                ) : (
+                                  <div className="mt-1 font-mono text-xs">
+                                    {process.working_directory}
+                                  </div>
+                                )}
                               </div>
                               {process.exit_code !== null && process.exit_code !== undefined && (
                                 <div className="mt-2">
