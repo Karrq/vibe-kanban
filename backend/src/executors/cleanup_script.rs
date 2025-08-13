@@ -64,6 +64,7 @@ impl Executor for CleanupScriptExecutor {
             content: format!("Executing cleanup script:\n{}", self.script),
             metadata: None,
             tool_result: None,
+                        tool_args: None,
         });
 
         // Process the logs - split by lines and create entries
@@ -96,6 +97,7 @@ impl Executor for CleanupScriptExecutor {
                         content: current_chunk.trim().to_string(),
                         metadata: None,
                         tool_result: None,
+                        tool_args: None,
                     });
 
                     current_chunk.clear();
@@ -110,6 +112,7 @@ impl Executor for CleanupScriptExecutor {
                     content: current_chunk.trim().to_string(),
                     metadata: None,
                     tool_result: None,
+                        tool_args: None,
                 });
             }
         }

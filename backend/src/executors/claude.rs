@@ -203,6 +203,7 @@ impl Executor for ClaudeExecutor {
                         content: format!("Raw output: {}", trimmed),
                         metadata: None,
                         tool_result: None,
+                        tool_args: None,
                     });
                     continue;
                 }
@@ -239,6 +240,7 @@ impl Executor for ClaudeExecutor {
                                                         content: text.to_string(),
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: None,
                                                     });
                                                 }
                                             }
@@ -285,6 +287,7 @@ impl Executor for ClaudeExecutor {
                                                         content,
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: Some(input.clone()),
                                                     });
                                                 }
                                             }
@@ -317,6 +320,7 @@ impl Executor for ClaudeExecutor {
                                                         content: text.to_string(),
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: None,
                                                     });
                                                 }
                                             }
@@ -390,6 +394,7 @@ impl Executor for ClaudeExecutor {
                                     ),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                                    tool_args: None,
                                 });
                             }
                         }
@@ -414,6 +419,7 @@ impl Executor for ClaudeExecutor {
                     content: format!("Unrecognized JSON: {}", trimmed),
                     metadata: Some(json),
                     tool_result: None,
+                    tool_args: None,
                 });
             }
         }

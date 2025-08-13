@@ -160,6 +160,7 @@ async fn normalize_process_logs(
                             content: filtered_content.trim().to_string(),
                             metadata: None,
                             tool_result: None,
+                            tool_args: None,
                         });
                     }
                 }

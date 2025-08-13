@@ -70,6 +70,7 @@ impl Executor for SetupScriptExecutor {
             content: format!("Executing setup script:\n{}", self.script),
             metadata: None,
             tool_result: None,
+                        tool_args: None,
         });
 
         // Process the logs - split by lines and create entries
@@ -102,6 +103,7 @@ impl Executor for SetupScriptExecutor {
                         content: current_chunk.trim().to_string(),
                         metadata: None,
                         tool_result: None,
+                        tool_args: None,
                     });
 
                     current_chunk.clear();
@@ -116,6 +118,7 @@ impl Executor for SetupScriptExecutor {
                     content: current_chunk.trim().to_string(),
                     metadata: None,
                     tool_result: None,
+                        tool_args: None,
                 });
             }
         }

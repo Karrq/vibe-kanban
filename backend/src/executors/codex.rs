@@ -413,6 +413,7 @@ impl Executor for CodexExecutor {
                         content: format!("Raw output: {}", trimmed),
                         metadata: None,
                         tool_result: None,
+                        tool_args: None,
                     });
                     continue;
                 }
@@ -459,6 +460,7 @@ impl Executor for CodexExecutor {
                         content,
                         metadata: Some(json.clone()),
                         tool_result: None,
+                        tool_args: None,
                     });
                     continue;
                 }
@@ -485,6 +487,7 @@ impl Executor for CodexExecutor {
                                     content: text.to_string(),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                        tool_args: None,
                                 });
                             }
                         }
@@ -527,6 +530,7 @@ impl Executor for CodexExecutor {
                                     content: format!("`{}`", command),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                        tool_args: None,
                                 });
                             }
                         }
@@ -550,6 +554,7 @@ impl Executor for CodexExecutor {
                                     content: message.to_string(),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                        tool_args: None,
                                 });
                             }
                         }
@@ -573,6 +578,7 @@ impl Executor for CodexExecutor {
                                         content: format!("`{}`", relative_path),
                                         metadata: Some(json.clone()),
                                         tool_result: None,
+                        tool_args: None,
                                     });
                                 }
                             }
@@ -590,6 +596,7 @@ impl Executor for CodexExecutor {
                                     content: error_message.to_string(),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                        tool_args: None,
                                 });
                             } else {
                                 entries.push(NormalizedEntry {
@@ -598,6 +605,7 @@ impl Executor for CodexExecutor {
                                     content: "Unknown error occurred".to_string(),
                                     metadata: Some(json.clone()),
                                     tool_result: None,
+                        tool_args: None,
                                 });
                             }
                         }
@@ -609,6 +617,7 @@ impl Executor for CodexExecutor {
                                 content: format!("Unknown message type: {}", msg_type),
                                 metadata: Some(json.clone()),
                                 tool_result: None,
+                        tool_args: None,
                             });
                         }
                     }
@@ -621,6 +630,7 @@ impl Executor for CodexExecutor {
                     content: format!("Unrecognized JSON: {}", trimmed),
                     metadata: Some(json),
                     tool_result: None,
+                        tool_args: None,
                 });
             }
         }

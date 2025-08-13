@@ -370,6 +370,7 @@ fn format_diff_as_normalized_json(
         content: format!("`{}`", path),
         metadata: None,
         tool_result: None,
+        tool_args: None,
     };
 
     serde_json::to_string(&normalized_entry).unwrap() + "\n"
@@ -424,6 +425,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 content: trimmed.to_string(),
                 metadata: None,
                 tool_result: None,
+        tool_args: None,
             }
         } else if AiderFilter::is_error(trimmed) {
             NormalizedEntry {
@@ -432,6 +434,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 content: trimmed.to_string(),
                 metadata: None,
                 tool_result: None,
+        tool_args: None,
             }
         } else {
             // Regular assistant message
@@ -441,6 +444,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 content: trimmed.to_string(),
                 metadata: None,
                 tool_result: None,
+        tool_args: None,
             }
         };
 

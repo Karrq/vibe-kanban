@@ -193,6 +193,7 @@ impl Executor for GeminiExecutor {
                             content: format!("Raw output: {}", trimmed),
                             metadata: None,
                             tool_result: None,
+                            tool_args: None,
                         };
                         entries.push(fallback_entry);
                     }
@@ -205,6 +206,7 @@ impl Executor for GeminiExecutor {
                     content: trimmed.to_string(),
                     metadata: None,
                     tool_result: None,
+                    tool_args: None,
                 };
                 entries.push(text_entry);
             }
