@@ -14,6 +14,7 @@ import { projectsApi } from '@/lib/api';
 import { AlertCircle, Archive, Loader2, Plus, Search } from 'lucide-react';
 import ProjectCard from '@/components/projects/ProjectCard.tsx';
 import { useArchive } from '@/hooks/useArchive';
+import { RecentTasks } from '@/components/tasks/RecentTasks';
 
 export function ProjectList() {
   const navigate = useNavigate();
@@ -267,6 +268,9 @@ export function ProjectList() {
         onSuccess={handleFormSuccess}
         project={editingProject}
       />
+
+      {/* Recent Tasks Section */}
+      <RecentTasks limit={10} className="mt-8" />
 
     </div>
   );

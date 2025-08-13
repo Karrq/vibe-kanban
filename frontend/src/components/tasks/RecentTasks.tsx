@@ -2,41 +2,56 @@ import { useMemo, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, ChevronRight } from 'lucide-react';
+import { Clock, ChevronRight, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { tasksApi } from '@/lib/api';
+import { projectsApi, tasksApi } from '@/lib/api';
 import type { TaskWithAttemptStatus } from 'shared/types';
 
+interface TaskWithProject extends TaskWithAttemptStatus {
+  projectName?: string;
+}
+
 interface RecentTasksProps {
-  projectId?: string;
   limit?: number;
   className?: string;
 }
 
-export function RecentTasks({ projectId, limit = 10, className }: RecentTasksProps) {
+export function RecentTasks({ limit = 10, className }: RecentTasksProps) {
   const navigate = useNavigate();
-  const [allTasks, setAllTasks] = useState<TaskWithAttemptStatus[]>([]);
+  const [allTasks, setAllTasks] = useState<TaskWithProject[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchAllTasks = useCallback(async () => {
     try {
       setLoading(true);
-      const tasks = await tasksApi.getAll(projectId || '');
-      setAllTasks(tasks);
+      // First fetch all projects
+      const projectsData = await projectsApi.getAll();
+      
+      // Then fetch tasks for each project
+      const allTasksPromises = projectsData.map(project => 
+        tasksApi.getAll(project.id).then(tasks => 
+          tasks.map(task => ({
+            ...task,
+            projectName: project.name
+          }))
+        ).catch(() => []) // Return empty array if project fetch fails
+      );
+      
+      const tasksArrays = await Promise.all(allTasksPromises);
+      const combinedTasks = tasksArrays.flat();
+      setAllTasks(combinedTasks);
     } catch (err) {
       console.error('Failed to fetch tasks for recent view:', err);
     } finally {
       setLoading(false);
     }
-  }, [projectId]);
+  }, []);
 
   useEffect(() => {
-    if (projectId) {
-      fetchAllTasks();
-      const interval = setInterval(fetchAllTasks, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [projectId, fetchAllTasks]);
+    fetchAllTasks();
+    const interval = setInterval(fetchAllTasks, 5000);
+    return () => clearInterval(interval);
+  }, [fetchAllTasks]);
 
   const recentTasks = useMemo(() => {
     return [...allTasks]
@@ -48,7 +63,7 @@ export function RecentTasks({ projectId, limit = 10, className }: RecentTasksPro
       .slice(0, limit);
   }, [allTasks, limit]);
 
-  const handleTaskClick = useCallback((task: TaskWithAttemptStatus) => {
+  const handleTaskClick = useCallback((task: TaskWithProject) => {
     navigate(`/projects/${task.project_id}/tasks/${task.id}`);
   }, [navigate]);
 
@@ -122,11 +137,21 @@ export function RecentTasks({ projectId, limit = 10, className }: RecentTasksPro
                     </Badge>
                   )}
                 </div>
-                {task.description && (
-                  <p className="text-xs text-muted-foreground truncate mt-1">
-                    {task.description}
-                  </p>
-                )}
+                <div className="flex items-center gap-2 mt-1">
+                  {task.projectName && (
+                    <div className="flex items-center gap-1">
+                      <FolderOpen className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {task.projectName}
+                      </span>
+                    </div>
+                  )}
+                  {task.description && (
+                    <p className="text-xs text-muted-foreground truncate flex-1">
+                      {task.description}
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2 ml-4">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">

@@ -34,7 +34,6 @@ import {
 
 import TaskKanbanBoard from '@/components/tasks/TaskKanbanBoard';
 import { TaskDetailsPanel } from '@/components/tasks/TaskDetailsPanel';
-import { RecentTasks } from '@/components/tasks/RecentTasks';
 import { useArchive } from '@/hooks/useArchive';
 import type {
   CreateTaskAndStart,
@@ -525,24 +524,17 @@ export function ProjectTasks() {
             </Card>
           </div>
         ) : (
-          <div className="flex flex-col h-[calc(100vh-10rem)]">
-            <div className="px-8 overflow-x-auto overflow-y-hidden flex-1 my-4">
-              <div className="min-w-[900px] max-w-[2000px] relative h-full">
-                <TaskKanbanBoard
-                  tasks={tasks}
-                  searchQuery={searchQuery}
-                  onDragEnd={handleDragEnd}
-                  onEditTask={handleEditTask}
-                  onDeleteTask={handleDeleteTask}
-                  onViewTaskDetails={handleViewTaskDetails}
-                  isPanelOpen={isPanelOpen}
-                />
-              </div>
-            </div>
-            
-            {/* Recent Tasks Section */}
-            <div className="px-8 pb-8 mt-auto">
-              <RecentTasks projectId={projectId} limit={10} />
+          <div className="px-8 overflow-x-auto overflow-y-hidden my-4 h-[calc(100vh-16rem)]">
+            <div className="min-w-[900px] max-w-[2000px] relative h-full">
+              <TaskKanbanBoard
+                tasks={tasks}
+                searchQuery={searchQuery}
+                onDragEnd={handleDragEnd}
+                onEditTask={handleEditTask}
+                onDeleteTask={handleDeleteTask}
+                onViewTaskDetails={handleViewTaskDetails}
+                isPanelOpen={isPanelOpen}
+              />
             </div>
           </div>
         )}
