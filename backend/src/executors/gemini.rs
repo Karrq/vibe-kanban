@@ -17,7 +17,7 @@ pub use streaming::GeminiPatchBatch;
 use streaming::GeminiStreaming;
 use uuid::Uuid;
 
-use super::build_agent_command;
+use super::{build_agent_command, prompt_utils};
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -48,22 +48,7 @@ impl Executor for GeminiExecutor {
             ExecutorError::ContextCollectionFailed("Project not found".to_string()),
         )?;
 
-        let prompt = if let Some(task_description) = task.description {
-            format!(
-                r#"project_id: {}
-            
-Task title: {}
-Task description: {}"#,
-                task.project_id, task.title, task_description
-            )
-        } else {
-            format!(
-                r#"project_id: {}
-            
-Task title: {}"#,
-                task.project_id, task.title
-            )
-        };
+        let prompt = prompt_utils::build_task_prompt(&project, &task);
 
         let mut command =
             Self::create_gemini_command(worktree_path, project.executor_env_script.clone());

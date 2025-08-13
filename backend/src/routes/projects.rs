@@ -246,6 +246,7 @@ pub async fn update_project(
         dev_script,
         cleanup_script,
         executor_env_script,
+        prompt_template,
     } = payload;
 
     let name = name.unwrap_or(existing_project.name);
@@ -260,6 +261,7 @@ pub async fn update_project(
         dev_script,
         cleanup_script,
         executor_env_script,
+        prompt_template,
     )
     .await
     {
