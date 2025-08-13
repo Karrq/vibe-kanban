@@ -79,6 +79,8 @@ const TaskDetailsProvider: FC<{
     runningProcessDetails: {},
     allLogs: [], // new field for all logs
   });
+  const [loadedProcessIds, setLoadedProcessIds] = useState<Set<string>>(new Set());
+  const [allLogsLoaded, setAllLogsLoaded] = useState(false);
 
   const relatedTasksLoadingRef = useRef(false);
 
@@ -214,13 +216,16 @@ const TaskDetailsProvider: FC<{
   );
 
   const fetchAttemptData = useCallback(
-    async (attemptId: string, taskId: string) => {
+    async (attemptId: string, taskId: string, fetchAll: boolean = false) => {
       if (!task) return;
 
       try {
+        // Use optimized endpoint by default, full logs only when explicitly requested
         const [processesResult, allLogsResult] = await Promise.all([
           attemptsApi.getExecutionProcesses(projectId, taskId, attemptId),
-          attemptsApi.getAllLogs(projectId, taskId, attemptId),
+          fetchAll 
+            ? attemptsApi.getAllLogs(projectId, taskId, attemptId)
+            : attemptsApi.getLatestLogs(projectId, taskId, attemptId),
         ]);
 
         if (processesResult !== undefined && allLogsResult !== undefined) {
@@ -259,6 +264,11 @@ const TaskDetailsProvider: FC<{
             }
           }
 
+          // Track which process IDs we've loaded
+          const newLoadedIds = new Set(loadedProcessIds);
+          allLogsResult.forEach(log => newLoadedIds.add(log.id));
+          setLoadedProcessIds(newLoadedIds);
+          
           setAttemptData((prev: AttemptData) => {
             const newData = {
               processes: processesResult,
@@ -273,11 +283,73 @@ const TaskDetailsProvider: FC<{
         console.error('Failed to fetch attempt data:', err);
       }
     },
-    [task, projectId]
+    [task, projectId, loadedProcessIds]
+  );
+  
+  // Method to load all remaining logs
+  const loadAllLogs = useCallback(
+    async () => {
+      if (!selectedAttempt || !task || allLogsLoaded) return;
+      
+      try {
+        const allLogsResult = await attemptsApi.getAllLogs(
+          projectId, 
+          selectedAttempt.task_id, 
+          selectedAttempt.id
+        );
+        
+        if (allLogsResult !== undefined) {
+          const newLoadedIds = new Set<string>();
+          allLogsResult.forEach(log => newLoadedIds.add(log.id));
+          setLoadedProcessIds(newLoadedIds);
+          setAllLogsLoaded(true);
+          
+          setAttemptData((prev) => ({
+            ...prev,
+            allLogs: allLogsResult,
+          }));
+        }
+      } catch (err) {
+        console.error('Failed to load all logs:', err);
+      }
+    },
+    [projectId, selectedAttempt, task, allLogsLoaded]
+  );
+  
+  // Method to load a specific process log
+  const loadProcessLog = useCallback(
+    async (processId: string) => {
+      if (!selectedAttempt || !task || loadedProcessIds.has(processId)) return;
+      
+      try {
+        const logResult = await attemptsApi.getProcessLogs(
+          projectId,
+          selectedAttempt.task_id,
+          selectedAttempt.id,
+          processId
+        );
+        
+        if (logResult !== undefined) {
+          setLoadedProcessIds(prev => new Set(prev).add(processId));
+          
+          setAttemptData((prev) => ({
+            ...prev,
+            allLogs: [...prev.allLogs, logResult],
+          }));
+        }
+      } catch (err) {
+        console.error(`Failed to load process log ${processId}:`, err);
+      }
+    },
+    [projectId, selectedAttempt, task, loadedProcessIds]
   );
 
   useEffect(() => {
     if (selectedAttempt && task) {
+      // Reset loaded state for new attempt
+      setLoadedProcessIds(new Set());
+      setAllLogsLoaded(false);
+      
       fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
       fetchExecutionState(selectedAttempt.id, selectedAttempt.task_id);
     }
@@ -411,8 +483,11 @@ const TaskDetailsProvider: FC<{
       setAttemptData,
       fetchAttemptData,
       isAttemptRunning,
+      loadAllLogs,
+      loadProcessLog,
+      allLogsLoaded,
     }),
-    [attemptData, fetchAttemptData, isAttemptRunning]
+    [attemptData, fetchAttemptData, isAttemptRunning, loadAllLogs, loadProcessLog, allLogsLoaded]
   );
 
   const executionStateValue = useMemo(

@@ -11,19 +11,19 @@ import { TaskAttemptDataContext } from '@/components/context/taskDetailsContext.
 import { useTaskPlan } from '@/components/context/TaskPlanContext.ts';
 import { Loader } from '@/components/ui/loader.tsx';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle } from 'lucide-react';
-import Prompt from './Prompt';
+import { AlertTriangle, ChevronDown } from 'lucide-react';
 import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
 
 function Conversation() {
-  const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
+  const { attemptData, isAttemptRunning, loadAllLogs, allLogsLoaded } = useContext(TaskAttemptDataContext);
   const { isPlanningMode, latestProcessHasNoPlan } = useTaskPlan();
   const [shouldAutoScrollLogs, setShouldAutoScrollLogs] = useState(true);
   const [conversationUpdateTrigger, setConversationUpdateTrigger] = useState(0);
   const [visibleCount, setVisibleCount] = useState(100);
   const [visibleRunningEntriesCount, setVisibleRunningEntriesCount] =
     useState(0);
+  const [isLoadingAllLogs, setIsLoadingAllLogs] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -52,6 +52,15 @@ function Conversation() {
       }
     }
   }, [shouldAutoScrollLogs]);
+  
+  const handleLoadAllLogs = useCallback(async () => {
+    setIsLoadingAllLogs(true);
+    try {
+      await loadAllLogs();
+    } finally {
+      setIsLoadingAllLogs(false);
+    }
+  }, [loadAllLogs]);
 
   // Find main and follow-up processes from allLogs
   const mainCodingAgentLog = useMemo(
@@ -72,6 +81,17 @@ function Conversation() {
       ),
     [attemptData.allLogs]
   );
+  
+  // Check if there are more processes available to load
+  const hasMoreProcesses = useMemo(() => {
+    const totalProcesses = attemptData.processes.filter(
+      p => p.process_type === 'codingagent'
+    ).length;
+    const loadedProcesses = attemptData.allLogs.filter(
+      log => log.process_type.toLowerCase() === 'codingagent'
+    ).length;
+    return totalProcesses > loadedProcesses && !allLogsLoaded;
+  }, [attemptData.processes, attemptData.allLogs, allLogsLoaded]);
 
   // Combine all logs in order (main first, then follow-ups)
   const allProcessLogs = useMemo(
@@ -148,127 +168,92 @@ function Conversation() {
     ]
   );
 
-  const renderedRunningProcessLogs = useMemo(() => {
-    return runningProcessLogs.map((log, i) => {
-      const runningProcess = attemptData.runningProcessDetails[String(log.id)];
-      if (!runningProcess) return null;
-      // Show prompt only if this is the first entry in the process (i.e., no completed entries for this process)
-      const showPrompt =
-        log.normalized_conversation.prompt &&
-        !allEntries.some((e) => e.processId === String(log.id));
-      return (
-        <div key={String(log.id)} className={i > 0 ? 'mt-8' : ''}>
-          {showPrompt && (
-            <Prompt prompt={log.normalized_conversation.prompt || ''} />
-          )}
-          <NormalizedConversationViewer
-            executionProcess={runningProcess}
-            onConversationUpdate={handleConversationUpdate}
-            diffDeletable
-            visibleEntriesNum={visibleCount}
-            onDisplayEntriesChange={setVisibleRunningEntriesCount}
-          />
-        </div>
-      );
-    });
-  }, [
-    runningProcessLogs,
-    attemptData.runningProcessDetails,
-    handleConversationUpdate,
-    allEntries,
-    visibleCount,
-  ]);
-
-  // Check if we should show the status banner - only if the most recent process failed/stopped
-  const getMostRecentProcess = () => {
-    if (followUpLogs.length > 0) {
-      // Sort by creation time or use last in array as most recent
-      return followUpLogs[followUpLogs.length - 1];
-    }
-    return mainCodingAgentLog;
-  };
-
-  const mostRecentProcess = getMostRecentProcess();
-  const showStatusBanner =
-    mostRecentProcess &&
-    (mostRecentProcess.status === 'failed' ||
-      mostRecentProcess.status === 'killed');
+  const hasHiddenEntries = allEntries.length > visibleCount;
 
   return (
-    <div
-      ref={scrollContainerRef}
-      onScroll={handleLogsScroll}
-      className="h-full overflow-y-auto"
-    >
-      {visibleCount - visibleRunningEntriesCount < allEntries.length && (
-        <div className="flex justify-center mb-4">
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => setVisibleCount((c) => c + 100)}
-          >
-            Load previous logs
-          </Button>
-        </div>
-      )}
-      {visibleEntries.length > 0 && (
-        <div className="space-y-2">{renderedVisibleEntries}</div>
-      )}
-      {/* Render live viewers for running processes (after paginated list) */}
-      {renderedRunningProcessLogs}
-      {/* If nothing to show at all, show loader */}
-      {visibleEntries.length === 0 && runningProcessLogs.length === 0 && (
-        <Loader
-          message={
-            <>
-              Coding Agent Starting
-              <br />
-              Initializing conversation...
-            </>
-          }
-          size={48}
-          className="py-8"
-        />
-      )}
-
-      {/* Status banner for failed/stopped states - shown at bottom */}
-      {showStatusBanner && mostRecentProcess && (
-        <div className="mt-4 p-4 rounded-lg border">
-          <p
-            className={`text-lg font-semibold mb-2 ${
-              mostRecentProcess.status === 'failed'
-                ? 'text-destructive'
-                : 'text-orange-600'
-            }`}
-          >
-            {mostRecentProcess.status === 'failed'
-              ? 'Coding Agent Failed'
-              : 'Coding Agent Stopped'}
-          </p>
-          <p className="text-muted-foreground">
-            {mostRecentProcess.status === 'failed'
-              ? 'The coding agent encountered an error.'
-              : 'The coding agent was stopped.'}
-          </p>
-        </div>
-      )}
-
-      {/* Warning banner for planning mode without plan */}
-      {isPlanningMode && latestProcessHasNoPlan && !isAttemptRunning && (
-        <div className="mt-4 p-4 rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/20">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
-            <p className="text-lg font-semibold text-orange-800 dark:text-orange-300">
-              No Plan Generated
-            </p>
+    <div className="flex flex-col h-full">
+      {isPlanningMode && latestProcessHasNoPlan && (
+        <div className="mb-4 p-3 border border-yellow-500/30 bg-yellow-500/10 rounded-md">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm">
+              <p className="font-medium text-yellow-800">
+                Planning Mode - No Plan Found
+              </p>
+              <p className="text-yellow-700 mt-1">
+                The executor is in planning mode but the latest process did not
+                produce a plan. Consider switching to a different executor
+                mode.
+              </p>
+            </div>
           </div>
-          <p className="text-orange-700 dark:text-orange-400">
-            The last execution attempt did not produce a plan. Task creation is
-            disabled until a plan is available. Try providing more specific
-            instructions or check the conversation for any errors.
-          </p>
         </div>
       )}
+
+      <div
+        className="flex-1 overflow-y-auto space-y-2"
+        ref={scrollContainerRef}
+        onScroll={handleLogsScroll}
+      >
+        {hasHiddenEntries && (
+          <div className="flex justify-center py-2">
+            <Button
+              onClick={() => setVisibleCount((prev) => prev + 100)}
+              variant="outline"
+              size="sm"
+              className="text-xs"
+            >
+              Show {Math.min(100, allEntries.length - visibleCount)} more
+              entries
+            </Button>
+          </div>
+        )}
+
+        {renderedVisibleEntries}
+
+        {/* Running processes */}
+        {runningProcessLogs.map((runningLog, processIndex) => (
+          <NormalizedConversationViewer
+            key={runningLog.id}
+            executionProcess={attemptData.runningProcessDetails[runningLog.id]}
+            onConversationUpdate={handleConversationUpdate}
+            onDisplayEntriesChange={processIndex === 0 ? setVisibleRunningEntriesCount : undefined}
+            visibleEntriesNum={visibleCount}
+            diffDeletable
+          />
+        ))}
+
+        {/* If the coding agent just started and we have nothing to show */}
+        {allProcessLogs.length === 0 &&
+          !isAttemptRunning &&
+          attemptData.processes.filter((p) => p.process_type === 'codingagent')
+            .length === 0 && (
+            <div className="h-full flex items-center justify-center">
+              <Loader size={32} message="Waiting for agent to start..." />
+            </div>
+          )}
+          
+        {/* Show button to load more processes if available */}
+        {hasMoreProcesses && !isLoadingAllLogs && (
+          <div className="flex justify-center py-4 border-t">
+            <Button
+              onClick={handleLoadAllLogs}
+              variant="outline"
+              size="sm"
+              className="gap-2"
+            >
+              <ChevronDown className="h-4 w-4" />
+              Load All Previous Conversations
+            </Button>
+          </div>
+        )}
+        
+        {isLoadingAllLogs && (
+          <div className="flex justify-center py-4">
+            <Loader size={24} message="Loading all conversations..." />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
