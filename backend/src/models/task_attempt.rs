@@ -134,7 +134,7 @@ pub struct CreateFollowUpAttempt {
     pub prompt: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq)]
 #[ts(export)]
 pub enum DiffChunkType {
     Equal,

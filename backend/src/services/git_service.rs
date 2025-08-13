@@ -5,12 +5,41 @@ use git2::{
     FetchOptions, RemoteCallbacks, Repository, WorktreeAddOptions,
 };
 use regex;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
+use ts_rs::TS;
 
 use crate::{
     models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, WorktreeDiff},
     utils::worktree_manager::WorktreeManager,
 };
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CommitAuthor {
+    pub name: String,
+    pub email: String,
+    pub date: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct FileChangeMetadata {
+    pub filename: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub status: String,
+    pub chunks: Vec<DiffChunk>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CommitDetails {
+    pub sha: String,
+    pub message: String,
+    pub author: Option<CommitAuthor>,
+    pub files: Vec<FileChangeMetadata>,
+}
 
 #[derive(Debug)]
 pub enum GitServiceError {
@@ -747,9 +776,12 @@ impl GitService {
             }
         };
 
-        // Process the patch hunks
+        // Process the patch hunks, grouping consecutive lines of the same type
         for hunk_idx in 0..patch.num_hunks() {
             let (_hunk, hunk_lines) = patch.hunk(hunk_idx)?;
+            
+            let mut current_chunk_type: Option<DiffChunkType> = None;
+            let mut current_lines: Vec<String> = Vec::new();
 
             for line_idx in 0..hunk_lines {
                 let line = patch.line_in_hunk(hunk_idx, line_idx)?;
@@ -762,10 +794,33 @@ impl GitService {
                     _ => continue,
                 };
 
-                chunks.push(DiffChunk {
-                    chunk_type,
-                    content,
-                });
+                // Check if we need to flush the current chunk
+                if let Some(ref current_type) = current_chunk_type {
+                    if *current_type != chunk_type {
+                        // Type changed, flush the current chunk
+                        chunks.push(DiffChunk {
+                            chunk_type: *current_type,
+                            content: current_lines.join(""),
+                        });
+                        current_lines.clear();
+                        current_chunk_type = Some(chunk_type);
+                    }
+                } else {
+                    current_chunk_type = Some(chunk_type);
+                }
+
+                // Add line to current chunk
+                current_lines.push(content);
+            }
+
+            // Flush any remaining lines
+            if let Some(ref chunk_type) = current_chunk_type {
+                if !current_lines.is_empty() {
+                    chunks.push(DiffChunk {
+                        chunk_type: *chunk_type,
+                        content: current_lines.join(""),
+                    });
+                }
             }
         }
 
@@ -1067,6 +1122,136 @@ impl GitService {
     }
 
     /// Extract GitHub owner and repo name from git repo path
+    pub fn get_commit_details(&self, commit_sha: &str) -> Result<CommitDetails, GitServiceError> {
+        
+        let repo = self.open_repo()?;
+        
+        // Parse the commit SHA to get the Oid
+        let oid = git2::Oid::from_str(commit_sha)
+            .map_err(|e| GitServiceError::Git(e))?;
+        
+        // Get the commit
+        let commit = repo.find_commit(oid)
+            .map_err(|e| GitServiceError::Git(e))?;
+        
+        // Get commit details
+        let sha = commit.id().to_string();
+        let message = commit.message().unwrap_or("").to_string();
+        
+        // Get author information
+        let git_author = commit.author();
+        let author = Some(CommitAuthor {
+            name: git_author.name().unwrap_or("").to_string(),
+            email: git_author.email().unwrap_or("").to_string(),
+            date: Some(chrono::DateTime::from_timestamp(git_author.when().seconds(), 0)
+                .unwrap_or_else(|| chrono::Utc::now())),
+        });
+        
+        // Get the diff between this commit and its parent
+        let files;
+        
+        // Get parent commit (if any)
+        let parent = if commit.parent_count() > 0 {
+            Some(commit.parent(0)?)
+        } else {
+            None
+        };
+        
+        // Get trees for diff
+        let tree = commit.tree()?;
+        let parent_tree = parent.as_ref().map(|p| p.tree()).transpose()?;
+        
+        // Compute the diff
+        let mut diff_options = git2::DiffOptions::new();
+        let diff = repo.diff_tree_to_tree(
+            parent_tree.as_ref(),
+            Some(&tree),
+            Some(&mut diff_options),
+        )?;
+        
+        // Process each file in the diff
+        let mut diff_files = Vec::new();
+        diff.foreach(
+            &mut |delta, _| {
+                let file_path = delta.new_file().path()
+                    .and_then(|p| p.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                
+                let status = match delta.status() {
+                    git2::Delta::Added => "added",
+                    git2::Delta::Deleted => "deleted",
+                    git2::Delta::Modified => "modified",
+                    git2::Delta::Renamed => "renamed",
+                    git2::Delta::Copied => "copied",
+                    _ => "unknown",
+                }.to_string();
+                
+                diff_files.push((file_path, status));
+                true
+            },
+            None,
+            None,
+            None,
+        )?;
+        
+        // Process each file to generate diff chunks
+        let mut processed_files = Vec::new();
+        diff.foreach(
+            &mut |delta, _| {
+                if let Some(path_str) = delta.new_file().path().and_then(|p| p.to_str()) {
+                    let old_file = delta.old_file();
+                    let new_file = delta.new_file();
+                    
+                    if let Ok(diff_chunks) =
+                        self.generate_git_diff_chunks(&repo, &old_file, &new_file, path_str)
+                    {
+                        // Count additions and deletions from chunks
+                        let additions = diff_chunks.iter()
+                            .filter(|c| c.chunk_type == DiffChunkType::Insert)
+                            .map(|c| c.content.lines().count())
+                            .sum::<usize>() as i64;
+                            
+                        let deletions = diff_chunks.iter()
+                            .filter(|c| c.chunk_type == DiffChunkType::Delete)
+                            .map(|c| c.content.lines().count())
+                            .sum::<usize>() as i64;
+                        
+                        let status = match delta.status() {
+                            git2::Delta::Added => "added",
+                            git2::Delta::Deleted => "deleted",
+                            git2::Delta::Modified => "modified",
+                            git2::Delta::Renamed => "renamed",
+                            git2::Delta::Copied => "copied",
+                            _ => "unknown",
+                        }.to_string();
+                        
+                        processed_files.push(FileChangeMetadata {
+                            filename: path_str.to_string(),
+                            additions,
+                            deletions,
+                            status,
+                            chunks: diff_chunks,
+                        });
+                    }
+                }
+                true
+            },
+            None,
+            None,
+            None,
+        )?;
+        
+        files = processed_files;
+        
+        Ok(CommitDetails {
+            sha,
+            message,
+            author,
+            files,
+        })
+    }
+
     pub fn get_github_repo_info(&self) -> Result<(String, String), GitServiceError> {
         let repo = self.open_repo()?;
         let remote = repo.find_remote("origin").map_err(|_| {

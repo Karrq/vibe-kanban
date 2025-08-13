@@ -36,6 +36,7 @@ import { Input } from '@/components/ui/input.tsx';
 import { Label } from '@/components/ui/label.tsx';
 import BranchSelector from '@/components/tasks/BranchSelector.tsx';
 import { MergeModal } from '@/components/tasks/MergeModal.tsx';
+import { CommitDetailsModal } from '@/components/tasks/CommitDetailsModal.tsx';
 import {
   attemptsApi,
   executionProcessesApi,
@@ -154,6 +155,8 @@ function CurrentAttempt({
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isHoveringMergeButton, setIsHoveringMergeButton] = useState(false);
+  const [showCommitDetailsModal, setShowCommitDetailsModal] = useState(false);
+  const [selectedCommitSha, setSelectedCommitSha] = useState<string>('');
 
   const processedDevServerLogs = useMemo(() => {
     if (!devServerDetails) return 'No output yet...';
@@ -559,6 +562,11 @@ function CurrentAttempt({
     }
   }, [selectedAttempt.worktree_path]);
 
+  const handleCommitShaClick = useCallback((sha: string) => {
+    setSelectedCommitSha(sha);
+    setShowCommitDetailsModal(true);
+  }, []);
+
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-4 gap-3 items-start">
@@ -651,9 +659,13 @@ function CurrentAttempt({
                 <span className="text-sm font-medium text-green-700">
                   Merged
                 </span>
-                <span className="text-xs font-mono text-muted-foreground">
+                <button
+                  onClick={() => handleCommitShaClick(selectedAttempt.merge_commit!)}
+                  className="text-xs font-mono text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                  title="View commit details"
+                >
                   ({selectedAttempt.merge_commit.slice(0, 8)})
-                </span>
+                </button>
               </div>
             ) : (
               <div className="flex items-center gap-1.5">
@@ -1053,6 +1065,18 @@ function CurrentAttempt({
         onMergeDirect={handleMergeDirect}
         isLoading={merging}
       />
+
+      {/* Commit Details Modal */}
+      {selectedCommitSha && (
+        <CommitDetailsModal
+          isOpen={showCommitDetailsModal}
+          onOpenChange={setShowCommitDetailsModal}
+          commitSha={selectedCommitSha}
+          projectId={projectId}
+          taskId={task?.id || ''}
+          attemptId={selectedAttempt.id}
+        />
+      )}
     </div>
   );
 }

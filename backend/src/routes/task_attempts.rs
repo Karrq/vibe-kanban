@@ -18,7 +18,6 @@ use crate::{
     },
     middleware::{load_execution_process_with_context_middleware, load_task_attempt_middleware},
     models::{
-        config::Config,
         execution_process::{
             ExecutionProcess, ExecutionProcessStatus, ExecutionProcessSummary, ExecutionProcessType,
         },
@@ -29,6 +28,9 @@ use crate::{
             TaskAttemptState, WorktreeDiff,
         },
         ApiResponse,
+    },
+    services::{
+        git_service::{CommitDetails, GitService},
     },
 };
 
@@ -382,14 +384,8 @@ pub async fn create_github_pr(
     State(app_state): State<AppState>,
     Json(request): Json<CreateGitHubPRRequest>,
 ) -> Result<ResponseJson<ApiResponse<String>>, StatusCode> {
-    // Load the user's GitHub configuration
-    let config = match Config::load(&crate::utils::config_path()) {
-        Ok(config) => config,
-        Err(e) => {
-            tracing::error!("Failed to load config: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    // Get GitHub config from app_state
+    let config = app_state.get_config().read().await.clone();
 
     let github_token = match config.github.token {
         Some(token) => token,
@@ -831,6 +827,35 @@ pub async fn create_followup_attempt(
     }
 }
 
+pub async fn get_commit_details(
+    Extension(project): Extension<Project>,
+    Extension(_task): Extension<Task>,
+    Extension(_task_attempt): Extension<TaskAttempt>,
+    State(_app_state): State<AppState>,
+    axum::extract::Path((_, _, _, commit_sha)): axum::extract::Path<(Uuid, Uuid, Uuid, String)>,
+) -> Result<ResponseJson<ApiResponse<CommitDetails>>, StatusCode> {
+    // Use GitService to get commit details from local repository
+    let git_service = match GitService::new(&project.git_repo_path) {
+        Ok(service) => service,
+        Err(e) => {
+            tracing::error!("Failed to initialize git service: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Fetch commit details from Git
+    match git_service.get_commit_details(&commit_sha) {
+        Ok(commit_details) => Ok(ResponseJson(ApiResponse::success(commit_details))),
+        Err(e) => {
+            tracing::error!("Failed to fetch commit details: {}", e);
+            Ok(ResponseJson(ApiResponse::error(&format!(
+                "Failed to fetch commit details: {}",
+                e
+            ))))
+        }
+    }
+}
+
 pub async fn start_dev_server(
     Extension(project): Extension<Project>,
     Extension(task): Extension<Task>,
@@ -1154,6 +1179,10 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
         .route(
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/children",
             get(get_task_attempt_children),
+        )
+        .route(
+            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/commit/:commit_sha",
+            get(get_commit_details),
         )
         .merge(
             Router::new()
