@@ -3,11 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2 } from 'lucide-react';
+import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2, Terminal } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { projectsApi, tasksApi, templatesApi } from '@/lib/api';
 import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
 import { ProjectForm } from '@/components/projects/project-form';
+import { ProcessesDialog } from '@/components/projects/ProcessesDialog';
 import { TaskTemplateManager } from '@/components/TaskTemplateManager';
 import { useKeyboardShortcuts } from '@/lib/keyboard-shortcuts';
 import { useTaskPlan } from '@/components/context/TaskPlanContext';
@@ -66,6 +67,8 @@ export function ProjectTasks() {
   const [selectedTemplate, setSelectedTemplate] = useState<TaskTemplate | null>(
     null
   );
+  const [showProcessesDialog, setShowProcessesDialog] = useState(false);
+  const [taskDetailsRefreshTrigger, setTaskDetailsRefreshTrigger] = useState(0);
   
   // Calculate project-specific archived count efficiently
   const projectArchivedCount = useMemo(() => {
@@ -410,6 +413,15 @@ export function ProjectTasks() {
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => setShowProcessesDialog(true)}
+              className="h-8 w-8 p-0"
+              title="Processes"
+            >
+              <Terminal className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setIsProjectSettingsOpen(true)}
               className="h-8 w-8 p-0"
               title="Project Settings"
@@ -550,6 +562,7 @@ export function ProjectTasks() {
           onEditTask={handleEditTask}
           onDeleteTask={handleDeleteTask}
           isDialogOpen={isTaskDialogOpen || isProjectSettingsOpen}
+          refreshTrigger={taskDetailsRefreshTrigger}
         />
       )}
 
@@ -599,6 +612,18 @@ export function ProjectTasks() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ProcessesDialog
+        projectId={projectId!}
+        open={showProcessesDialog}
+        onClose={() => setShowProcessesDialog(false)}
+        onProcessKilled={() => {
+          // Refresh tasks when a process is killed
+          fetchTasks(true);
+          // Also trigger task details refresh
+          setTaskDetailsRefreshTrigger(prev => prev + 1);
+        }}
+      />
 
     </div>
   );

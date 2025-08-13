@@ -42,12 +42,14 @@ const TaskDetailsProvider: FC<{
   children: ReactNode;
   setShowEditorDialog: Dispatch<SetStateAction<boolean>>;
   projectHasDevScript?: boolean;
+  refreshTrigger?: number;
 }> = ({
   task,
   projectId,
   children,
   setShowEditorDialog,
   projectHasDevScript,
+  refreshTrigger,
 }) => {
   const [loading, setLoading] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -276,6 +278,14 @@ const TaskDetailsProvider: FC<{
       fetchExecutionState(selectedAttempt.id, selectedAttempt.task_id);
     }
   }, [selectedAttempt, task, fetchAttemptData, fetchExecutionState]);
+
+  // Refresh attempt data when explicitly requested (e.g., after killing a process)
+  useEffect(() => {
+    if (refreshTrigger && selectedAttempt && task) {
+      fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
+      fetchDiff(true);
+    }
+  }, [refreshTrigger]);
 
   const isAttemptRunning = useMemo(() => {
     if (!selectedAttempt || isStopping) {

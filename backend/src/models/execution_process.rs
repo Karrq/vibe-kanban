@@ -427,4 +427,91 @@ impl ExecutionProcess {
 
         Ok(())
     }
+
+    pub async fn find_by_project(
+        pool: &SqlitePool,
+        project_id: Uuid,
+    ) -> Result<Vec<ExecutionProcess>, sqlx::Error> {
+        let records = sqlx::query_as!(
+            ExecutionProcess,
+            r#"
+            SELECT 
+                ep.id as "id!: Uuid",
+                ep.task_attempt_id as "task_attempt_id!: Uuid",
+                ep.process_type as "process_type!: ExecutionProcessType",
+                ep.executor_type,
+                ep.status as "status!: ExecutionProcessStatus",
+                ep.command,
+                ep.args,
+                ep.working_directory,
+                ep.stdout,
+                ep.stderr,
+                ep.exit_code,
+                ep.started_at as "started_at!: DateTime<Utc>",
+                ep.completed_at as "completed_at?: DateTime<Utc>",
+                ep.created_at as "created_at!: DateTime<Utc>",
+                ep.updated_at as "updated_at!: DateTime<Utc>"
+            FROM execution_processes ep
+            JOIN task_attempts ta ON ep.task_attempt_id = ta.id
+            JOIN tasks t ON ta.task_id = t.id
+            WHERE t.project_id = $1
+            ORDER BY ep.started_at DESC
+            "#,
+            project_id
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(records)
+    }
+
+    pub async fn update_status(
+        pool: &SqlitePool,
+        id: Uuid,
+        status: ExecutionProcessStatus,
+        exit_code: Option<i64>,
+    ) -> Result<(), sqlx::Error> {
+        let now = Utc::now();
+        let status_str = match status {
+            ExecutionProcessStatus::Running => "running",
+            ExecutionProcessStatus::Completed => "completed",
+            ExecutionProcessStatus::Failed => "failed",
+            ExecutionProcessStatus::Killed => "killed",
+        };
+        
+        if status == ExecutionProcessStatus::Completed || 
+           status == ExecutionProcessStatus::Failed || 
+           status == ExecutionProcessStatus::Killed {
+            sqlx::query!(
+                r#"
+                UPDATE execution_processes 
+                SET status = $1, exit_code = $2, completed_at = $3, updated_at = $4
+                WHERE id = $5
+                "#,
+                status_str,
+                exit_code,
+                now,
+                now,
+                id
+            )
+            .execute(pool)
+            .await?;
+        } else {
+            sqlx::query!(
+                r#"
+                UPDATE execution_processes 
+                SET status = $1, exit_code = $2, updated_at = $3
+                WHERE id = $4
+                "#,
+                status_str,
+                exit_code,
+                now,
+                id
+            )
+            .execute(pool)
+            .await?;
+        }
+
+        Ok(())
+    }
 }

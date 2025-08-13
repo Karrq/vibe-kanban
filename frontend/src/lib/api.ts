@@ -537,6 +537,21 @@ export const executionProcessesApi = {
   },
 };
 
+// Processes APIs
+export const processesApi = {
+  listByProject: async (projectId: string): Promise<ExecutionProcess[]> => {
+    const response = await makeRequest(`/api/projects/${projectId}/processes`);
+    return handleApiResponse<ExecutionProcess[]>(response);
+  },
+  
+  kill: async (processId: string): Promise<void> => {
+    const response = await makeRequest(`/api/processes/${processId}/kill`, {
+      method: 'POST',
+    });
+    return handleApiResponse<void>(response);
+  },
+};
+
 // File System APIs
 export const fileSystemApi = {
   list: async (path?: string): Promise<DirectoryListResponse> => {
