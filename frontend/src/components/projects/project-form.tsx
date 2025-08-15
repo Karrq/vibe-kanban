@@ -148,7 +148,7 @@ Task description: $VK_TASK_DESCRIPTION`
     e.preventDefault();
     
     // Get app default executor to compare against
-    const appDefaultExecutor = config?.executor.type || 'claude';
+    const appDefaultExecutor = config?.executor.type || 'echo';
     setError('');
     setLoading(true);
 

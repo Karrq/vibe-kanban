@@ -20,6 +20,7 @@ import {
 import { useConfig } from '@/components/config-provider';
 import { templatesApi, projectsApi } from '@/lib/api';
 import BranchSelector from '@/components/tasks/BranchSelector';
+import { getProjectExecutorDefault } from '@/lib/project-executor-defaults';
 import type { TaskStatus, ExecutorConfig, TaskTemplate, GitBranch } from 'shared/types';
 
 interface Task {
@@ -206,7 +207,18 @@ export function TaskFormDialog({
         if (selectedBranch && STICKY_BRANCH_KEY) {
           localStorage.setItem(STICKY_BRANCH_KEY, selectedBranch);
         }
-        await onCreateAndStartTask(title, description, config?.executor, selectedBranch || undefined);
+        
+        // Use project-specific executor default if available, otherwise fall back to app default
+        let executor = config?.executor;
+        if (projectId) {
+          const projectExecutor = getProjectExecutorDefault(projectId);
+          if (projectExecutor) {
+            // Parse the executor string into ExecutorConfig object
+            executor = { type: projectExecutor } as ExecutorConfig;
+          }
+        }
+        
+        await onCreateAndStartTask(title, description, executor, selectedBranch || undefined);
       }
 
       // Reset form on successful creation
@@ -227,6 +239,7 @@ export function TaskFormDialog({
     isEditMode,
     onCreateAndStartTask,
     onOpenChange,
+    projectId,
   ]);
 
   const handleCancel = useCallback(() => {

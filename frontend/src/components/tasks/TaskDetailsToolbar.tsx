@@ -43,11 +43,11 @@ function TaskDetailsToolbar() {
   const [branches, setBranches] = useState<GitBranch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
-  // Determine default executor: project default > app default > 'claude'
+  // Determine default executor: project default > app default > 'echo'
   const getDefaultExecutor = useCallback(() => {
     const projectDefault = getProjectExecutorDefault(projectId);
     if (projectDefault) return projectDefault;
-    return config?.executor.type || 'claude';
+    return config?.executor.type || 'echo';
   }, [projectId, config]);
 
   const [selectedExecutor, setSelectedExecutor] = useState<string>(
