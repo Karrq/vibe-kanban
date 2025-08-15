@@ -30,6 +30,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
 import { getProjectExecutorDefault, setProjectExecutorDefault } from '@/lib/project-executor-defaults';
+import { useConfig } from '@/components/config-provider';
 
 interface ProjectFormProps {
   open: boolean;
@@ -44,6 +45,7 @@ export function ProjectForm({
   onSuccess,
   project,
 }: ProjectFormProps) {
+  const { config } = useConfig();
   const [name, setName] = useState(project?.name || '');
   const [gitRepoPath, setGitRepoPath] = useState(project?.git_repo_path || '');
   const [setupScript, setSetupScript] = useState(project?.setup_script ?? '');
@@ -144,6 +146,9 @@ Task description: $VK_TASK_DESCRIPTION`
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Get app default executor to compare against
+    const appDefaultExecutor = config?.executor.type || 'claude';
     setError('');
     setLoading(true);
 
@@ -166,8 +171,8 @@ Task description: $VK_TASK_DESCRIPTION`
         };
 
         await projectsApi.update(project.id, updateData);
-        // Save executor default to localStorage
-        setProjectExecutorDefault(project.id, defaultExecutor);
+        // Save executor default to localStorage only if different from app default
+        setProjectExecutorDefault(project.id, defaultExecutor, appDefaultExecutor);
       } else {
         // Creating new project
         if (environment === 'cloud') {
@@ -189,9 +194,9 @@ Task description: $VK_TASK_DESCRIPTION`
           };
 
           const newProject = await githubApi.createProjectFromRepository(githubData);
-          // Save executor default to localStorage for new project
-          if (newProject?.id && defaultExecutor) {
-            setProjectExecutorDefault(newProject.id, defaultExecutor);
+          // Save executor default to localStorage for new project only if different from app default
+          if (newProject?.id) {
+            setProjectExecutorDefault(newProject.id, defaultExecutor, appDefaultExecutor);
           }
         } else {
           // Local mode: Create local project
@@ -215,9 +220,9 @@ Task description: $VK_TASK_DESCRIPTION`
           };
 
           const newProject = await projectsApi.create(createData);
-          // Save executor default to localStorage for new project
-          if (newProject?.id && defaultExecutor) {
-            setProjectExecutorDefault(newProject.id, defaultExecutor);
+          // Save executor default to localStorage for new project only if different from app default
+          if (newProject?.id) {
+            setProjectExecutorDefault(newProject.id, defaultExecutor, appDefaultExecutor);
           }
         }
       }
