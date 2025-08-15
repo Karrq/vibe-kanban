@@ -97,7 +97,10 @@ export function TaskFollowUpSection() {
       if (draftKey) {
         localStorage.removeItem(draftKey);
       }
-      fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
+      // Add a small delay to ensure the backend has created the process record
+      setTimeout(() => {
+        fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
+      }, 500);
     } catch (error: unknown) {
       // @ts-expect-error it is type ApiError
       setFollowUpError(`Failed to start follow-up execution: ${error.message}`);
