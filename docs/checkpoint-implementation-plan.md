@@ -168,6 +168,10 @@ This document outlines the implementation plan for the checkpoint system in Vibe
 - **Checkpoint Granularity**: Since checkpoints only occur after state-mutating operations, forking from a read operation or assistant message will use the last mutation's state
 - **Conversation Context**: The fork includes conversation up to the selected message, even if the checkpoint is earlier
 - **Example**: If message 5 is a file write (checkpoint created) and messages 6-8 are reads, forking from message 8 uses checkpoint 5's state but includes messages 1-8 as context
+- **Executor-Specific Conversation Format**: Currently storing normalized conversation entries is insufficient. Each executor (Claude, Gemini, Amp, etc.) requires its specific conversation format to properly resume. Future implementation needs:
+  - A `truncate_session` method in the Executor trait to handle raw executor output truncation
+  - Each executor to parse its own format and return properly formatted truncated output
+  - Storage of executor-specific truncated output instead of normalized entries
 
 ## Performance Considerations
 

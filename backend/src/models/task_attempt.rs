@@ -1249,13 +1249,17 @@ impl TaskAttempt {
         task_id: Uuid,
         project_id: Uuid,
         checkpoint: &crate::services::CheckpointInfo,
-        conversation_entries: Vec<crate::executor::NormalizedEntry>,
+        message_index: usize,
     ) -> Result<TaskAttempt, TaskAttemptError> {
         // Load source attempt context
         let ctx = TaskAttempt::load_context(pool, source_attempt_id, task_id, project_id).await?;
         
         // Create fork service to handle git operations
         let fork_service = crate::services::ForkService::new(&ctx.task_attempt.worktree_path, source_attempt_id)?;
+        
+        // Extract conversation entries up to the fork point
+        let conversation_entries = fork_service.extract_conversation_up_to(pool, message_index).await
+            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to extract conversation: {}", e)))?;
         
         // Generate new attempt ID and branch name - same as regular attempt creation
         let new_attempt_id = Uuid::new_v4();
@@ -1318,6 +1322,62 @@ impl TaskAttempt {
         )
         .fetch_one(pool)
         .await?;
+        
+        // Store the conversation context if it exists
+        if !conversation_entries.is_empty() {
+            // TODO: This approach of serializing normalized entries is insufficient!
+            // The database actually stores RAW executor output in stdout, not normalized entries.
+            // We should leverage this to properly preserve executor-specific formatting.
+            //
+            // Proper implementation should:
+            // 1. Get the raw stdout from the source ExecutionProcess records
+            // 2. Add a `truncate_session` method to the Executor trait that takes:
+            //    - The raw (non-normalized) executor output from stdout
+            //    - The message index to truncate at
+            // 3. Each executor implementation would:
+            //    - Parse its own raw format
+            //    - Truncate at the specified message
+            //    - Return properly formatted raw output for that executor
+            // 4. Store this executor-specific truncated raw output directly as stdout
+            //
+            // This ensures the forked attempt can properly resume with the exact
+            // conversation format the executor expects, since we're preserving the
+            // raw format that executors actually produce and consume.
+            //
+            // For now, we store normalized entries as JSON, but this will
+            // cause issues when trying to continue the conversation.
+            
+            // Serialize conversation entries to a format that can be stored
+            let conversation_json = serde_json::to_string(&conversation_entries)
+                .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to serialize conversation: {}", e)))?;
+            
+            // Create an initial execution process to store the conversation context
+            let process_id = Uuid::new_v4();
+            let process_id_str = process_id.to_string();
+            let new_attempt_id_str = new_attempt_id.to_string();
+            
+            sqlx::query!(
+                r#"INSERT INTO execution_processes (
+                    id, task_attempt_id, process_type, executor_type, status,
+                    command, working_directory, stdout, started_at, completed_at
+                ) VALUES ($1, $2, 'coding_agent', $3, 'completed', 
+                    'forked_context', $4, $5, datetime('now'), datetime('now'))
+                "#,
+                process_id_str,
+                new_attempt_id_str,
+                ctx.task_attempt.executor.clone(),
+                new_worktree_path_str.clone(),
+                conversation_json
+            )
+            .execute(pool)
+            .await?;
+            
+            tracing::info!(
+                "Stored {} conversation entries for forked attempt {} (using normalized format - see TODO)",
+                conversation_entries.len(),
+                new_attempt_id
+            );
+        }
         
         tracing::info!(
             "Created new attempt {} seeded from checkpoint at message {} of attempt {}",

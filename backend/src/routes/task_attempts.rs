@@ -30,7 +30,7 @@ use crate::{
         },
         ApiResponse,
     },
-    services::{CheckpointService, ForkService},
+    services::ForkService,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1082,19 +1082,10 @@ pub async fn get_task_attempt_checkpoints(
     Extension(_project): Extension<Project>,
     Extension(_task): Extension<Task>,
     Extension(task_attempt): Extension<TaskAttempt>,
-    State(_app_state): State<AppState>,
+    State(app_state): State<AppState>,
 ) -> Result<ResponseJson<ApiResponse<Vec<CheckpointResponse>>>, StatusCode> {
-    // Create checkpoint service to list checkpoints
-    let checkpoint_service = match CheckpointService::new(&task_attempt.worktree_path, task_attempt.id) {
-        Ok(service) => service,
-        Err(e) => {
-            tracing::error!("Failed to create checkpoint service: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-    
-    // List all checkpoints for this attempt
-    let checkpoints = match checkpoint_service.list_checkpoints() {
+    // Use the TaskAttempt::list_checkpoints method
+    let checkpoints = match TaskAttempt::list_checkpoints(&app_state.db_pool, task_attempt.id).await {
         Ok(checkpoints) => checkpoints,
         Err(e) => {
             tracing::error!("Failed to list checkpoints: {}", e);
@@ -1150,26 +1141,14 @@ pub async fn fork_task_attempt(
         }
     };
     
-    // Extract conversation up to the fork point
-    let conversation_entries = match fork_service.extract_conversation_up_to(
-        &app_state.db_pool,
-        request.message_index,
-    ).await {
-        Ok(entries) => entries,
-        Err(e) => {
-            tracing::error!("Failed to extract conversation: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
-    
-    // Call the task attempt fork method
+    // Call the task attempt fork method - it will extract conversation internally
     match TaskAttempt::fork_attempt_from_checkpoint(
         &app_state.db_pool,
         task_attempt.id,
         task.id,
         project.id,
         &checkpoint,
-        conversation_entries,
+        request.message_index,
     ).await {
         Ok(new_attempt) => {
             let response = ForkResponse {
