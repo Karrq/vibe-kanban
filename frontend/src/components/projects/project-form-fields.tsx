@@ -16,6 +16,14 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { useState } from 'react';
 import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { EXECUTOR_TYPES, EXECUTOR_LABELS } from 'shared/types';
 
 interface ProjectFormFieldsProps {
   isEditing: boolean;
@@ -40,6 +48,8 @@ interface ProjectFormFieldsProps {
   setExecutorEnvScript: (script: string) => void;
   promptTemplate: string;
   setPromptTemplate: (template: string) => void;
+  defaultExecutor: string | null;
+  setDefaultExecutor: (executor: string | null) => void;
   error: string;
 }
 
@@ -66,6 +76,8 @@ export function ProjectFormFields({
   setExecutorEnvScript,
   promptTemplate,
   setPromptTemplate,
+  defaultExecutor,
+  setDefaultExecutor,
   error,
 }: ProjectFormFieldsProps) {
   const { systemInfo } = useSystemInfo();
@@ -74,6 +86,7 @@ export function ProjectFormFields({
   const [cleanupScriptOpen, setCleanupScriptOpen] = useState(false);
   const [executorEnvScriptOpen, setExecutorEnvScriptOpen] = useState(false);
   const [promptTemplateOpen, setPromptTemplateOpen] = useState(false);
+  const [defaultExecutorOpen, setDefaultExecutorOpen] = useState(false);
 
   // Create strategy-based placeholders
   const os_type = systemInfo ? systemInfo.os_type : 'unix';
@@ -414,6 +427,53 @@ Task description: $VK_TASK_DESCRIPTION"
                 <code className="text-xs">$VK_TASK_TITLE</code> - Task title
                 <br />
                 <code className="text-xs">$VK_TASK_DESCRIPTION</code> - Task description
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* Default Executor */}
+        <Collapsible
+          open={defaultExecutorOpen}
+          onOpenChange={setDefaultExecutorOpen}
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">
+                Default Executor
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  defaultExecutorOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <Select 
+                value={defaultExecutor || 'none'} 
+                onValueChange={(value) => setDefaultExecutor(value === 'none' ? null : value)}
+              >
+                <SelectTrigger id="default-executor">
+                  <SelectValue placeholder="Select default executor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Use app default</SelectItem>
+                  {EXECUTOR_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {EXECUTOR_LABELS[type]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Override the app-wide default executor for new task attempts in this project.
+                If not set, the app default executor will be used.
               </p>
             </div>
           </CollapsibleContent>

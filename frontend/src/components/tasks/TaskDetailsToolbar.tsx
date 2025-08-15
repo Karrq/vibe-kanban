@@ -6,6 +6,7 @@ import { useConfig } from '@/components/config-provider';
 import { attemptsApi, projectsApi } from '@/lib/api';
 import type { GitBranch, TaskAttempt } from 'shared/types';
 import { EXECUTOR_LABELS, EXECUTOR_TYPES } from 'shared/types';
+import { getProjectExecutorDefault } from '@/lib/project-executor-defaults';
 import {
   TaskAttemptDataContext,
   TaskAttemptLoadingContext,
@@ -42,8 +43,15 @@ function TaskDetailsToolbar() {
   const [branches, setBranches] = useState<GitBranch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
+  // Determine default executor: project default > app default > 'claude'
+  const getDefaultExecutor = useCallback(() => {
+    const projectDefault = getProjectExecutorDefault(projectId);
+    if (projectDefault) return projectDefault;
+    return config?.executor.type || 'claude';
+  }, [projectId, config]);
+
   const [selectedExecutor, setSelectedExecutor] = useState<string>(
-    config?.executor.type || 'claude'
+    getDefaultExecutor()
   );
 
   // State for create attempt mode
@@ -52,7 +60,7 @@ function TaskDetailsToolbar() {
     selectedBranch
   );
   const [createAttemptExecutor, setCreateAttemptExecutor] =
-    useState<string>(selectedExecutor);
+    useState<string>(getDefaultExecutor());
 
   // Branch status and git operations state
   const [creatingPR, setCreatingPR] = useState(false);
@@ -84,12 +92,14 @@ function TaskDetailsToolbar() {
     fetchProjectBranches();
   }, [fetchProjectBranches]);
 
-  // Set default executor from config
+  // Set default executor from project default or config
   useEffect(() => {
-    if (config && config.executor.type !== selectedExecutor) {
-      setSelectedExecutor(config.executor.type);
+    const defaultExecutor = getDefaultExecutor();
+    if (defaultExecutor !== selectedExecutor) {
+      setSelectedExecutor(defaultExecutor);
+      setCreateAttemptExecutor(defaultExecutor);
     }
-  }, [config, selectedExecutor]);
+  }, [getDefaultExecutor, selectedExecutor]);
 
   // Set create attempt mode when there are no attempts
   useEffect(() => {

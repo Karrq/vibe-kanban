@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
 import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
+import { getProjectExecutorDefault, setProjectExecutorDefault } from '@/lib/project-executor-defaults';
 
 interface ProjectFormProps {
   open: boolean;
@@ -58,6 +59,9 @@ export function ProjectForm({
 
 Task title: $VK_TASK_TITLE
 Task description: $VK_TASK_DESCRIPTION`
+  );
+  const [defaultExecutor, setDefaultExecutor] = useState<string | null>(
+    project?.id ? getProjectExecutorDefault(project.id) : null
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -162,6 +166,8 @@ Task description: $VK_TASK_DESCRIPTION`
         };
 
         await projectsApi.update(project.id, updateData);
+        // Save executor default to localStorage
+        setProjectExecutorDefault(project.id, defaultExecutor);
       } else {
         // Creating new project
         if (environment === 'cloud') {
@@ -182,7 +188,11 @@ Task description: $VK_TASK_DESCRIPTION`
             prompt_template: promptTemplate.trim() || null,  // Backend will provide default if null
           };
 
-          await githubApi.createProjectFromRepository(githubData);
+          const newProject = await githubApi.createProjectFromRepository(githubData);
+          // Save executor default to localStorage for new project
+          if (newProject?.id && defaultExecutor) {
+            setProjectExecutorDefault(newProject.id, defaultExecutor);
+          }
         } else {
           // Local mode: Create local project
           let finalGitRepoPath = gitRepoPath;
@@ -204,7 +214,11 @@ Task description: $VK_TASK_DESCRIPTION`
             prompt_template: promptTemplate.trim() || null,  // Backend will provide default if null
           };
 
-          await projectsApi.create(createData);
+          const newProject = await projectsApi.create(createData);
+          // Save executor default to localStorage for new project
+          if (newProject?.id && defaultExecutor) {
+            setProjectExecutorDefault(newProject.id, defaultExecutor);
+          }
         }
       }
 
@@ -298,6 +312,8 @@ Task description: $VK_TASK_DESCRIPTION`
                   setExecutorEnvScript={setExecutorEnvScript}
                   promptTemplate={promptTemplate}
                   setPromptTemplate={setPromptTemplate}
+                  defaultExecutor={defaultExecutor}
+                  setDefaultExecutor={setDefaultExecutor}
                   error={error}
                 />
                 <DialogFooter>
@@ -515,6 +531,8 @@ Task description: $VK_TASK_DESCRIPTION`
                 setExecutorEnvScript={setExecutorEnvScript}
                 promptTemplate={promptTemplate}
                 setPromptTemplate={setPromptTemplate}
+                defaultExecutor={defaultExecutor}
+                setDefaultExecutor={setDefaultExecutor}
                 error={error}
               />
             )}
