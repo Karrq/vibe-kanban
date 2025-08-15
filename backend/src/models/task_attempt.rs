@@ -24,6 +24,8 @@ pub enum TaskAttemptError {
     Git(GitError),
     GitService(GitServiceError),
     GitHubService(GitHubServiceError),
+    ForkService(crate::services::ForkServiceError),
+    CheckpointService(crate::services::CheckpointError),
     TaskNotFound,
     ProjectNotFound,
     ValidationError(String),
@@ -37,6 +39,8 @@ impl std::fmt::Display for TaskAttemptError {
             TaskAttemptError::Git(e) => write!(f, "Git error: {}", e),
             TaskAttemptError::GitService(e) => write!(f, "Git service error: {}", e),
             TaskAttemptError::GitHubService(e) => write!(f, "GitHub service error: {}", e),
+            TaskAttemptError::ForkService(e) => write!(f, "Fork service error: {}", e),
+            TaskAttemptError::CheckpointService(e) => write!(f, "Checkpoint service error: {}", e),
             TaskAttemptError::TaskNotFound => write!(f, "Task not found"),
             TaskAttemptError::ProjectNotFound => write!(f, "Project not found"),
             TaskAttemptError::ValidationError(e) => write!(f, "Validation error: {}", e),
@@ -68,6 +72,18 @@ impl From<GitServiceError> for TaskAttemptError {
 impl From<GitHubServiceError> for TaskAttemptError {
     fn from(err: GitHubServiceError) -> Self {
         TaskAttemptError::GitHubService(err)
+    }
+}
+
+impl From<crate::services::ForkServiceError> for TaskAttemptError {
+    fn from(err: crate::services::ForkServiceError) -> Self {
+        TaskAttemptError::ForkService(err)
+    }
+}
+
+impl From<crate::services::CheckpointError> for TaskAttemptError {
+    fn from(err: crate::services::CheckpointError) -> Self {
+        TaskAttemptError::CheckpointService(err)
     }
 }
 
@@ -1220,5 +1236,114 @@ impl TaskAttempt {
             execution_history,
             cumulative_diffs,
         })
+    }
+    
+    /// Fork a task attempt from a checkpoint, creating a new attempt with the checkpoint state
+    /// 
+    /// This creates a completely new attempt that is independent from the source attempt.
+    /// The only difference from a regular new attempt is that it starts from a checkpoint
+    /// commit instead of from the base branch - it's essentially a "seeded" new attempt.
+    pub async fn fork_attempt_from_checkpoint(
+        pool: &SqlitePool,
+        source_attempt_id: Uuid,
+        task_id: Uuid,
+        project_id: Uuid,
+        checkpoint: &crate::services::CheckpointInfo,
+        conversation_entries: Vec<crate::executor::NormalizedEntry>,
+    ) -> Result<TaskAttempt, TaskAttemptError> {
+        // Load source attempt context
+        let ctx = TaskAttempt::load_context(pool, source_attempt_id, task_id, project_id).await?;
+        
+        // Create fork service to handle git operations
+        let fork_service = crate::services::ForkService::new(&ctx.task_attempt.worktree_path, source_attempt_id)?;
+        
+        // Generate new attempt ID and branch name - same as regular attempt creation
+        let new_attempt_id = Uuid::new_v4();
+        let task_title_id = crate::utils::text::git_branch_id(&ctx.task.title);
+        let new_branch_name = format!(
+            "vk-{}-{}",
+            crate::utils::text::short_uuid(&new_attempt_id),
+            task_title_id
+        );
+        
+        // Create new worktree path
+        let new_worktree_path = Self::get_worktree_base_dir().join(&new_branch_name);
+        let new_worktree_path_str = new_worktree_path.to_string_lossy().to_string();
+        
+        // Create the forked worktree from checkpoint
+        fork_service.create_forked_worktree(
+            checkpoint,
+            &new_branch_name,
+            &new_worktree_path_str,
+        )?;
+        
+        // Create database record for the forked attempt
+        let forked_attempt = sqlx::query_as!(
+            TaskAttempt,
+            r#"INSERT INTO task_attempts (
+                id, task_id, worktree_path, branch, base_branch, 
+                merge_commit, executor, pr_url, pr_number, pr_status, 
+                pr_merged_at, worktree_deleted, setup_completed_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            RETURNING 
+                id as "id!: Uuid", 
+                task_id as "task_id!: Uuid", 
+                worktree_path, 
+                branch, 
+                base_branch, 
+                merge_commit, 
+                executor, 
+                pr_url, 
+                pr_number, 
+                pr_status, 
+                pr_merged_at as "pr_merged_at: DateTime<Utc>", 
+                worktree_deleted as "worktree_deleted!: bool", 
+                setup_completed_at as "setup_completed_at: DateTime<Utc>", 
+                created_at as "created_at!: DateTime<Utc>", 
+                updated_at as "updated_at!: DateTime<Utc>""#,
+            new_attempt_id,
+            task_id,
+            new_worktree_path_str,
+            new_branch_name,
+            ctx.task_attempt.base_branch.clone(), // Use same base branch as source
+            Option::<String>::None, // merge_commit
+            ctx.task_attempt.executor.clone(), // Use same executor
+            Option::<String>::None, // pr_url
+            Option::<i64>::None, // pr_number
+            Option::<String>::None, // pr_status
+            Option::<DateTime<Utc>>::None, // pr_merged_at
+            false, // worktree_deleted
+            Option::<DateTime<Utc>>::None // setup_completed_at
+        )
+        .fetch_one(pool)
+        .await?;
+        
+        tracing::info!(
+            "Created new attempt {} seeded from checkpoint at message {} of attempt {}",
+            new_attempt_id,
+            checkpoint.message_index,
+            source_attempt_id
+        );
+        
+        Ok(forked_attempt)
+    }
+    
+    /// List all checkpoints available for this attempt
+    pub async fn list_checkpoints(
+        pool: &SqlitePool,
+        attempt_id: Uuid,
+    ) -> Result<Vec<crate::services::CheckpointInfo>, TaskAttemptError> {
+        // Get the attempt to find worktree path
+        let attempt = TaskAttempt::find_by_id(pool, attempt_id)
+            .await?
+            .ok_or(TaskAttemptError::TaskNotFound)?;
+        
+        // Create checkpoint service
+        let checkpoint_service = crate::services::CheckpointService::new(&attempt.worktree_path, attempt_id)?;
+        
+        // List checkpoints
+        checkpoint_service.list_checkpoints()
+            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to list checkpoints: {}", e)))
     }
 }

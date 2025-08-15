@@ -30,6 +30,7 @@ use crate::{
         },
         ApiResponse,
     },
+    services::{CheckpointService, ForkService},
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -55,6 +56,29 @@ pub struct FollowUpResponse {
     pub message: String,
     pub actual_attempt_id: Uuid,
     pub created_new_attempt: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, TS)]
+#[ts(export)]
+pub struct ForkTaskAttemptRequest {
+    pub message_index: usize,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct CheckpointResponse {
+    pub message_index: usize,
+    pub commit_sha: String,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct ForkResponse {
+    pub new_attempt_id: Uuid,
+    pub worktree_path: String,
+    pub branch: String,
+    pub checkpoint_used: CheckpointResponse,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -1054,6 +1078,123 @@ pub async fn get_task_attempt_details(
     Ok(ResponseJson(ApiResponse::success(task_attempt)))
 }
 
+pub async fn get_task_attempt_checkpoints(
+    Extension(_project): Extension<Project>,
+    Extension(_task): Extension<Task>,
+    Extension(task_attempt): Extension<TaskAttempt>,
+    State(_app_state): State<AppState>,
+) -> Result<ResponseJson<ApiResponse<Vec<CheckpointResponse>>>, StatusCode> {
+    // Create checkpoint service to list checkpoints
+    let checkpoint_service = match CheckpointService::new(&task_attempt.worktree_path, task_attempt.id) {
+        Ok(service) => service,
+        Err(e) => {
+            tracing::error!("Failed to create checkpoint service: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // List all checkpoints for this attempt
+    let checkpoints = match checkpoint_service.list_checkpoints() {
+        Ok(checkpoints) => checkpoints,
+        Err(e) => {
+            tracing::error!("Failed to list checkpoints: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Convert to response format
+    let response: Vec<CheckpointResponse> = checkpoints
+        .into_iter()
+        .map(|cp| CheckpointResponse {
+            message_index: cp.message_index,
+            commit_sha: cp.commit_sha,
+            timestamp: cp.timestamp,
+        })
+        .collect();
+    
+    Ok(ResponseJson(ApiResponse::success(response)))
+}
+
+/// Fork a task attempt from a checkpoint, creating a new independent attempt
+/// with the exact code state and conversation context up to that point.
+/// 
+/// The forked attempt is ready for the user to continue with a new prompt
+/// via the standard follow-up execution endpoint.
+pub async fn fork_task_attempt(
+    Extension(project): Extension<Project>,
+    Extension(task): Extension<Task>,
+    Extension(task_attempt): Extension<TaskAttempt>,
+    State(app_state): State<AppState>,
+    Json(request): Json<ForkTaskAttemptRequest>,
+) -> Result<ResponseJson<ApiResponse<ForkResponse>>, StatusCode> {
+    // Create fork service
+    let fork_service = match ForkService::new(&task_attempt.worktree_path, task_attempt.id) {
+        Ok(service) => service,
+        Err(e) => {
+            tracing::error!("Failed to create fork service: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Find the last checkpoint at or before the requested message
+    let checkpoint = match fork_service.find_last_checkpoint_before(request.message_index) {
+        Ok(Some(checkpoint)) => checkpoint,
+        Ok(None) => {
+            return Ok(ResponseJson(ApiResponse::error(
+                "No checkpoint found at or before the specified message index"
+            )));
+        }
+        Err(e) => {
+            tracing::error!("Failed to find checkpoint: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Extract conversation up to the fork point
+    let conversation_entries = match fork_service.extract_conversation_up_to(
+        &app_state.db_pool,
+        request.message_index,
+    ).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            tracing::error!("Failed to extract conversation: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Call the task attempt fork method
+    match TaskAttempt::fork_attempt_from_checkpoint(
+        &app_state.db_pool,
+        task_attempt.id,
+        task.id,
+        project.id,
+        &checkpoint,
+        conversation_entries,
+    ).await {
+        Ok(new_attempt) => {
+            let response = ForkResponse {
+                new_attempt_id: new_attempt.id,
+                worktree_path: new_attempt.worktree_path,
+                branch: new_attempt.branch,
+                checkpoint_used: CheckpointResponse {
+                    message_index: checkpoint.message_index,
+                    commit_sha: checkpoint.commit_sha,
+                    timestamp: checkpoint.timestamp,
+                },
+            };
+            
+            Ok(ResponseJson(ApiResponse::success(response)))
+        }
+        Err(e) => {
+            tracing::error!("Failed to fork task attempt: {}", e);
+            Ok(ResponseJson(ApiResponse::error(&format!(
+                "Failed to fork: {}",
+                e
+            ))))
+        }
+    }
+}
+
 pub async fn get_task_attempt_children(
     Extension(task_attempt): Extension<TaskAttempt>,
     Extension(project): Extension<Project>,
@@ -1152,6 +1293,14 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
         .route(
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/children",
             get(get_task_attempt_children),
+        )
+        .route(
+            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/checkpoints",
+            get(get_task_attempt_checkpoints),
+        )
+        .route(
+            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/fork",
+            post(fork_task_attempt),
         )
         .merge(
             Router::new()

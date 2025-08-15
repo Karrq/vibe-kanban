@@ -237,6 +237,12 @@ impl From<crate::models::task_attempt::TaskAttemptError> for ExecutorError {
             crate::models::task_attempt::TaskAttemptError::GitHubService(e) => {
                 ExecutorError::GitError(format!("GitHub service error: {}", e))
             }
+            crate::models::task_attempt::TaskAttemptError::ForkService(e) => {
+                ExecutorError::GitError(format!("Fork service error: {}", e))
+            }
+            crate::models::task_attempt::TaskAttemptError::CheckpointService(e) => {
+                ExecutorError::GitError(format!("Checkpoint service error: {}", e))
+            }
         }
     }
 }
