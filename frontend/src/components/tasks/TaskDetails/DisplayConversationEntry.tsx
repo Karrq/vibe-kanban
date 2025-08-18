@@ -104,6 +104,10 @@ const getContentClassName = (entryType: NormalizedEntryType) => {
     return `${baseClasses} text-red-600 font-mono bg-red-50 dark:bg-red-950/20 px-2 py-1 rounded`;
   }
 
+  if (entryType.type === 'thinking') {
+    return `${baseClasses} text-purple-600 dark:text-purple-400 italic bg-purple-50 dark:bg-purple-950/10 px-2 py-1 rounded`;
+  }
+
   // Special styling for TODO lists
   if (
     entryType.type === 'tool_use' &&
@@ -239,9 +243,10 @@ const createIncrementalDiff = (
 
 // Helper function to determine if content should be rendered as markdown
 const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
-  // Render markdown for assistant messages, plan presentations, and tool outputs that contain backticks
+  // Render markdown for assistant messages, thinking, plan presentations, and tool outputs that contain backticks
   return (
     entryType.type === 'assistant_message' ||
+    entryType.type === 'thinking' ||
     (entryType.type === 'tool_use' &&
       entryType.action_type.action === 'plan_presentation') ||
     (entryType.type === 'tool_use' &&

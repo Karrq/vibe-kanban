@@ -242,6 +242,20 @@ impl Executor for ClaudeExecutor {
                                                     });
                                                 }
                                             }
+                                            "thinking" => {
+                                                if let Some(thinking_text) = content_item
+                                                    .get("thinking")
+                                                    .and_then(|t| t.as_str())
+                                                {
+                                                    entries.push(NormalizedEntry {
+                                                        timestamp: None,
+                                                        entry_type: NormalizedEntryType::Thinking,
+                                                        content: thinking_text.to_string(),
+                                                        metadata: Some(content_item.clone()),
+                                                        tool_result: None,
+                                                    });
+                                                }
+                                            }
                                             "tool_use" => {
                                                 if let Some(tool_name) = content_item
                                                     .get("name")
