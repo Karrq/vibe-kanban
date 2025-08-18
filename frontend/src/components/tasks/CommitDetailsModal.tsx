@@ -146,9 +146,8 @@ export function CommitDetailsModal({
         status = 'Deleted';
       } else if (file.status === 'modified') {
         status = 'Modified';
-      } else if (file.status === 'renamed') {
-        // We don't have old_path info in FileChangeMetadata yet
-        status = 'Modified'; // Fallback to modified for now
+      } else if (file.status === 'renamed' && file.old_filename) {
+        status = { Renamed: { old_path: file.old_filename } };
       }
       
       return {

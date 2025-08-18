@@ -26,6 +26,7 @@ pub struct CommitAuthor {
 #[ts(export)]
 pub struct FileChangeMetadata {
     pub filename: String,
+    pub old_filename: Option<String>, // For renamed files
     pub additions: i64,
     pub deletions: i64,
     pub status: String,
@@ -519,12 +520,12 @@ impl GitService {
         // second parent is the branch that was merged
         let parents: Vec<_> = merge_commit.parents().collect();
 
-        // Create diff options with more context
+        // Create diff options with more context and rename detection
         let mut diff_opts = DiffOptions::new();
         diff_opts.context_lines(10);
         diff_opts.interhunk_lines(0);
 
-        let diff = if parents.len() >= 2 {
+        let mut diff = if parents.len() >= 2 {
             let base_tree = parents[0].tree()?;
             let merged_tree = parents[1].tree()?;
             main_repo.diff_tree_to_tree(
@@ -546,6 +547,12 @@ impl GitService {
                 Some(&mut diff_opts),
             )?
         };
+        
+        // Apply rename detection
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50); // 50% similarity threshold
+        diff.find_similar(Some(&mut find_opts))?;
 
         // Process each diff delta
         diff.foreach(
@@ -643,16 +650,22 @@ impl GitService {
         let current_commit = worktree_repo.find_commit(worktree_head_oid)?;
         let current_tree = current_commit.tree()?;
 
-        // Create a diff between the base tree and current tree
+        // Create a diff between the base tree and current tree with rename detection
         let mut diff_opts = DiffOptions::new();
         diff_opts.context_lines(10);
         diff_opts.interhunk_lines(0);
 
-        let diff = worktree_repo.diff_tree_to_tree(
+        let mut diff = worktree_repo.diff_tree_to_tree(
             Some(&base_tree),
             Some(&current_tree),
             Some(&mut diff_opts),
         )?;
+        
+        // Apply rename detection
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50); // 50% similarity threshold
+        diff.find_similar(Some(&mut find_opts))?;
 
         // Process committed changes
         diff.foreach(
@@ -729,8 +742,14 @@ impl GitService {
         unstaged_diff_opts.interhunk_lines(0);
         unstaged_diff_opts.include_untracked(true);
 
-        let unstaged_diff = worktree_repo
+        let mut unstaged_diff = worktree_repo
             .diff_tree_to_workdir_with_index(Some(&current_tree), Some(&mut unstaged_diff_opts))?;
+        
+        // Apply rename detection for unstaged changes
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50);
+        unstaged_diff.find_similar(Some(&mut find_opts))?;
 
         // Process unstaged changes
         unstaged_diff.foreach(
@@ -1215,13 +1234,19 @@ impl GitService {
         let tree = commit.tree()?;
         let parent_tree = parent.as_ref().map(|p| p.tree()).transpose()?;
         
-        // Compute the diff
+        // Compute the diff with rename detection
         let mut diff_options = git2::DiffOptions::new();
-        let diff = repo.diff_tree_to_tree(
+        let mut diff = repo.diff_tree_to_tree(
             parent_tree.as_ref(),
             Some(&tree),
             Some(&mut diff_options),
         )?;
+        
+        // Apply rename detection
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50);
+        diff.find_similar(Some(&mut find_opts))?;
         
         // Process each file in the diff
         let mut diff_files = Vec::new();
@@ -1280,8 +1305,17 @@ impl GitService {
                             _ => "unknown",
                         }.to_string();
                         
+                        let old_filename = if delta.status() == git2::Delta::Renamed {
+                            delta.old_file().path()
+                                .and_then(|p| p.to_str())
+                                .map(|s| s.to_string())
+                        } else {
+                            None
+                        };
+                        
                         processed_files.push(FileChangeMetadata {
                             filename: path_str.to_string(),
+                            old_filename,
                             additions,
                             deletions,
                             status,
