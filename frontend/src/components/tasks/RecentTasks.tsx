@@ -2,7 +2,7 @@ import { useMemo, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Clock, ChevronRight, FolderOpen } from 'lucide-react';
+import { Clock, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { projectsApi, tasksApi } from '@/lib/api';
 import type { TaskWithAttemptStatus } from 'shared/types';
@@ -16,7 +16,14 @@ interface RecentTasksProps {
   className?: string;
 }
 
-export function RecentTasks({ limit = 10, className }: RecentTasksProps) {
+const TASK_COLUMNS = [
+  { id: 'todo', title: 'To Do' },
+  { id: 'inprogress', title: 'In Progress' },
+  { id: 'inreview', title: 'In Review' },
+  { id: 'done', title: 'Done' },
+] as const;
+
+export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
   const navigate = useNavigate();
   const [allTasks, setAllTasks] = useState<TaskWithProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,14 +60,32 @@ export function RecentTasks({ limit = 10, className }: RecentTasksProps) {
     return () => clearInterval(interval);
   }, [fetchAllTasks]);
 
-  const recentTasks = useMemo(() => {
-    return [...allTasks]
+  const tasksByStatus = useMemo(() => {
+    // Filter out cancelled tasks and get recent ones
+    const recentTasks = [...allTasks]
+      .filter(task => task.status !== 'cancelled')
       .sort((a, b) => {
         const dateA = new Date(a.updated_at).getTime();
         const dateB = new Date(b.updated_at).getTime();
         return dateB - dateA;
       })
       .slice(0, limit);
+
+    // Group by status
+    const grouped: Record<string, TaskWithProject[]> = {
+      todo: [],
+      inprogress: [],
+      inreview: [],
+      done: [],
+    };
+
+    recentTasks.forEach(task => {
+      if (grouped[task.status]) {
+        grouped[task.status].push(task);
+      }
+    });
+
+    return grouped;
   }, [allTasks, limit]);
 
   const handleTaskClick = useCallback((task: TaskWithProject) => {
@@ -79,28 +104,12 @@ export function RecentTasks({ limit = 10, className }: RecentTasksProps) {
     return date.toLocaleDateString();
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'not_started':
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300';
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300';
-      case 'blocked':
-        return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
-      case 'done':
-        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300';
-      case 'archived':
-        return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
-      default:
-        return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300';
-    }
-  };
-
   if (loading && allTasks.length === 0) {
     return null;
   }
 
-  if (recentTasks.length === 0) {
+  const hasAnyTasks = Object.values(tasksByStatus).some(tasks => tasks.length > 0);
+  if (!hasAnyTasks) {
     return null;
   }
 
@@ -113,51 +122,44 @@ export function RecentTasks({ limit = 10, className }: RecentTasksProps) {
         </CardTitle>
       </CardHeader>
       <CardContent className="pb-4">
-        <div className="space-y-2">
-          {recentTasks.map((task) => (
-            <div
-              key={task.id}
-              onClick={() => handleTaskClick(task)}
-              className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer group"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-medium truncate">
-                    {task.title}
-                  </h4>
-                  <Badge 
-                    variant="secondary" 
-                    className={cn("text-xs px-2 py-0", getStatusColor(task.status))}
+        <div className="grid grid-cols-4 gap-4">
+          {TASK_COLUMNS.map(column => (
+            <div key={column.id} className="flex flex-col">
+              <h3 className="text-sm font-medium text-muted-foreground mb-3">
+                {column.title}
+              </h3>
+              <div className="space-y-2">
+                {tasksByStatus[column.id]?.map((task) => (
+                  <div
+                    key={task.id}
+                    onClick={() => handleTaskClick(task)}
+                    className="p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer"
                   >
-                    {task.status.replace(/_/g, ' ')}
-                  </Badge>
-                  {task.has_in_progress_attempt && (
-                    <Badge variant="outline" className="text-xs px-2 py-0">
-                      Running
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 mt-1">
-                  {task.projectName && (
-                    <div className="flex items-center gap-1">
-                      <FolderOpen className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">
-                        {task.projectName}
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-sm font-medium line-clamp-2">
+                        {task.title}
+                      </h4>
+                      {task.has_in_progress_attempt && (
+                        <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0">
+                          Running
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      {task.projectName && (
+                        <div className="flex items-center gap-1 flex-1 min-w-0">
+                          <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground truncate">
+                            {task.projectName}
+                          </span>
+                        </div>
+                      )}
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatTimeAgo(task.updated_at)}
                       </span>
                     </div>
-                  )}
-                  {task.description && (
-                    <p className="text-xs text-muted-foreground truncate flex-1">
-                      {task.description}
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 ml-4">
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {formatTimeAgo(task.updated_at)}
-                </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                ))}
               </div>
             </div>
           ))}
