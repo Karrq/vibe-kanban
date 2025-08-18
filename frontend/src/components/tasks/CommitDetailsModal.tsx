@@ -137,10 +137,25 @@ export function CommitDetailsModal({
   const diffData = useMemo<WorktreeDiff | null>(() => {
     if (!commitDetails?.files) return null;
     
-    const files: FileDiff[] = commitDetails.files.map(file => ({
-      path: file.filename,
-      chunks: file.chunks || []
-    }));
+    const files: FileDiff[] = commitDetails.files.map(file => {
+      // Convert string status to FileStatus enum format
+      let status = null;
+      if (file.status === 'added') {
+        status = 'Added';
+      } else if (file.status === 'deleted') {
+        status = 'Deleted';
+      } else if (file.status === 'modified') {
+        status = 'Modified';
+      } else if (file.status === 'renamed' && file.old_filename) {
+        status = { Renamed: { old_path: file.old_filename } };
+      }
+      
+      return {
+        path: file.filename,
+        chunks: file.chunks || [],
+        status: status as any,
+      };
+    });
     
     return { files };
   }, [commitDetails]);

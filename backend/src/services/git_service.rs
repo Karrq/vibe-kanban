@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use ts_rs::TS;
 
 use crate::{
-    models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, WorktreeDiff},
+    models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, FileStatus, WorktreeDiff},
     utils::worktree_manager::WorktreeManager,
 };
 
@@ -26,6 +26,7 @@ pub struct CommitAuthor {
 #[ts(export)]
 pub struct FileChangeMetadata {
     pub filename: String,
+    pub old_filename: Option<String>, // For renamed files
     pub additions: i64,
     pub deletions: i64,
     pub status: String,
@@ -519,12 +520,12 @@ impl GitService {
         // second parent is the branch that was merged
         let parents: Vec<_> = merge_commit.parents().collect();
 
-        // Create diff options with more context
+        // Create diff options with more context and rename detection
         let mut diff_opts = DiffOptions::new();
         diff_opts.context_lines(10);
         diff_opts.interhunk_lines(0);
 
-        let diff = if parents.len() >= 2 {
+        let mut diff = if parents.len() >= 2 {
             let base_tree = parents[0].tree()?;
             let merged_tree = parents[1].tree()?;
             main_repo.diff_tree_to_tree(
@@ -546,6 +547,12 @@ impl GitService {
                 Some(&mut diff_opts),
             )?
         };
+        
+        // Apply rename detection
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50); // 50% similarity threshold
+        diff.find_similar(Some(&mut find_opts))?;
 
         // Process each diff delta
         diff.foreach(
@@ -557,16 +564,46 @@ impl GitService {
                     if let Ok(diff_chunks) =
                         self.generate_git_diff_chunks(&main_repo, &old_file, &new_file, path_str)
                     {
-                        if !diff_chunks.is_empty() {
+                        // For renamed files, always include them even if content is identical
+                        if !diff_chunks.is_empty() || delta.status() == git2::Delta::Renamed {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
+                                git2::Delta::Modified => Some(FileStatus::Modified),
+                                git2::Delta::Renamed => {
+                                    delta.old_file().path()
+                                        .and_then(|p| p.to_str())
+                                        .map(|old| FileStatus::Renamed { old_path: old.to_string() })
+                                }
+                                _ => None,
+                            };
+                            
+                            // For renamed files with no content changes, add a descriptive chunk
+                            let chunks = if diff_chunks.is_empty() && delta.status() == git2::Delta::Renamed {
+                                vec![DiffChunk {
+                                    chunk_type: DiffChunkType::Equal,
+                                    content: "File renamed with no content changes".to_string(),
+                                }]
+                            } else {
+                                diff_chunks
+                            };
+                            
                             files.push(FileDiff {
                                 path: path_str.to_string(),
-                                chunks: diff_chunks,
+                                chunks,
+                                status,
                             });
                         } else if delta.status() == git2::Delta::Added
                             || delta.status() == git2::Delta::Deleted
                         {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
+                                _ => None,
+                            };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
+                                status,
                                 chunks: vec![DiffChunk {
                                     chunk_type: if delta.status() == git2::Delta::Added {
                                         DiffChunkType::Insert
@@ -625,16 +662,22 @@ impl GitService {
         let current_commit = worktree_repo.find_commit(worktree_head_oid)?;
         let current_tree = current_commit.tree()?;
 
-        // Create a diff between the base tree and current tree
+        // Create a diff between the base tree and current tree with rename detection
         let mut diff_opts = DiffOptions::new();
         diff_opts.context_lines(10);
         diff_opts.interhunk_lines(0);
 
-        let diff = worktree_repo.diff_tree_to_tree(
+        let mut diff = worktree_repo.diff_tree_to_tree(
             Some(&base_tree),
             Some(&current_tree),
             Some(&mut diff_opts),
         )?;
+        
+        // Apply rename detection
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50); // 50% similarity threshold
+        diff.find_similar(Some(&mut find_opts))?;
 
         // Process committed changes
         diff.foreach(
@@ -649,16 +692,46 @@ impl GitService {
                         &new_file,
                         path_str,
                     ) {
-                        if !diff_chunks.is_empty() {
+                        // For renamed files, always include them even if content is identical
+                        if !diff_chunks.is_empty() || delta.status() == git2::Delta::Renamed {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
+                                git2::Delta::Modified => Some(FileStatus::Modified),
+                                git2::Delta::Renamed => {
+                                    delta.old_file().path()
+                                        .and_then(|p| p.to_str())
+                                        .map(|old| FileStatus::Renamed { old_path: old.to_string() })
+                                }
+                                _ => None,
+                            };
+                            
+                            // For renamed files with no content changes, add a descriptive chunk
+                            let chunks = if diff_chunks.is_empty() && delta.status() == git2::Delta::Renamed {
+                                vec![DiffChunk {
+                                    chunk_type: DiffChunkType::Equal,
+                                    content: "File renamed with no content changes".to_string(),
+                                }]
+                            } else {
+                                diff_chunks
+                            };
+                            
                             files.push(FileDiff {
                                 path: path_str.to_string(),
-                                chunks: diff_chunks,
+                                chunks,
+                                status,
                             });
                         } else if delta.status() == git2::Delta::Added
                             || delta.status() == git2::Delta::Deleted
                         {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
+                                _ => None,
+                            };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
+                                status,
                                 chunks: vec![DiffChunk {
                                     chunk_type: if delta.status() == git2::Delta::Added {
                                         DiffChunkType::Insert
@@ -693,8 +766,14 @@ impl GitService {
         unstaged_diff_opts.interhunk_lines(0);
         unstaged_diff_opts.include_untracked(true);
 
-        let unstaged_diff = worktree_repo
+        let mut unstaged_diff = worktree_repo
             .diff_tree_to_workdir_with_index(Some(&current_tree), Some(&mut unstaged_diff_opts))?;
+        
+        // Apply rename detection for unstaged changes
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50);
+        unstaged_diff.find_similar(Some(&mut find_opts))?;
 
         // Process unstaged changes
         unstaged_diff.foreach(
@@ -859,16 +938,46 @@ impl GitService {
                 if let Ok(chunks) =
                     self.create_combined_diff_chunks(&base_content, &working_content, path_str)
                 {
-                    if !chunks.is_empty() {
+                    // For renamed files, always include them even if content is identical
+                    if !chunks.is_empty() || delta.status() == git2::Delta::Renamed {
+                        let status = match delta.status() {
+                            git2::Delta::Added => Some(FileStatus::Added),
+                            git2::Delta::Deleted => Some(FileStatus::Deleted),
+                            git2::Delta::Modified => Some(FileStatus::Modified),
+                            git2::Delta::Renamed => {
+                                delta.old_file().path()
+                                    .and_then(|p| p.to_str())
+                                    .map(|old| FileStatus::Renamed { old_path: old.to_string() })
+                            }
+                            _ => None,
+                        };
+                        
+                        // For renamed files with no content changes, add a descriptive chunk
+                        let final_chunks = if chunks.is_empty() && delta.status() == git2::Delta::Renamed {
+                            vec![DiffChunk {
+                                chunk_type: DiffChunkType::Equal,
+                                content: "File renamed with no content changes".to_string(),
+                            }]
+                        } else {
+                            chunks
+                        };
+                        
                         files.push(FileDiff {
                             path: path_str.to_string(),
-                            chunks,
+                            chunks: final_chunks,
+                            status,
                         });
                     }
                 } else if delta.status() != git2::Delta::Modified {
                     // Fallback for added/deleted files
+                    let status = match delta.status() {
+                        git2::Delta::Added => Some(FileStatus::Added),
+                        git2::Delta::Deleted => Some(FileStatus::Deleted),
+                        _ => None,
+                    };
                     files.push(FileDiff {
                         path: path_str.to_string(),
+                        status,
                         chunks: vec![DiffChunk {
                             chunk_type: if delta.status() == git2::Delta::Added {
                                 DiffChunkType::Insert
@@ -1161,13 +1270,19 @@ impl GitService {
         let tree = commit.tree()?;
         let parent_tree = parent.as_ref().map(|p| p.tree()).transpose()?;
         
-        // Compute the diff
+        // Compute the diff with rename detection
         let mut diff_options = git2::DiffOptions::new();
-        let diff = repo.diff_tree_to_tree(
+        let mut diff = repo.diff_tree_to_tree(
             parent_tree.as_ref(),
             Some(&tree),
             Some(&mut diff_options),
         )?;
+        
+        // Apply rename detection
+        let mut find_opts = git2::DiffFindOptions::new();
+        find_opts.renames(true);
+        find_opts.rename_threshold(50);
+        diff.find_similar(Some(&mut find_opts))?;
         
         // Process each file in the diff
         let mut diff_files = Vec::new();
@@ -1226,8 +1341,17 @@ impl GitService {
                             _ => "unknown",
                         }.to_string();
                         
+                        let old_filename = if delta.status() == git2::Delta::Renamed {
+                            delta.old_file().path()
+                                .and_then(|p| p.to_str())
+                                .map(|s| s.to_string())
+                        } else {
+                            None
+                        };
+                        
                         processed_files.push(FileChangeMetadata {
                             filename: path_str.to_string(),
+                            old_filename,
                             additions,
                             deletions,
                             status,

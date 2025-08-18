@@ -86,7 +86,7 @@ export type RepositoryInfo = { id: bigint, name: string, full_name: string, owne
 
 export type CommitAuthor = { name: string, email: string, date: string | null, };
 
-export type FileChangeMetadata = { filename: string, additions: bigint, deletions: bigint, status: string, chunks: Array<DiffChunk>, };
+export type FileChangeMetadata = { filename: string, old_filename: string | null, additions: bigint, deletions: bigint, status: string, chunks: Array<DiffChunk>, };
 
 export type CommitDetails = { sha: string, message: string, author: CommitAuthor | null, files: Array<FileChangeMetadata>, };
 
@@ -96,7 +96,9 @@ export type DiffChunkType = "Equal" | "Insert" | "Delete";
 
 export type DiffChunk = { chunk_type: DiffChunkType, content: string, };
 
-export type FileDiff = { path: string, chunks: Array<DiffChunk>, };
+export type FileStatus = "Added" | "Deleted" | "Modified" | { "Renamed": { old_path: string, } };
+
+export type FileDiff = { path: string, chunks: Array<DiffChunk>, status: FileStatus | null, };
 
 export type WorktreeDiff = { files: Array<FileDiff>, };
 
