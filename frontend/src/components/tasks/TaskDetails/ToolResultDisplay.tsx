@@ -194,11 +194,11 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
       outputContent = (
         <div className="space-y-2">
           <div className="px-3 pt-3">
-            <span className="text-xs text-gray-600 dark:text-gray-400">Subagent type: </span>
+            <span className="text-xs text-gray-600 dark:text-gray-400">Type: </span>
             <span className="text-sm font-mono text-blue-600 dark:text-blue-400">{subagentType}</span>
           </div>
           <div className="px-3 pb-3">
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Full prompt:</div>
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Prompt:</div>
             <pre className="text-xs font-mono whitespace-pre-wrap break-words bg-gray-100 dark:bg-gray-800 p-2 rounded">
               {prompt}
             </pre>
