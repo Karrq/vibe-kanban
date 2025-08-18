@@ -255,6 +255,7 @@ impl Executor for ClaudeExecutor {
                                                         content: thinking_text.to_string(),
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
+                                                        tool_args: None,
                                                     });
                                                 }
                                             }
