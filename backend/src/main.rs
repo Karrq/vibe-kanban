@@ -243,7 +243,8 @@ fn main() -> anyhow::Result<()> {
                 .merge(tasks::tasks_project_router()
                     .layer(from_fn_with_state(app_state.clone(), load_project_middleware)))
                 .merge(tasks::tasks_with_id_router()
-                    .layer(from_fn_with_state(app_state.clone(), load_task_middleware)));
+                    .layer(from_fn_with_state(app_state.clone(), load_task_middleware)))
+                .merge(tasks::recent_tasks_router());
 
             // Task attempt routes with appropriate middleware
             let task_attempt_routes = Router::new()

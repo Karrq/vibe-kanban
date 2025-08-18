@@ -117,6 +117,7 @@ fn generate_types_content() -> String {
         vibe_kanban::models::task::TaskStatus::decl(),
         vibe_kanban::models::task::Task::decl(),
         vibe_kanban::models::task::TaskWithAttemptStatus::decl(),
+        vibe_kanban::models::task::TaskWithProject::decl(),
         vibe_kanban::models::task::UpdateTask::decl(),
         vibe_kanban::models::task_template::TaskTemplate::decl(),
         vibe_kanban::models::task_template::CreateTaskTemplate::decl(),

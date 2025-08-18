@@ -1,7 +1,8 @@
 use axum::{
-    extract::State, http::StatusCode, response::Json as ResponseJson, routing::get, Extension,
+    extract::{Query, State}, http::StatusCode, response::Json as ResponseJson, routing::get, Extension,
     Json, Router,
 };
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -9,11 +10,63 @@ use crate::{
     execution_monitor,
     models::{
         project::Project,
-        task::{CreateTask, CreateTaskAndStart, Task, TaskWithAttemptStatus, UpdateTask},
+        task::{CreateTask, CreateTaskAndStart, Task, TaskWithAttemptStatus, TaskWithProject, UpdateTask},
         task_attempt::{CreateTaskAttempt, TaskAttempt},
         ApiResponse,
     },
 };
+
+#[derive(Deserialize)]
+pub struct RecentTasksQuery {
+    #[serde(default = "default_limit")]
+    limit: i64,
+    #[serde(default)]
+    offset: i64,
+    #[serde(default = "default_exclude_cancelled")]
+    exclude_cancelled: bool,
+}
+
+fn default_limit() -> i64 { 50 }
+fn default_exclude_cancelled() -> bool { true }
+
+#[derive(Serialize)]
+pub struct RecentTasksResponse {
+    tasks: Vec<TaskWithProject>,
+    has_more: bool,
+}
+
+pub async fn get_recent_tasks_handler(
+    State(app_state): State<AppState>,
+    Query(params): Query<RecentTasksQuery>,
+) -> Result<ResponseJson<ApiResponse<RecentTasksResponse>>, StatusCode> {
+    let limit = params.limit.min(100);
+    
+    // Fetch one extra to determine if there are more
+    match Task::get_recent_tasks(
+        &app_state.db_pool,
+        limit + 1,
+        params.offset,
+        params.exclude_cancelled,
+    ).await {
+        Ok(tasks) => {
+            let has_more = tasks.len() > limit as usize;
+            let tasks = if has_more {
+                tasks[..limit as usize].to_vec()
+            } else {
+                tasks
+            };
+            
+            Ok(ResponseJson(ApiResponse::success(RecentTasksResponse { 
+                tasks, 
+                has_more 
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch recent tasks: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
 
 pub async fn get_project_tasks(
     Extension(project): Extension<Project>,
@@ -274,4 +327,9 @@ pub fn tasks_with_id_router() -> Router<AppState> {
         "/projects/:project_id/tasks/:task_id",
         get(get_task).put(update_task).delete(delete_task),
     )
+}
+
+pub fn recent_tasks_router() -> Router<AppState> {
+    Router::new()
+        .route("/tasks/recent", get(get_recent_tasks_handler))
 }

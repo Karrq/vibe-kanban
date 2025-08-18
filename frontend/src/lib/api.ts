@@ -26,6 +26,7 @@ import {
   TaskAttemptState,
   TaskTemplate,
   TaskWithAttemptStatus,
+  TaskWithProject,
   UpdateTask,
   UpdateTaskTemplate,
   WorktreeDiff,
@@ -53,6 +54,11 @@ export interface FollowUpResponse {
   message: string;
   actual_attempt_id: string;
   created_new_attempt: boolean;
+}
+
+export interface RecentTasksResponse {
+  tasks: TaskWithProject[];
+  has_more: boolean;
 }
 
 // Additional interface for file search results
@@ -273,6 +279,21 @@ export const tasksApi = {
       `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/children`
     );
     return handleApiResponse<Task[]>(response);
+  },
+
+  getRecent: async (
+    limit: number = 50,
+    offset: number = 0,
+    excludeCancelled: boolean = true
+  ): Promise<RecentTasksResponse> => {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+      exclude_cancelled: excludeCancelled.toString(),
+    });
+    
+    const response = await makeRequest(`/api/tasks/recent?${params}`);
+    return handleApiResponse<RecentTasksResponse>(response);
   },
 };
 

@@ -46,6 +46,24 @@ pub struct TaskWithAttemptStatus {
     pub latest_attempt_executor: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TaskWithProject {
+    pub id: Uuid,
+    pub project_id: Uuid,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: TaskStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    
+    // Project info
+    pub project_name: String,
+    
+    // Simplified attempt status
+    pub has_running_attempt: bool,
+}
+
 #[derive(Debug, Deserialize, TS)]
 #[ts(export)]
 pub struct CreateTask {
@@ -75,6 +93,64 @@ pub struct UpdateTask {
 }
 
 impl Task {
+    pub async fn get_recent_tasks(
+        pool: &SqlitePool,
+        limit: i64,
+        offset: i64,
+        exclude_cancelled: bool,
+    ) -> Result<Vec<TaskWithProject>, sqlx::Error> {
+        let mut query_str = r#"
+            SELECT 
+                t.id as "id!: Uuid",
+                t.project_id as "project_id!: Uuid",
+                t.title,
+                t.description,
+                t.status as "status!: TaskStatus",
+                t.created_at as "created_at!: DateTime<Utc>",
+                t.updated_at as "updated_at!: DateTime<Utc>",
+                p.name as project_name,
+                CASE WHEN EXISTS(
+                    SELECT 1 FROM task_attempts ta 
+                    JOIN execution_processes ep ON ep.task_attempt_id = ta.id
+                    WHERE ta.task_id = t.id 
+                    AND ep.status = 'running'
+                    AND ep.process_type IN ('setupscript','cleanupscript','codingagent')
+                ) THEN 1 ELSE 0 END as "has_running_attempt!: i64"
+            FROM tasks t
+            JOIN projects p ON t.project_id = p.id
+        "#.to_string();
+        
+        if exclude_cancelled {
+            query_str.push_str(" WHERE t.status != 'cancelled'");
+        }
+        
+        query_str.push_str(" ORDER BY t.updated_at DESC LIMIT ? OFFSET ?");
+        
+        let records = sqlx::query(&query_str)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?;
+        
+        let mut tasks = Vec::new();
+        for row in records {
+            use sqlx::Row;
+            tasks.push(TaskWithProject {
+                id: row.get("id"),
+                project_id: row.get("project_id"),
+                title: row.get("title"),
+                description: row.get("description"),
+                status: row.get("status"),
+                created_at: row.get("created_at"),
+                updated_at: row.get("updated_at"),
+                project_name: row.get("project_name"),
+                has_running_attempt: row.get::<i64, _>("has_running_attempt") != 0,
+            });
+        }
+        
+        Ok(tasks)
+    }
+
     pub async fn find_by_project_id_with_attempt_status(
         pool: &SqlitePool,
         project_id: Uuid,
