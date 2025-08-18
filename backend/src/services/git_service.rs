@@ -564,7 +564,8 @@ impl GitService {
                     if let Ok(diff_chunks) =
                         self.generate_git_diff_chunks(&main_repo, &old_file, &new_file, path_str)
                     {
-                        if !diff_chunks.is_empty() {
+                        // For renamed files, always include them even if content is identical
+                        if !diff_chunks.is_empty() || delta.status() == git2::Delta::Renamed {
                             let status = match delta.status() {
                                 git2::Delta::Added => Some(FileStatus::Added),
                                 git2::Delta::Deleted => Some(FileStatus::Deleted),
@@ -576,9 +577,20 @@ impl GitService {
                                 }
                                 _ => None,
                             };
+                            
+                            // For renamed files with no content changes, add a descriptive chunk
+                            let chunks = if diff_chunks.is_empty() && delta.status() == git2::Delta::Renamed {
+                                vec![DiffChunk {
+                                    chunk_type: DiffChunkType::Equal,
+                                    content: "File renamed with no content changes".to_string(),
+                                }]
+                            } else {
+                                diff_chunks
+                            };
+                            
                             files.push(FileDiff {
                                 path: path_str.to_string(),
-                                chunks: diff_chunks,
+                                chunks,
                                 status,
                             });
                         } else if delta.status() == git2::Delta::Added
@@ -680,7 +692,8 @@ impl GitService {
                         &new_file,
                         path_str,
                     ) {
-                        if !diff_chunks.is_empty() {
+                        // For renamed files, always include them even if content is identical
+                        if !diff_chunks.is_empty() || delta.status() == git2::Delta::Renamed {
                             let status = match delta.status() {
                                 git2::Delta::Added => Some(FileStatus::Added),
                                 git2::Delta::Deleted => Some(FileStatus::Deleted),
@@ -692,9 +705,20 @@ impl GitService {
                                 }
                                 _ => None,
                             };
+                            
+                            // For renamed files with no content changes, add a descriptive chunk
+                            let chunks = if diff_chunks.is_empty() && delta.status() == git2::Delta::Renamed {
+                                vec![DiffChunk {
+                                    chunk_type: DiffChunkType::Equal,
+                                    content: "File renamed with no content changes".to_string(),
+                                }]
+                            } else {
+                                diff_chunks
+                            };
+                            
                             files.push(FileDiff {
                                 path: path_str.to_string(),
-                                chunks: diff_chunks,
+                                chunks,
                                 status,
                             });
                         } else if delta.status() == git2::Delta::Added
@@ -914,7 +938,8 @@ impl GitService {
                 if let Ok(chunks) =
                     self.create_combined_diff_chunks(&base_content, &working_content, path_str)
                 {
-                    if !chunks.is_empty() {
+                    // For renamed files, always include them even if content is identical
+                    if !chunks.is_empty() || delta.status() == git2::Delta::Renamed {
                         let status = match delta.status() {
                             git2::Delta::Added => Some(FileStatus::Added),
                             git2::Delta::Deleted => Some(FileStatus::Deleted),
@@ -926,9 +951,20 @@ impl GitService {
                             }
                             _ => None,
                         };
+                        
+                        // For renamed files with no content changes, add a descriptive chunk
+                        let final_chunks = if chunks.is_empty() && delta.status() == git2::Delta::Renamed {
+                            vec![DiffChunk {
+                                chunk_type: DiffChunkType::Equal,
+                                content: "File renamed with no content changes".to_string(),
+                            }]
+                        } else {
+                            chunks
+                        };
+                        
                         files.push(FileDiff {
                             path: path_str.to_string(),
-                            chunks,
+                            chunks: final_chunks,
                             status,
                         });
                     }
