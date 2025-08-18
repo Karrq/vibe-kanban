@@ -178,35 +178,27 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
       </pre>
     );
   } else if (isTaskTool) {
-    // For Task: show subagent type and description when collapsed
+    // For Task: show just the description when collapsed (as before)
     const subagentType = toolArgs?.subagent_type || 'general-purpose';
     const description = toolArgs?.description || 'Task delegation';
     const prompt = toolArgs?.prompt;
     
     displayContent = (
       <span className="text-sm">
-        Delegating to <span className="bg-blue-100 dark:bg-blue-800 px-1 py-0.5 rounded font-semibold">{subagentType}</span> agent: <span className="italic">{description}</span>
+        {description}
       </span>
     );
     
-    // Show the full prompt when expanded
+    // Show subagent type and full prompt when expanded
     if (expanded && prompt) {
       outputContent = (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <div className="px-3 pt-3">
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Subagent Type:</div>
-            <div className="text-sm font-mono bg-blue-100 dark:bg-blue-900/30 px-2 py-1 rounded inline-block">
-              {subagentType}
-            </div>
-          </div>
-          <div className="px-3">
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Task Description:</div>
-            <div className="text-sm text-gray-700 dark:text-gray-300">
-              {description}
-            </div>
+            <span className="text-xs text-gray-600 dark:text-gray-400">Subagent type: </span>
+            <span className="text-sm font-mono text-blue-600 dark:text-blue-400">{subagentType}</span>
           </div>
           <div className="px-3 pb-3">
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Full Prompt:</div>
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Full prompt:</div>
             <pre className="text-xs font-mono whitespace-pre-wrap break-words bg-gray-100 dark:bg-gray-800 p-2 rounded">
               {prompt}
             </pre>

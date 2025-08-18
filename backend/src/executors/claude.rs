@@ -675,20 +675,26 @@ impl ClaudeExecutor {
                 }
             }
             "task" => {
-                // For Task tool, we want to capture the description, prompt, and subagent_type
-                // We'll include them all in the description for now, but store full details in tool_args
-                let description = input.get("description").and_then(|d| d.as_str()).unwrap_or("");
-                let subagent_type = input.get("subagent_type").and_then(|s| s.as_str()).unwrap_or("");
-                
-                // Create a more informative description that includes the subagent type
-                let full_description = if !subagent_type.is_empty() {
-                    format!("[{}] {}", subagent_type, description)
+                // For Task tool, extract the description (or prompt as fallback)
+                // The full details including subagent_type and prompt are stored in tool_args
+                if let Some(description) = input.get("description").and_then(|d| d.as_str()) {
+                    ActionType::TaskCreate {
+                        description: description.to_string(),
+                    }
+                } else if let Some(prompt) = input.get("prompt").and_then(|p| p.as_str()) {
+                    // Fallback to showing a truncated prompt if no description
+                    let truncated = if prompt.len() > 100 {
+                        format!("{}...", &prompt[..100])
+                    } else {
+                        prompt.to_string()
+                    };
+                    ActionType::TaskCreate {
+                        description: truncated,
+                    }
                 } else {
-                    description.to_string()
-                };
-                
-                ActionType::TaskCreate {
-                    description: full_description,
+                    ActionType::Other {
+                        description: "Task creation".to_string(),
+                    }
                 }
             }
             "exit_plan_mode" | "exitplanmode" | "exit-plan-mode" => {
