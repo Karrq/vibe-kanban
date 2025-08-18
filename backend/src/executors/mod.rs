@@ -9,6 +9,7 @@ pub mod config;
 pub mod dev_server;
 pub mod echo;
 pub mod gemini;
+pub mod prompt_utils;
 pub mod setup_script;
 pub mod sst_opencode;
 

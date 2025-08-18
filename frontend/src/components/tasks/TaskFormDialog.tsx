@@ -18,8 +18,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useConfig } from '@/components/config-provider';
-import { templatesApi } from '@/lib/api';
-import type { TaskStatus, ExecutorConfig, TaskTemplate } from 'shared/types';
+import { templatesApi, projectsApi } from '@/lib/api';
+import BranchSelector from '@/components/tasks/BranchSelector';
+import { getProjectExecutorDefault } from '@/lib/project-executor-defaults';
+import type { TaskStatus, ExecutorConfig, TaskTemplate, GitBranch } from 'shared/types';
 
 interface Task {
   id: string;
@@ -37,11 +39,12 @@ interface TaskFormDialogProps {
   task?: Task | null; // Optional for create mode
   projectId?: string; // For file search functionality
   initialTemplate?: TaskTemplate | null; // For pre-filling from template
-  onCreateTask?: (title: string, description: string) => Promise<void>;
+  onCreateTask?: (title: string, description: string, branch?: string) => Promise<void>;
   onCreateAndStartTask?: (
     title: string,
     description: string,
-    executor?: ExecutorConfig
+    executor?: ExecutorConfig,
+    branch?: string
   ) => Promise<void>;
   onUpdateTask?: (
     title: string,
@@ -74,9 +77,14 @@ export function TaskFormDialog({
   const [isSubmittingAndStart, setIsSubmittingAndStart] = useState(false);
   const [templates, setTemplates] = useState<TaskTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [branches, setBranches] = useState<GitBranch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
   const { config } = useConfig();
   const isEditMode = Boolean(task);
+
+  // LocalStorage key for sticky branch per project
+  const STICKY_BRANCH_KEY = projectId ? `vk-sticky-branch-${projectId}` : '';
 
   // Check if task creation should be disabled based on plan context
   const isPlanningModeWithoutPlan =
@@ -104,6 +112,30 @@ export function TaskFormDialog({
       setSelectedTemplate('');
     }
   }, [task, initialTemplate, isOpen]);
+
+  // Fetch branches when dialog opens in create mode
+  useEffect(() => {
+    if (isOpen && !isEditMode && projectId) {
+      // Fetch branches
+      projectsApi.getBranches(projectId)
+        .then((branchList) => {
+          setBranches(branchList);
+          
+          // Try to restore sticky branch from localStorage
+          const stickyBranch = localStorage.getItem(STICKY_BRANCH_KEY);
+          if (stickyBranch && branchList.some(b => b.name === stickyBranch)) {
+            setSelectedBranch(stickyBranch);
+          } else {
+            // Use current branch as default
+            const currentBranch = branchList.find(b => b.is_current);
+            if (currentBranch) {
+              setSelectedBranch(currentBranch.name);
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isOpen, isEditMode, projectId, STICKY_BRANCH_KEY]);
 
   // Fetch templates when dialog opens in create mode
   useEffect(() => {
@@ -145,7 +177,11 @@ export function TaskFormDialog({
       if (isEditMode && onUpdateTask) {
         await onUpdateTask(title, description, status);
       } else if (!isEditMode && onCreateTask) {
-        await onCreateTask(title, description);
+        // Save sticky branch to localStorage
+        if (selectedBranch && STICKY_BRANCH_KEY) {
+          localStorage.setItem(STICKY_BRANCH_KEY, selectedBranch);
+        }
+        await onCreateTask(title, description, selectedBranch || undefined);
       }
 
       // Reset form on successful creation
@@ -167,7 +203,22 @@ export function TaskFormDialog({
     setIsSubmittingAndStart(true);
     try {
       if (!isEditMode && onCreateAndStartTask) {
-        await onCreateAndStartTask(title, description, config?.executor);
+        // Save sticky branch to localStorage
+        if (selectedBranch && STICKY_BRANCH_KEY) {
+          localStorage.setItem(STICKY_BRANCH_KEY, selectedBranch);
+        }
+        
+        // Use project-specific executor default if available, otherwise fall back to app default
+        let executor = config?.executor;
+        if (projectId) {
+          const projectExecutor = getProjectExecutorDefault(projectId);
+          if (projectExecutor) {
+            // Parse the executor string into ExecutorConfig object
+            executor = { type: projectExecutor } as ExecutorConfig;
+          }
+        }
+        
+        await onCreateAndStartTask(title, description, executor, selectedBranch || undefined);
       }
 
       // Reset form on successful creation
@@ -183,9 +234,12 @@ export function TaskFormDialog({
     title,
     description,
     config?.executor,
+    selectedBranch,
+    STICKY_BRANCH_KEY,
     isEditMode,
     onCreateAndStartTask,
     onOpenChange,
+    projectId,
   ]);
 
   const handleCancel = useCallback(() => {
@@ -308,6 +362,21 @@ export function TaskFormDialog({
               projectId={projectId}
             />
           </div>
+
+          {!isEditMode && branches.length > 0 && (
+            <div>
+              <Label htmlFor="task-branch" className="text-sm font-medium">
+                Base Branch
+              </Label>
+              <BranchSelector
+                branches={branches}
+                selectedBranch={selectedBranch}
+                onBranchSelect={setSelectedBranch}
+                className="mt-1.5"
+                placeholder="Select base branch"
+              />
+            </div>
+          )}
 
           {!isEditMode && templates.length > 0 && (
             <div className="pt-2">

@@ -23,11 +23,23 @@ export function ThemeProvider({
   initialTheme = 'system',
   ...props
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<ThemeMode>(initialTheme);
+  const [theme, setThemeState] = useState<ThemeMode>(() => {
+    // Check localStorage first for persisted theme
+    const storedTheme = localStorage.getItem('vibe-kanban-theme');
+    if (storedTheme && ['light', 'dark', 'system', 'purple', 'green', 'blue', 'orange', 'red'].includes(storedTheme)) {
+      return storedTheme as ThemeMode;
+    }
+    // If no stored theme, use initialTheme or default to 'system'
+    return initialTheme || 'system';
+  });
 
-  // Update theme when initialTheme changes
+  // Sync with config theme if localStorage doesn't have a theme
   useEffect(() => {
-    setThemeState(initialTheme);
+    const storedTheme = localStorage.getItem('vibe-kanban-theme');
+    if (!storedTheme && initialTheme) {
+      setThemeState(initialTheme);
+      localStorage.setItem('vibe-kanban-theme', initialTheme);
+    }
   }, [initialTheme]);
 
   useEffect(() => {
@@ -44,13 +56,18 @@ export function ThemeProvider({
     );
 
     if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
-        .matches
-        ? 'dark'
-        : 'light';
-
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const systemTheme = mediaQuery.matches ? 'dark' : 'light';
       root.classList.add(systemTheme);
-      return;
+
+      // Listen for system theme changes
+      const handleChange = (e: MediaQueryListEvent) => {
+        root.classList.remove('light', 'dark');
+        root.classList.add(e.matches ? 'dark' : 'light');
+      };
+
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
     }
 
     root.classList.add(theme);
@@ -58,6 +75,8 @@ export function ThemeProvider({
 
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme);
+    // Persist theme to localStorage
+    localStorage.setItem('vibe-kanban-theme', newTheme);
   };
 
   const value = {

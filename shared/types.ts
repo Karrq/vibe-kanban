@@ -30,15 +30,15 @@ export type ExecutorConfig = { "type": "echo" } | { "type": "claude" } | { "type
 
 export type ExecutorConstants = { executor_types: Array<ExecutorConfig>, executor_labels: Array<string>, };
 
-export type CreateProject = { name: string, git_repo_path: string, use_existing_repo: boolean, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, };
+export type CreateProject = { name: string, git_repo_path: string, use_existing_repo: boolean, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, prompt_template: string | null, };
 
-export type CreateProjectFromGitHub = { repository_id: bigint, name: string, clone_url: string, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, };
+export type CreateProjectFromGitHub = { repository_id: bigint, name: string, clone_url: string, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, prompt_template: string | null, };
 
-export type Project = { id: string, name: string, git_repo_path: string, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, created_at: Date, updated_at: Date, };
+export type Project = { id: string, name: string, git_repo_path: string, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, prompt_template: string, created_at: Date, updated_at: Date, };
 
-export type ProjectWithBranch = { id: string, name: string, git_repo_path: string, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, current_branch: string | null, created_at: Date, updated_at: Date, };
+export type ProjectWithBranch = { id: string, name: string, git_repo_path: string, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, prompt_template: string, current_branch: string | null, created_at: Date, updated_at: Date, };
 
-export type UpdateProject = { name: string | null, git_repo_path: string | null, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, };
+export type UpdateProject = { name: string | null, git_repo_path: string | null, setup_script: string | null, dev_script: string | null, cleanup_script: string | null, executor_env_script: string | null, prompt_template: string | null, };
 
 export type SearchResult = { path: string, is_file: boolean, match_type: SearchMatchType, };
 
@@ -50,7 +50,7 @@ export type CreateBranch = { name: string, base_branch: string | null, };
 
 export type CreateTask = { project_id: string, title: string, description: string | null, parent_task_attempt: string | null, };
 
-export type CreateTaskAndStart = { project_id: string, title: string, description: string | null, parent_task_attempt: string | null, executor: ExecutorConfig | null, };
+export type CreateTaskAndStart = { project_id: string, title: string, description: string | null, parent_task_attempt: string | null, executor: ExecutorConfig | null, base_branch: string | null, };
 
 export type TaskStatus = "todo" | "inprogress" | "inreview" | "done" | "cancelled";
 
@@ -117,6 +117,8 @@ export type ExecutionProcessType = "setupscript" | "cleanupscript" | "codingagen
 export type CreateExecutionProcess = { task_attempt_id: string, process_type: ExecutionProcessType, executor_type: string | null, command: string, args: string | null, working_directory: string, };
 
 export type UpdateExecutionProcess = { status: ExecutionProcessStatus | null, exit_code: bigint | null, completed_at: string | null, };
+
+export type ExecutionProcessWithTask = { id: string, task_attempt_id: string, process_type: ExecutionProcessType, executor_type: string | null, status: ExecutionProcessStatus, command: string, args: string | null, working_directory: string, exit_code: bigint | null, started_at: string, completed_at: string | null, created_at: string, updated_at: string, task_id: string | null, task_title: string | null, };
 
 export type ExecutorSession = { id: string, task_attempt_id: string, execution_process_id: string, session_id: string | null, prompt: string | null, summary: string | null, created_at: string, updated_at: string, };
 

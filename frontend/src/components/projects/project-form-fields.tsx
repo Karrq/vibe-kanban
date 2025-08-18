@@ -16,6 +16,14 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { useState } from 'react';
 import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { EXECUTOR_TYPES, EXECUTOR_LABELS } from 'shared/types';
 
 interface ProjectFormFieldsProps {
   isEditing: boolean;
@@ -38,6 +46,10 @@ interface ProjectFormFieldsProps {
   setCleanupScript: (script: string) => void;
   executorEnvScript: string;
   setExecutorEnvScript: (script: string) => void;
+  promptTemplate: string;
+  setPromptTemplate: (template: string) => void;
+  defaultExecutor: string | null;
+  setDefaultExecutor: (executor: string | null) => void;
   error: string;
 }
 
@@ -62,6 +74,10 @@ export function ProjectFormFields({
   setCleanupScript,
   executorEnvScript,
   setExecutorEnvScript,
+  promptTemplate,
+  setPromptTemplate,
+  defaultExecutor,
+  setDefaultExecutor,
   error,
 }: ProjectFormFieldsProps) {
   const { systemInfo } = useSystemInfo();
@@ -69,6 +85,8 @@ export function ProjectFormFields({
   const [devScriptOpen, setDevScriptOpen] = useState(false);
   const [cleanupScriptOpen, setCleanupScriptOpen] = useState(false);
   const [executorEnvScriptOpen, setExecutorEnvScriptOpen] = useState(false);
+  const [promptTemplateOpen, setPromptTemplateOpen] = useState(false);
+  const [defaultExecutorOpen, setDefaultExecutorOpen] = useState(false);
 
   // Create strategy-based placeholders
   const os_type = systemInfo ? systemInfo.os_type : 'unix';
@@ -358,6 +376,104 @@ export function ProjectFormFields({
                 environment variables and configuration. The executor command
                 and arguments are passed to your script - make sure to call the
                 executor at the end of your script.
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* Prompt Template */}
+        <Collapsible
+          open={promptTemplateOpen}
+          onOpenChange={setPromptTemplateOpen}
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">
+                Prompt Template
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  promptTemplateOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <textarea
+                id="prompt-template"
+                value={promptTemplate}
+                onChange={(e) => setPromptTemplate(e.target.value)}
+                className="w-full min-h-[100px] rounded-md bg-background p-3 font-mono text-sm"
+                placeholder="project_id: $VK_PROJECT_ID
+
+Task title: $VK_TASK_TITLE
+Task description: $VK_TASK_DESCRIPTION"
+                {...getTextareaNoAutoCorrect()}
+              />
+              <p className="text-sm text-muted-foreground">
+                Template for prompts sent to AI executors. Available variables:
+                <br />
+                <code className="text-xs">$VK_PROJECT_ID</code> - Project ID
+                <br />
+                <code className="text-xs">$VK_PROJECT_NAME</code> - Project name
+                <br />
+                <code className="text-xs">$VK_TASK_ID</code> - Task ID
+                <br />
+                <code className="text-xs">$VK_TASK_TITLE</code> - Task title
+                <br />
+                <code className="text-xs">$VK_TASK_DESCRIPTION</code> - Task description
+              </p>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* Default Executor */}
+        <Collapsible
+          open={defaultExecutorOpen}
+          onOpenChange={setDefaultExecutorOpen}
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between p-4 hover:bg-accent/50 transition-colors border border-border rounded-t-md data-[state=open]:rounded-bl-none data-[state=open]:rounded-br-none data-[state=closed]:rounded-b-md"
+            >
+              <span className="font-medium">
+                Default Executor
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform duration-200 ${
+                  defaultExecutorOpen ? 'rotate-180' : ''
+                }`}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="p-4 bg-accent/20 rounded-b-md border border-t-0 border-border space-y-2">
+              <Select 
+                value={defaultExecutor || 'none'} 
+                onValueChange={(value) => setDefaultExecutor(value === 'none' ? null : value)}
+              >
+                <SelectTrigger id="default-executor">
+                  <SelectValue placeholder="Select default executor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Use app default</SelectItem>
+                  {EXECUTOR_TYPES.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {EXECUTOR_LABELS[type]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                Override the app-wide default executor for new task attempts in this project.
+                If not set, the app default executor will be used.
               </p>
             </div>
           </CollapsibleContent>

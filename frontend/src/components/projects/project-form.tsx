@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/collapsible';
 import { Separator } from '@/components/ui/separator';
 import { getTextareaNoAutoCorrect } from '@/lib/textarea-utils';
+import { getProjectExecutorDefault, setProjectExecutorDefault } from '@/lib/project-executor-defaults';
+import { useConfig } from '@/components/config-provider';
 
 interface ProjectFormProps {
   open: boolean;
@@ -43,6 +45,7 @@ export function ProjectForm({
   onSuccess,
   project,
 }: ProjectFormProps) {
+  const { config } = useConfig();
   const [name, setName] = useState(project?.name || '');
   const [gitRepoPath, setGitRepoPath] = useState(project?.git_repo_path || '');
   const [setupScript, setSetupScript] = useState(project?.setup_script ?? '');
@@ -52,6 +55,15 @@ export function ProjectForm({
   );
   const [executorEnvScript, setExecutorEnvScript] = useState(
     project?.executor_env_script ?? ''
+  );
+  const [promptTemplate, setPromptTemplate] = useState(
+    project?.prompt_template ?? `project_id: $VK_PROJECT_ID
+
+Task title: $VK_TASK_TITLE
+Task description: $VK_TASK_DESCRIPTION`
+  );
+  const [defaultExecutor, setDefaultExecutor] = useState<string | null>(
+    project?.id ? getProjectExecutorDefault(project.id) : null
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -101,6 +113,7 @@ export function ProjectForm({
       setDevScript(project.dev_script ?? '');
       setCleanupScript(project.cleanup_script ?? '');
       setExecutorEnvScript(project.executor_env_script ?? '');
+      setPromptTemplate(project.prompt_template ?? '');
     } else {
       setName('');
       setGitRepoPath('');
@@ -108,6 +121,7 @@ export function ProjectForm({
       setDevScript('');
       setCleanupScript('');
       setExecutorEnvScript('');
+      setPromptTemplate('');
       setSelectedRepository(null);
     }
   }, [project]);
@@ -132,6 +146,9 @@ export function ProjectForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Get app default executor to compare against
+    const appDefaultExecutor = config?.executor.type || 'echo';
     setError('');
     setLoading(true);
 
@@ -150,9 +167,12 @@ export function ProjectForm({
           dev_script: devScript.trim() || null,
           cleanup_script: cleanupScript.trim() || null,
           executor_env_script: executorEnvScript.trim() || null,
+          prompt_template: promptTemplate.trim() || '',  // Empty string means the user cleared it
         };
 
         await projectsApi.update(project.id, updateData);
+        // Save executor default to localStorage only if different from app default
+        setProjectExecutorDefault(project.id, defaultExecutor, appDefaultExecutor);
       } else {
         // Creating new project
         if (environment === 'cloud') {
@@ -170,9 +190,14 @@ export function ProjectForm({
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
             executor_env_script: executorEnvScript.trim() || null,
+            prompt_template: promptTemplate.trim() || null,  // Backend will provide default if null
           };
 
-          await githubApi.createProjectFromRepository(githubData);
+          const newProject = await githubApi.createProjectFromRepository(githubData);
+          // Save executor default to localStorage for new project only if different from app default
+          if (newProject?.id) {
+            setProjectExecutorDefault(newProject.id, defaultExecutor, appDefaultExecutor);
+          }
         } else {
           // Local mode: Create local project
           let finalGitRepoPath = gitRepoPath;
@@ -191,9 +216,14 @@ export function ProjectForm({
             dev_script: devScript.trim() || null,
             cleanup_script: cleanupScript.trim() || null,
             executor_env_script: executorEnvScript.trim() || null,
+            prompt_template: promptTemplate.trim() || null,  // Backend will provide default if null
           };
 
-          await projectsApi.create(createData);
+          const newProject = await projectsApi.create(createData);
+          // Save executor default to localStorage for new project only if different from app default
+          if (newProject?.id) {
+            setProjectExecutorDefault(newProject.id, defaultExecutor, appDefaultExecutor);
+          }
         }
       }
 
@@ -205,6 +235,7 @@ export function ProjectForm({
       setDevScript('');
       setCleanupScript('');
       setExecutorEnvScript('');
+      setPromptTemplate('');
       setParentPath('');
       setFolderName('');
       setSelectedRepository(null);
@@ -223,6 +254,7 @@ export function ProjectForm({
       setDevScript(project.dev_script ?? '');
       setCleanupScript(project.cleanup_script ?? '');
       setExecutorEnvScript(project.executor_env_script ?? '');
+      setPromptTemplate(project.prompt_template ?? '');
     } else {
       setName('');
       setGitRepoPath('');
@@ -230,6 +262,7 @@ export function ProjectForm({
       setDevScript('');
       setCleanupScript('');
       setExecutorEnvScript('');
+      setPromptTemplate('');
     }
     setParentPath('');
     setFolderName('');
@@ -282,6 +315,10 @@ export function ProjectForm({
                   setCleanupScript={setCleanupScript}
                   executorEnvScript={executorEnvScript}
                   setExecutorEnvScript={setExecutorEnvScript}
+                  promptTemplate={promptTemplate}
+                  setPromptTemplate={setPromptTemplate}
+                  defaultExecutor={defaultExecutor}
+                  setDefaultExecutor={setDefaultExecutor}
                   error={error}
                 />
                 <DialogFooter>
@@ -497,6 +534,10 @@ export function ProjectForm({
                 setCleanupScript={setCleanupScript}
                 executorEnvScript={executorEnvScript}
                 setExecutorEnvScript={setExecutorEnvScript}
+                promptTemplate={promptTemplate}
+                setPromptTemplate={setPromptTemplate}
+                defaultExecutor={defaultExecutor}
+                setDefaultExecutor={setDefaultExecutor}
                 error={error}
               />
             )}

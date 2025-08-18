@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
-use super::build_agent_command;
+use super::{build_agent_command, prompt_utils};
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{Executor, ExecutorError, NormalizedConversation, NormalizedEntry},
@@ -258,22 +258,7 @@ impl Executor for SstOpencodeExecutor {
             ExecutorError::ContextCollectionFailed("Project not found".to_string()),
         )?;
 
-        let prompt = if let Some(task_description) = task.description {
-            format!(
-                r#"project_id: {}
-            
-Task title: {}
-Task description: {}"#,
-                task.project_id, task.title, task_description
-            )
-        } else {
-            format!(
-                r#"project_id: {}
-            
-Task title: {}"#,
-                task.project_id, task.title
-            )
-        };
+        let prompt = prompt_utils::build_task_prompt(&project, &task);
 
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();

@@ -20,6 +20,7 @@ use crate::{
 pub mod filter;
 
 use self::filter::{parse_session_id_from_line, AiderFilter};
+use super::prompt_utils;
 
 /// State for tracking diff blocks (SEARCH/REPLACE patterns)
 #[derive(Debug, Clone)]
@@ -494,11 +495,7 @@ impl Executor for AiderExecutor {
             ExecutorError::ContextCollectionFailed("Project not found".to_string()),
         )?;
 
-        let prompt = if let Some(task_description) = task.description {
-            format!("{}\n{}", task.title, task_description)
-        } else {
-            task.title.to_string()
-        };
+        let prompt = prompt_utils::build_task_prompt(&project, &task);
 
         // Create temporary message file
         let base_dir = TaskAttempt::get_worktree_base_dir();

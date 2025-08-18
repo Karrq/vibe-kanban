@@ -473,10 +473,22 @@ function CurrentAttempt({
   };
 
   const handleRebaseDialogOpen = () => {
-    setSelectedRebaseBranch('');
+    // Use the attempt's base branch as default, or fall back to current branch
+    let defaultBranch = '';
+    
+    if (selectedAttempt?.base_branch) {
+      // Use the attempt's base branch if it exists
+      defaultBranch = selectedAttempt.base_branch;
+    } else {
+      // Fall back to current branch
+      const currentBranch = branches.find((b) => b.is_current);
+      defaultBranch = currentBranch ? currentBranch.name : '';
+    }
+    
+    setSelectedRebaseBranch(defaultBranch);
     setIsCreatingNewBranch(false);
     setNewBranchName('');
-    setNewBranchBaseBranch('');
+    setNewBranchBaseBranch(defaultBranch);
     setShowRebaseDialog(true);
   };
 

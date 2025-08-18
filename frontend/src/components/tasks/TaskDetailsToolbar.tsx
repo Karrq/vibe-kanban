@@ -6,6 +6,7 @@ import { useConfig } from '@/components/config-provider';
 import { attemptsApi, projectsApi } from '@/lib/api';
 import type { GitBranch, TaskAttempt } from 'shared/types';
 import { EXECUTOR_LABELS, EXECUTOR_TYPES } from 'shared/types';
+import { getProjectExecutorDefault } from '@/lib/project-executor-defaults';
 import {
   TaskAttemptDataContext,
   TaskAttemptLoadingContext,
@@ -42,8 +43,15 @@ function TaskDetailsToolbar() {
   const [branches, setBranches] = useState<GitBranch[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
 
+  // Determine default executor: project default > app default > 'echo'
+  const getDefaultExecutor = useCallback(() => {
+    const projectDefault = getProjectExecutorDefault(projectId);
+    if (projectDefault) return projectDefault;
+    return config?.executor.type || 'echo';
+  }, [projectId, config]);
+
   const [selectedExecutor, setSelectedExecutor] = useState<string>(
-    config?.executor.type || 'claude'
+    getDefaultExecutor()
   );
 
   // State for create attempt mode
@@ -52,7 +60,7 @@ function TaskDetailsToolbar() {
     selectedBranch
   );
   const [createAttemptExecutor, setCreateAttemptExecutor] =
-    useState<string>(selectedExecutor);
+    useState<string>(getDefaultExecutor());
 
   // Branch status and git operations state
   const [creatingPR, setCreatingPR] = useState(false);
@@ -63,23 +71,35 @@ function TaskDetailsToolbar() {
     const result = await projectsApi.getBranches(projectId);
 
     setBranches(result);
-    // Set current branch as default
-    const currentBranch = result.find((b) => b.is_current);
-    if (currentBranch) {
-      setSelectedBranch((prev) => (!prev ? currentBranch.name : prev));
+    
+    // First try to use branch from task creation
+    const taskBranch = task ? sessionStorage.getItem(`task-branch-${task.id}`) : null;
+    if (taskBranch && result.find((b) => b.name === taskBranch)) {
+      setSelectedBranch(taskBranch);
+      setCreateAttemptBranch(taskBranch);
+    } else {
+      // Otherwise use current branch as default
+      const currentBranch = result.find((b) => b.is_current);
+      if (currentBranch) {
+        setSelectedBranch((prev) => (!prev ? currentBranch.name : prev));
+        // Also set createAttemptBranch to current branch if not already set
+        setCreateAttemptBranch((prev) => (!prev ? currentBranch.name : prev));
+      }
     }
-  }, [projectId]);
+  }, [projectId, task]);
 
   useEffect(() => {
     fetchProjectBranches();
   }, [fetchProjectBranches]);
 
-  // Set default executor from config
+  // Set default executor from project default or config
   useEffect(() => {
-    if (config && config.executor.type !== selectedExecutor) {
-      setSelectedExecutor(config.executor.type);
+    const defaultExecutor = getDefaultExecutor();
+    if (defaultExecutor !== selectedExecutor) {
+      setSelectedExecutor(defaultExecutor);
+      setCreateAttemptExecutor(defaultExecutor);
     }
-  }, [config, selectedExecutor]);
+  }, [getDefaultExecutor, selectedExecutor]);
 
   // Set create attempt mode when there are no attempts
   useEffect(() => {
@@ -95,8 +115,16 @@ function TaskDetailsToolbar() {
           : latest
       );
 
-      // Only update if branch still exists in available branches
+      // Check if we have a task creation branch stored
+      const taskBranch = task ? sessionStorage.getItem(`task-branch-${task.id}`) : null;
+      
+      // Prefer task creation branch, then latest attempt branch
       if (
+        taskBranch &&
+        branches.some((b: GitBranch) => b.name === taskBranch)
+      ) {
+        setCreateAttemptBranch(taskBranch);
+      } else if (
         latestAttempt.base_branch &&
         branches.some((b: GitBranch) => b.name === latestAttempt.base_branch)
       ) {
@@ -111,7 +139,7 @@ function TaskDetailsToolbar() {
         setCreateAttemptExecutor(latestAttempt.executor);
       }
     }
-  }, [taskAttempts, branches, availableExecutors]);
+  }, [taskAttempts, branches, availableExecutors, task]);
 
   const fetchTaskAttempts = useCallback(async () => {
     if (!task) return;
@@ -184,6 +212,9 @@ function TaskDetailsToolbar() {
   const handleEnterCreateAttemptMode = useCallback(() => {
     setIsInCreateAttemptMode(true);
 
+    // Check if we have a task creation branch stored
+    const taskBranch = task ? sessionStorage.getItem(`task-branch-${task.id}`) : null;
+
     // Use latest attempt's settings as defaults if available
     if (taskAttempts.length > 0) {
       const latestAttempt = taskAttempts.reduce((latest, current) =>
@@ -192,8 +223,13 @@ function TaskDetailsToolbar() {
           : latest
       );
 
-      // Use latest attempt's branch if it still exists, otherwise use current selected branch
+      // Prefer task creation branch, then latest attempt's branch, then current selected branch
       if (
+        taskBranch &&
+        branches.some((b: GitBranch) => b.name === taskBranch)
+      ) {
+        setCreateAttemptBranch(taskBranch);
+      } else if (
         latestAttempt.base_branch &&
         branches.some((b: GitBranch) => b.name === latestAttempt.base_branch)
       ) {

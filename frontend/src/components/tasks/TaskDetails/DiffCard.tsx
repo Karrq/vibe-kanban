@@ -5,6 +5,7 @@ import type { WorktreeDiff } from 'shared/types.ts';
 import { TaskBackgroundRefreshContext } from '@/components/context/taskDetailsContext.ts';
 import DiffFile from '@/components/tasks/TaskDetails/DiffFile.tsx';
 import { Loader } from '@/components/ui/loader';
+import { useAutoCollapseDiffs } from '@/hooks/useAutoCollapseDiffs';
 
 interface DiffCardProps {
   diff: WorktreeDiff | null;
@@ -20,7 +21,17 @@ export function DiffCard({
   className = '',
 }: DiffCardProps) {
   const { isBackgroundRefreshing } = useContext(TaskBackgroundRefreshContext);
-  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+  const { autoCollapseDiffs } = useAutoCollapseDiffs();
+  
+  // Initialize collapsed state based on user preference and compact mode
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(() => {
+    // In compact mode (used in edit tool blocks), use the localStorage setting
+    // If autoCollapseDiffs is true, start with all files collapsed
+    if (compact && autoCollapseDiffs && diff) {
+      return new Set(diff.files.map((file) => file.path));
+    }
+    return new Set();
+  });
 
   const collapseAllFiles = () => {
     if (diff) {

@@ -26,6 +26,7 @@ interface TaskDetailsPanelProps {
   onEditTask?: (task: TaskWithAttemptStatus) => void;
   onDeleteTask?: (taskId: string) => void;
   isDialogOpen?: boolean;
+  refreshTrigger?: number;
 }
 
 export function TaskDetailsPanel({
@@ -36,6 +37,7 @@ export function TaskDetailsPanel({
   onEditTask,
   onDeleteTask,
   isDialogOpen = false,
+  refreshTrigger,
 }: TaskDetailsPanelProps) {
   const [showEditorDialog, setShowEditorDialog] = useState(false);
   const { width, isResizing, handleMouseDown } = useResizablePanel();
@@ -95,6 +97,7 @@ export function TaskDetailsPanel({
           projectId={projectId}
           setShowEditorDialog={setShowEditorDialog}
           projectHasDevScript={projectHasDevScript}
+          refreshTrigger={refreshTrigger}
         >
           {/* Backdrop - only on smaller screens (overlay mode) */}
           <div className={getBackdropClasses()} onClick={onClose} />

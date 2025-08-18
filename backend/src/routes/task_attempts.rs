@@ -863,51 +863,6 @@ pub async fn start_dev_server(
     Extension(task_attempt): Extension<TaskAttempt>,
     State(app_state): State<AppState>,
 ) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
-    // Stop any existing dev servers for this project
-    let existing_dev_servers =
-        match ExecutionProcess::find_running_dev_servers_by_project(&app_state.db_pool, project.id)
-            .await
-        {
-            Ok(servers) => servers,
-            Err(e) => {
-                tracing::error!(
-                    "Failed to find running dev servers for project {}: {}",
-                    project.id,
-                    e
-                );
-                return Err(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        };
-
-    for dev_server in existing_dev_servers {
-        tracing::info!(
-            "Stopping existing dev server {} for project {}",
-            dev_server.id,
-            project.id
-        );
-
-        // Stop the running process
-        if let Err(e) = app_state.stop_running_execution_by_id(dev_server.id).await {
-            tracing::error!("Failed to stop dev server {}: {}", dev_server.id, e);
-        } else {
-            // Update the execution process status in the database
-            if let Err(e) = ExecutionProcess::update_completion(
-                &app_state.db_pool,
-                dev_server.id,
-                crate::models::execution_process::ExecutionProcessStatus::Killed,
-                None,
-            )
-            .await
-            {
-                tracing::error!(
-                    "Failed to update dev server {} status: {}",
-                    dev_server.id,
-                    e
-                );
-            }
-        }
-    }
-
     // Start dev server execution
     match TaskAttempt::start_dev_server(
         &app_state.db_pool,

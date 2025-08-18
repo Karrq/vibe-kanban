@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::build_agent_command;
+use super::{build_agent_command, prompt_utils};
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
@@ -99,22 +99,7 @@ impl Executor for ClaudeExecutor {
             ExecutorError::ContextCollectionFailed("Project not found".to_string()),
         )?;
 
-        let prompt = if let Some(task_description) = task.description {
-            format!(
-                r#"project_id: {}
-            
-Task title: {}
-Task description: {}"#,
-                task.project_id, task.title, task_description
-            )
-        } else {
-            format!(
-                r#"project_id: {}
-            
-Task title: {}"#,
-                task.project_id, task.title
-            )
-        };
+        let prompt = prompt_utils::build_task_prompt(&project, &task);
 
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
@@ -256,6 +241,20 @@ Task title: {}"#,
                                                         metadata: Some(content_item.clone()),
                                                         tool_result: None,
                                                         tool_args: None,
+                                                    });
+                                                }
+                                            }
+                                            "thinking" => {
+                                                if let Some(thinking_text) = content_item
+                                                    .get("thinking")
+                                                    .and_then(|t| t.as_str())
+                                                {
+                                                    entries.push(NormalizedEntry {
+                                                        timestamp: None,
+                                                        entry_type: NormalizedEntryType::Thinking,
+                                                        content: thinking_text.to_string(),
+                                                        metadata: Some(content_item.clone()),
+                                                        tool_result: None,
                                                     });
                                                 }
                                             }
