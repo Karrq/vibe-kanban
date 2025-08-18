@@ -9,9 +9,10 @@ interface ToolResultDisplayProps {
   toolName?: string;
   content?: string;
   toolArgs?: any;
+  sessionIdToCommand?: Record<string, string>;
 }
 
-export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, content, toolArgs }: ToolResultDisplayProps) {
+export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, content, toolArgs, sessionIdToCommand }: ToolResultDisplayProps) {
   if (!toolResult) {
     return null;
   }
@@ -93,36 +94,73 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
       );
     }
   } else if (isBashOutputTool) {
-    // For BashOutput: parse bash_id from tool args
+    // For BashOutput: parse bash_id from tool args and get original command
     const bashId = toolArgs?.bash_id || toolArgs?.shell_id;
+    const originalCommand = bashId && sessionIdToCommand ? sessionIdToCommand[bashId] : null;
+    
     displayContent = (
       <span className="text-sm">
-        Bash output retrieval{bashId && (
-          <span className="ml-1 bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono text-xs">
-            {bashId}
-          </span>
+        {originalCommand ? (
+          <>Bash output of: <span className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono">{originalCommand}</span></>
+        ) : (
+          <>Bash output retrieval{bashId && (
+            <span className="ml-1 bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono text-xs">
+              {bashId}
+            </span>
+          )}</>
         )}
       </span>
     );
-    // Use standard pre-formatted output similar to Bash command
-    outputContent = toolResult.content && (
-      <pre className={`text-xs font-mono whitespace-pre-wrap break-words p-3 ${
-        toolResult.is_error 
-          ? 'text-red-700 dark:text-red-300' 
-          : 'text-gray-700 dark:text-gray-300'
-      }`}>
-        {toolResult.content}
-      </pre>
+    
+    // Parse stdout content from the output
+    let parsedContent = toolResult.content;
+    let noNewOutput = false;
+    
+    if (toolResult.content && !toolResult.is_error) {
+      const stdoutMatch = toolResult.content.match(/<stdout>([\s\S]*?)<\/stdout>/);
+      if (stdoutMatch && stdoutMatch[1]) {
+        parsedContent = stdoutMatch[1].trim();
+      } else if (toolResult.content.includes('<status>') && !toolResult.content.includes('<stdout>')) {
+        // No stdout tags found - likely no new output
+        parsedContent = null;
+        noNewOutput = true;
+      }
+    }
+    
+    // Use parsed content for display
+    outputContent = (
+      <div>
+        {noNewOutput && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 italic p-3">
+            No new output
+          </div>
+        )}
+        {parsedContent && (
+          <pre className={`text-xs font-mono whitespace-pre-wrap break-words p-3 ${
+            toolResult.is_error 
+              ? 'text-red-700 dark:text-red-300' 
+              : 'text-gray-700 dark:text-gray-300'
+          }`}>
+            {parsedContent}
+          </pre>
+        )}
+      </div>
     );
   } else if (isKillBashTool) {
-    // For KillBash: parse bash_id or shell_id from tool args  
+    // For KillBash: parse bash_id or shell_id from tool args and get original command
     const bashId = toolArgs?.shell_id || toolArgs?.bash_id;
+    const originalCommand = bashId && sessionIdToCommand ? sessionIdToCommand[bashId] : null;
+    
     displayContent = (
       <span className="text-sm">
-        Kill bash session{bashId && (
-          <span className="ml-1 bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono text-xs">
-            {bashId}
-          </span>
+        {originalCommand ? (
+          <>Kill bash session: <span className="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono">{originalCommand}</span></>
+        ) : (
+          <>Kill bash session{bashId && (
+            <span className="ml-1 bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded font-mono text-xs">
+              {bashId}
+            </span>
+          )}</>
         )}
       </span>
     );

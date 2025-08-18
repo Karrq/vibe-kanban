@@ -123,6 +123,42 @@ function Conversation() {
     [allProcessLogs]
   );
 
+  // Build a mapping of shell session IDs to their original commands
+  const sessionIdToCommand = useMemo(() => {
+    const mapping: Record<string, string> = {};
+    
+    // Check all entries from allEntries (not just visible ones)
+    allEntries.forEach((item) => {
+      const entry = item.entry;
+      // Check any tool use that has a result containing a background session ID
+      if (entry.entry_type?.type === 'tool_use' && entry.tool_result?.content) {
+        // Look for the background session ID pattern in the output
+        const sessionIdMatch = entry.tool_result.content.match(/Command running in background with ID:\s*([a-zA-Z0-9_-]+)/i);
+        
+        if (sessionIdMatch && sessionIdMatch[1]) {
+          const sessionId = sessionIdMatch[1];
+          let command: string | null = null;
+          
+          // Try to get the command from various sources
+          // 1. From tool_args.command (for Bash tool)
+          if (entry.tool_args?.command) {
+            command = entry.tool_args.command;
+          }
+          // 2. From action_type if it's command_run
+          else if (entry.entry_type.action_type?.action === 'command_run') {
+            command = entry.entry_type.action_type.command;
+          }
+          
+          if (command) {
+            mapping[sessionId] = command;
+          }
+        }
+      }
+    });
+    
+    return mapping;
+  }, [allEntries]);
+
   // Paginate: show only the last visibleCount entries
   const visibleEntries = useMemo(
     () => allEntries.slice(-(visibleCount - visibleRunningEntriesCount)),
@@ -139,12 +175,14 @@ function Conversation() {
           handleConversationUpdate={handleConversationUpdate}
           visibleEntriesLength={visibleEntries.length}
           runningProcessDetails={attemptData.runningProcessDetails}
+          sessionIdToCommand={sessionIdToCommand}
         />
       )),
     [
       visibleEntries,
       handleConversationUpdate,
       attemptData.runningProcessDetails,
+      sessionIdToCommand,
     ]
   );
 

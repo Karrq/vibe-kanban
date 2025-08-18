@@ -32,6 +32,7 @@ type Props = {
   index: number;
   diffDeletable?: boolean;
   isLast?: boolean;
+  sessionIdToCommand?: Record<string, string>;
 };
 
 const getEntryIcon = (entryType: NormalizedEntryType) => {
@@ -287,7 +288,7 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
   );
 };
 
-function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false }: Props) {
+function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false, sessionIdToCommand }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(new Set());
@@ -528,6 +529,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
                   toolName={entry.entry_type.tool_name}
                   content={entry.content}
                   toolArgs={entry.tool_args}
+                  sessionIdToCommand={sessionIdToCommand}
                 />
               ) : shouldRenderMarkdown(entry.entry_type) ? (
                 <MarkdownRenderer
