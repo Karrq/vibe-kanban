@@ -270,7 +270,7 @@ export function ProjectList() {
       />
 
       {/* Recent Tasks Section */}
-      <RecentTasks limit={10} className="mt-8" />
+      <RecentTasks limit={20} className="mt-8" />
 
     </div>
   );
