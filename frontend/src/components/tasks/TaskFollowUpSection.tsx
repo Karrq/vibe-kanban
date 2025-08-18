@@ -140,7 +140,7 @@ export function TaskFollowUpSection() {
                 }
               }}
               className="flex-1 min-h-[40px] resize-none"
-              disabled={!canSendFollowUp}
+              disabled={false}
               projectId={projectId}
               rows={1}
               maxRows={6}
