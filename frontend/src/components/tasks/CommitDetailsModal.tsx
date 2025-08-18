@@ -139,7 +139,9 @@ export function CommitDetailsModal({
     
     const files: FileDiff[] = commitDetails.files.map(file => ({
       path: file.filename,
-      chunks: file.chunks || []
+      chunks: file.chunks || [],
+      status: file.status || null,
+      old_path: null // FileChangeMetadata doesn't have old_path, would need backend update
     }));
     
     return { files };

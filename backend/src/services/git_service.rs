@@ -558,15 +558,36 @@ impl GitService {
                         self.generate_git_diff_chunks(&main_repo, &old_file, &new_file, path_str)
                     {
                         if !diff_chunks.is_empty() {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some("added".to_string()),
+                                git2::Delta::Deleted => Some("deleted".to_string()),
+                                git2::Delta::Modified => Some("modified".to_string()),
+                                git2::Delta::Renamed => Some("renamed".to_string()),
+                                _ => None,
+                            };
+                            let old_path = if delta.status() == git2::Delta::Renamed {
+                                delta.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string())
+                            } else {
+                                None
+                            };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
                                 chunks: diff_chunks,
+                                status,
+                                old_path,
                             });
                         } else if delta.status() == git2::Delta::Added
                             || delta.status() == git2::Delta::Deleted
                         {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some("added".to_string()),
+                                git2::Delta::Deleted => Some("deleted".to_string()),
+                                _ => None,
+                            };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
+                                status,
+                                old_path: None,
                                 chunks: vec![DiffChunk {
                                     chunk_type: if delta.status() == git2::Delta::Added {
                                         DiffChunkType::Insert
@@ -650,15 +671,36 @@ impl GitService {
                         path_str,
                     ) {
                         if !diff_chunks.is_empty() {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some("added".to_string()),
+                                git2::Delta::Deleted => Some("deleted".to_string()),
+                                git2::Delta::Modified => Some("modified".to_string()),
+                                git2::Delta::Renamed => Some("renamed".to_string()),
+                                _ => None,
+                            };
+                            let old_path = if delta.status() == git2::Delta::Renamed {
+                                delta.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string())
+                            } else {
+                                None
+                            };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
                                 chunks: diff_chunks,
+                                status,
+                                old_path,
                             });
                         } else if delta.status() == git2::Delta::Added
                             || delta.status() == git2::Delta::Deleted
                         {
+                            let status = match delta.status() {
+                                git2::Delta::Added => Some("added".to_string()),
+                                git2::Delta::Deleted => Some("deleted".to_string()),
+                                _ => None,
+                            };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
+                                status,
+                                old_path: None,
                                 chunks: vec![DiffChunk {
                                     chunk_type: if delta.status() == git2::Delta::Added {
                                         DiffChunkType::Insert
@@ -860,15 +902,36 @@ impl GitService {
                     self.create_combined_diff_chunks(&base_content, &working_content, path_str)
                 {
                     if !chunks.is_empty() {
+                        let status = match delta.status() {
+                            git2::Delta::Added => Some("added".to_string()),
+                            git2::Delta::Deleted => Some("deleted".to_string()),
+                            git2::Delta::Modified => Some("modified".to_string()),
+                            git2::Delta::Renamed => Some("renamed".to_string()),
+                            _ => None,
+                        };
+                        let old_path = if delta.status() == git2::Delta::Renamed {
+                            delta.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string())
+                        } else {
+                            None
+                        };
                         files.push(FileDiff {
                             path: path_str.to_string(),
                             chunks,
+                            status,
+                            old_path,
                         });
                     }
                 } else if delta.status() != git2::Delta::Modified {
                     // Fallback for added/deleted files
+                    let status = match delta.status() {
+                        git2::Delta::Added => Some("added".to_string()),
+                        git2::Delta::Deleted => Some("deleted".to_string()),
+                        _ => None,
+                    };
                     files.push(FileDiff {
                         path: path_str.to_string(),
+                        status,
+                        old_path: None,
                         chunks: vec![DiffChunk {
                             chunk_type: if delta.status() == git2::Delta::Added {
                                 DiffChunkType::Insert

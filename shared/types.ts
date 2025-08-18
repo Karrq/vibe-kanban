@@ -96,7 +96,7 @@ export type DiffChunkType = "Equal" | "Insert" | "Delete";
 
 export type DiffChunk = { chunk_type: DiffChunkType, content: string, };
 
-export type FileDiff = { path: string, chunks: Array<DiffChunk>, };
+export type FileDiff = { path: string, chunks: Array<DiffChunk>, status: string | null, old_path: string | null, };
 
 export type WorktreeDiff = { files: Array<FileDiff>, };
 

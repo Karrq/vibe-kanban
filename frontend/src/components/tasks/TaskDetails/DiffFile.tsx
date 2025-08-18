@@ -204,17 +204,48 @@ function DiffFile({
     return sections;
   }, [file.chunks, expandedSections, compact, fileIndex]);
 
+  // Determine background color based on file status
+  const getFileHeaderClasses = () => {
+    const baseClasses = 'px-3 py-1.5 flex items-center justify-between';
+    const borderClasses = !collapsedFiles.has(file.path) ? 'border-b' : '';
+    
+    switch(file.status) {
+      case 'added':
+        return `${baseClasses} ${borderClasses} bg-green-50 dark:bg-green-950/30`;
+      case 'deleted':
+        return `${baseClasses} ${borderClasses} bg-red-50 dark:bg-red-950/30`;
+      case 'renamed':
+        return `${baseClasses} ${borderClasses} bg-blue-50 dark:bg-blue-950/30`;
+      default:
+        return `${baseClasses} ${borderClasses} bg-muted`;
+    }
+  };
+
+  // Format file path display for renamed files
+  const getFilePathDisplay = () => {
+    if (file.status === 'renamed' && file.old_path) {
+      return (
+        <span className="text-xs font-medium font-mono">
+          <span className="text-muted-foreground">{file.old_path}</span>
+          <span className="text-muted-foreground mx-1">→</span>
+          <span className="text-foreground">{file.path}</span>
+        </span>
+      );
+    }
+    return (
+      <p className="text-xs font-medium text-muted-foreground font-mono">
+        {file.path}
+      </p>
+    );
+  };
+
   return (
     <div
       className={`border rounded-lg overflow-hidden ${
         collapsedFiles.has(file.path) ? 'border-muted' : 'border-border'
       }`}
     >
-      <div
-        className={`bg-muted px-3 py-1.5 flex items-center justify-between ${
-          !collapsedFiles.has(file.path) ? 'border-b' : ''
-        }`}
-      >
+      <div className={getFileHeaderClasses()}>
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
@@ -231,9 +262,7 @@ function DiffFile({
               <ChevronUp className="h-3 w-3" />
             )}
           </Button>
-          <p className="text-xs font-medium text-muted-foreground font-mono">
-            {file.path}
-          </p>
+          {getFilePathDisplay()}
           {collapsedFiles.has(file.path) && (
             <div className="flex items-center gap-1 text-xs text-muted-foreground ml-2">
               {(() => {

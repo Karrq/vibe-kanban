@@ -154,6 +154,8 @@ pub struct DiffChunk {
 pub struct FileDiff {
     pub path: String,
     pub chunks: Vec<DiffChunk>,
+    pub status: Option<String>, // "added", "deleted", "modified", "renamed"
+    pub old_path: Option<String>, // For renamed files
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
