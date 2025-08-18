@@ -6,6 +6,7 @@ import { Clock, FolderOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { projectsApi, tasksApi } from '@/lib/api';
 import type { TaskWithAttemptStatus } from 'shared/types';
+import { useArchive } from '@/hooks/useArchive';
 
 interface TaskWithProject extends TaskWithAttemptStatus {
   projectName?: string;
@@ -25,6 +26,7 @@ const TASK_COLUMNS = [
 
 export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
   const navigate = useNavigate();
+  const { isTaskArchived } = useArchive();
   const [allTasks, setAllTasks] = useState<TaskWithProject[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -61,9 +63,9 @@ export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
   }, [fetchAllTasks]);
 
   const tasksByStatus = useMemo(() => {
-    // Filter out cancelled tasks and get recent ones
+    // Filter out cancelled and archived tasks and get recent ones
     const recentTasks = [...allTasks]
-      .filter(task => task.status !== 'cancelled')
+      .filter(task => task.status !== 'cancelled' && !isTaskArchived(task.id))
       .sort((a, b) => {
         const dateA = new Date(a.updated_at).getTime();
         const dateB = new Date(b.updated_at).getTime();
@@ -86,7 +88,7 @@ export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
     });
 
     return grouped;
-  }, [allTasks, limit]);
+  }, [allTasks, limit, isTaskArchived]);
 
   const handleTaskClick = useCallback((task: TaskWithProject) => {
     navigate(`/projects/${task.project_id}/tasks/${task.id}`);
