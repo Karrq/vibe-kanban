@@ -136,6 +136,7 @@ fn generate_types_content() -> String {
         vibe_kanban::routes::task_attempts::ProcessLogsResponse::decl(),
         vibe_kanban::models::task_attempt::DiffChunkType::decl(),
         vibe_kanban::models::task_attempt::DiffChunk::decl(),
+        vibe_kanban::models::task_attempt::FileStatus::decl(),
         vibe_kanban::models::task_attempt::FileDiff::decl(),
         vibe_kanban::models::task_attempt::WorktreeDiff::decl(),
         vibe_kanban::models::task_attempt::BranchStatus::decl(),

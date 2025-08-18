@@ -151,11 +151,19 @@ pub struct DiffChunk {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub enum FileStatus {
+    Added,
+    Deleted,
+    Modified,
+    Renamed { old_path: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FileDiff {
     pub path: String,
     pub chunks: Vec<DiffChunk>,
-    pub status: Option<String>, // "added", "deleted", "modified", "renamed"
-    pub old_path: Option<String>, // For renamed files
+    pub status: Option<FileStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

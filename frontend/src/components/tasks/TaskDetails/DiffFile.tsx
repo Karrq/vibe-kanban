@@ -209,24 +209,29 @@ function DiffFile({
     const baseClasses = 'px-3 py-1.5 flex items-center justify-between';
     const borderClasses = !collapsedFiles.has(file.path) ? 'border-b' : '';
     
-    switch(file.status) {
-      case 'added':
-        return `${baseClasses} ${borderClasses} bg-green-50 dark:bg-green-950/30`;
-      case 'deleted':
-        return `${baseClasses} ${borderClasses} bg-red-50 dark:bg-red-950/30`;
-      case 'renamed':
-        return `${baseClasses} ${borderClasses} bg-blue-50 dark:bg-blue-950/30`;
-      default:
-        return `${baseClasses} ${borderClasses} bg-muted`;
+    if (!file.status) {
+      return `${baseClasses} ${borderClasses} bg-muted`;
+    }
+    
+    if (file.status === 'Added') {
+      return `${baseClasses} ${borderClasses} bg-green-50 dark:bg-green-950/30`;
+    } else if (file.status === 'Deleted') {
+      return `${baseClasses} ${borderClasses} bg-red-50 dark:bg-red-950/30`;
+    } else if (typeof file.status === 'object' && 'Renamed' in file.status) {
+      // No special background for renamed files per request
+      return `${baseClasses} ${borderClasses} bg-muted`;
+    } else {
+      return `${baseClasses} ${borderClasses} bg-muted`;
     }
   };
 
   // Format file path display for renamed files
   const getFilePathDisplay = () => {
-    if (file.status === 'renamed' && file.old_path) {
+    if (file.status && typeof file.status === 'object' && 'Renamed' in file.status) {
+      const oldPath = file.status.Renamed.old_path;
       return (
         <span className="text-xs font-medium font-mono">
-          <span className="text-muted-foreground">{file.old_path}</span>
+          <span className="text-muted-foreground">{oldPath}</span>
           <span className="text-muted-foreground mx-1">→</span>
           <span className="text-foreground">{file.path}</span>
         </span>

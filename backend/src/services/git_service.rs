@@ -10,7 +10,7 @@ use tracing::{debug, info};
 use ts_rs::TS;
 
 use crate::{
-    models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, WorktreeDiff},
+    models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, FileStatus, WorktreeDiff},
     utils::worktree_manager::WorktreeManager,
 };
 
@@ -559,35 +559,32 @@ impl GitService {
                     {
                         if !diff_chunks.is_empty() {
                             let status = match delta.status() {
-                                git2::Delta::Added => Some("added".to_string()),
-                                git2::Delta::Deleted => Some("deleted".to_string()),
-                                git2::Delta::Modified => Some("modified".to_string()),
-                                git2::Delta::Renamed => Some("renamed".to_string()),
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
+                                git2::Delta::Modified => Some(FileStatus::Modified),
+                                git2::Delta::Renamed => {
+                                    delta.old_file().path()
+                                        .and_then(|p| p.to_str())
+                                        .map(|old| FileStatus::Renamed { old_path: old.to_string() })
+                                }
                                 _ => None,
-                            };
-                            let old_path = if delta.status() == git2::Delta::Renamed {
-                                delta.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string())
-                            } else {
-                                None
                             };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
                                 chunks: diff_chunks,
                                 status,
-                                old_path,
                             });
                         } else if delta.status() == git2::Delta::Added
                             || delta.status() == git2::Delta::Deleted
                         {
                             let status = match delta.status() {
-                                git2::Delta::Added => Some("added".to_string()),
-                                git2::Delta::Deleted => Some("deleted".to_string()),
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
                                 _ => None,
                             };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
                                 status,
-                                old_path: None,
                                 chunks: vec![DiffChunk {
                                     chunk_type: if delta.status() == git2::Delta::Added {
                                         DiffChunkType::Insert
@@ -672,35 +669,32 @@ impl GitService {
                     ) {
                         if !diff_chunks.is_empty() {
                             let status = match delta.status() {
-                                git2::Delta::Added => Some("added".to_string()),
-                                git2::Delta::Deleted => Some("deleted".to_string()),
-                                git2::Delta::Modified => Some("modified".to_string()),
-                                git2::Delta::Renamed => Some("renamed".to_string()),
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
+                                git2::Delta::Modified => Some(FileStatus::Modified),
+                                git2::Delta::Renamed => {
+                                    delta.old_file().path()
+                                        .and_then(|p| p.to_str())
+                                        .map(|old| FileStatus::Renamed { old_path: old.to_string() })
+                                }
                                 _ => None,
-                            };
-                            let old_path = if delta.status() == git2::Delta::Renamed {
-                                delta.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string())
-                            } else {
-                                None
                             };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
                                 chunks: diff_chunks,
                                 status,
-                                old_path,
                             });
                         } else if delta.status() == git2::Delta::Added
                             || delta.status() == git2::Delta::Deleted
                         {
                             let status = match delta.status() {
-                                git2::Delta::Added => Some("added".to_string()),
-                                git2::Delta::Deleted => Some("deleted".to_string()),
+                                git2::Delta::Added => Some(FileStatus::Added),
+                                git2::Delta::Deleted => Some(FileStatus::Deleted),
                                 _ => None,
                             };
                             files.push(FileDiff {
                                 path: path_str.to_string(),
                                 status,
-                                old_path: None,
                                 chunks: vec![DiffChunk {
                                     chunk_type: if delta.status() == git2::Delta::Added {
                                         DiffChunkType::Insert
@@ -903,35 +897,32 @@ impl GitService {
                 {
                     if !chunks.is_empty() {
                         let status = match delta.status() {
-                            git2::Delta::Added => Some("added".to_string()),
-                            git2::Delta::Deleted => Some("deleted".to_string()),
-                            git2::Delta::Modified => Some("modified".to_string()),
-                            git2::Delta::Renamed => Some("renamed".to_string()),
+                            git2::Delta::Added => Some(FileStatus::Added),
+                            git2::Delta::Deleted => Some(FileStatus::Deleted),
+                            git2::Delta::Modified => Some(FileStatus::Modified),
+                            git2::Delta::Renamed => {
+                                delta.old_file().path()
+                                    .and_then(|p| p.to_str())
+                                    .map(|old| FileStatus::Renamed { old_path: old.to_string() })
+                            }
                             _ => None,
-                        };
-                        let old_path = if delta.status() == git2::Delta::Renamed {
-                            delta.old_file().path().and_then(|p| p.to_str()).map(|s| s.to_string())
-                        } else {
-                            None
                         };
                         files.push(FileDiff {
                             path: path_str.to_string(),
                             chunks,
                             status,
-                            old_path,
                         });
                     }
                 } else if delta.status() != git2::Delta::Modified {
                     // Fallback for added/deleted files
                     let status = match delta.status() {
-                        git2::Delta::Added => Some("added".to_string()),
-                        git2::Delta::Deleted => Some("deleted".to_string()),
+                        git2::Delta::Added => Some(FileStatus::Added),
+                        git2::Delta::Deleted => Some(FileStatus::Deleted),
                         _ => None,
                     };
                     files.push(FileDiff {
                         path: path_str.to_string(),
                         status,
-                        old_path: None,
                         chunks: vec![DiffChunk {
                             chunk_type: if delta.status() == git2::Delta::Added {
                                 DiffChunkType::Insert
