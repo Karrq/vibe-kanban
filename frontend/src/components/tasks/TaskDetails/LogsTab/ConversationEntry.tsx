@@ -11,6 +11,7 @@ type Props = {
   handleConversationUpdate: () => void;
   visibleEntriesLength: number;
   runningProcessDetails: Record<string, ExecutionProcess>;
+  sessionIdToCommand?: Record<string, string>;
 };
 
 const ConversationEntry = ({
@@ -19,6 +20,7 @@ const ConversationEntry = ({
   handleConversationUpdate,
   visibleEntriesLength,
   runningProcessDetails,
+  sessionIdToCommand,
 }: Props) => {
   const showPrompt = item.isFirstInProcess && item.processPrompt;
   // For running processes, render the live viewer below the static entries
@@ -47,6 +49,7 @@ const ConversationEntry = ({
           entry={item.entry}
           index={idx}
           diffDeletable
+          sessionIdToCommand={sessionIdToCommand}
         />
       </div>
     );
