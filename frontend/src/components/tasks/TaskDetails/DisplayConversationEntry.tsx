@@ -388,8 +388,13 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
   const isKillBashTool = entry.entry_type.type === 'tool_use' && 
     entry.entry_type.tool_name && 
     entry.entry_type.tool_name.toLowerCase() === 'killbash';
+  
+  // Check if this is a Task tool (subagent invocation)
+  const isTaskTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && 
+    entry.entry_type.tool_name.toLowerCase() === 'task';
 
-  // Check if this is a command run (Bash), file read (Read), TodoWrite, BashOutput, or KillBash tool call with results
+  // Check if this is a command run (Bash), file read (Read), TodoWrite, BashOutput, KillBash, or Task tool call with results
   const hasCollapsibleToolResult = entry.tool_result !== null && 
     entry.tool_result !== undefined && 
     entry.entry_type.type === 'tool_use' && 
@@ -397,7 +402,8 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
      entry.entry_type.action_type.action === 'file_read' ||
      isTodoTool ||
      isBashOutputTool ||
-     isKillBashTool);
+     isKillBashTool ||
+     isTaskTool);
   const isToolResultExpanded = expandedToolResults.has(index);
   const isDiffExpanded = expandedDiffs.has(index);
 

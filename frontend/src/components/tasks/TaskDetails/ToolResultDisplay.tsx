@@ -30,10 +30,13 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
 
   // Check if this is a KillBash tool
   const isKillBashTool = toolName && toolName.toLowerCase() === 'killbash';
+  
+  // Check if this is a Task tool (subagent invocation)
+  const isTaskTool = toolName && toolName.toLowerCase() === 'task';
 
-  // Only show special formatting for command_run (Bash), file_read (Read), TodoWrite, BashOutput, and KillBash tools
+  // Only show special formatting for command_run (Bash), file_read (Read), TodoWrite, BashOutput, KillBash, and Task tools
   // For other tools, return null to let the parent component handle display
-  if (actionType.action !== 'command_run' && actionType.action !== 'file_read' && !isTodoTool && !isBashOutputTool && !isKillBashTool) {
+  if (actionType.action !== 'command_run' && actionType.action !== 'file_read' && !isTodoTool && !isBashOutputTool && !isKillBashTool && !isTaskTool) {
     return null;
   }
   
@@ -174,6 +177,47 @@ export function ToolResultDisplay({ toolResult, actionType, expanded, toolName, 
         {toolResult.content}
       </pre>
     );
+  } else if (isTaskTool) {
+    // For Task: show just the description when collapsed (as before)
+    const subagentType = toolArgs?.subagent_type || 'general-purpose';
+    const description = toolArgs?.description || 'Task delegation';
+    const prompt = toolArgs?.prompt;
+    
+    displayContent = (
+      <span className="text-sm">
+        {description}
+      </span>
+    );
+    
+    // Show subagent type and full prompt when expanded
+    if (expanded && prompt) {
+      outputContent = (
+        <div className="space-y-2">
+          <div className="px-3 pt-3">
+            <span className="text-xs text-gray-600 dark:text-gray-400">Type: </span>
+            <span className="text-sm font-mono text-blue-600 dark:text-blue-400">{subagentType}</span>
+          </div>
+          <div className="px-3 pb-3">
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Prompt:</div>
+            <pre className="text-xs font-mono whitespace-pre-wrap break-words bg-gray-100 dark:bg-gray-800 p-2 rounded">
+              {prompt}
+            </pre>
+          </div>
+          {toolResult.content && (
+            <div className="border-t border-gray-200 dark:border-gray-700 px-3 py-3">
+              <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">Result:</div>
+              <pre className={`text-xs font-mono whitespace-pre-wrap break-words ${
+                toolResult.is_error 
+                  ? 'text-red-700 dark:text-red-300' 
+                  : 'text-gray-700 dark:text-gray-300'
+              }`}>
+                {toolResult.content}
+              </pre>
+            </div>
+          )}
+        </div>
+      );
+    }
   }
   
   return (

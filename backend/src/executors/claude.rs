@@ -675,13 +675,21 @@ impl ClaudeExecutor {
                 }
             }
             "task" => {
+                // For Task tool, extract the description (or prompt as fallback)
+                // The full details including subagent_type and prompt are stored in tool_args
                 if let Some(description) = input.get("description").and_then(|d| d.as_str()) {
                     ActionType::TaskCreate {
                         description: description.to_string(),
                     }
                 } else if let Some(prompt) = input.get("prompt").and_then(|p| p.as_str()) {
+                    // Fallback to showing a truncated prompt if no description
+                    let truncated = if prompt.len() > 100 {
+                        format!("{}...", &prompt[..100])
+                    } else {
+                        prompt.to_string()
+                    };
                     ActionType::TaskCreate {
-                        description: prompt.to_string(),
+                        description: truncated,
                     }
                 } else {
                     ActionType::Other {
