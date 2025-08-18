@@ -99,15 +99,17 @@ impl Task {
         offset: i64,
         exclude_cancelled: bool,
     ) -> Result<Vec<TaskWithProject>, sqlx::Error> {
-        let mut query_str = r#"
+        // Build query with proper parameter binding for SQLite
+        let query = if exclude_cancelled {
+            r#"
             SELECT 
-                t.id as "id!: Uuid",
-                t.project_id as "project_id!: Uuid",
+                t.id,
+                t.project_id,
                 t.title,
                 t.description,
-                t.status as "status!: TaskStatus",
-                t.created_at as "created_at!: DateTime<Utc>",
-                t.updated_at as "updated_at!: DateTime<Utc>",
+                t.status,
+                t.created_at,
+                t.updated_at,
                 p.name as project_name,
                 CASE WHEN EXISTS(
                     SELECT 1 FROM task_attempts ta 
@@ -115,18 +117,39 @@ impl Task {
                     WHERE ta.task_id = t.id 
                     AND ep.status = 'running'
                     AND ep.process_type IN ('setupscript','cleanupscript','codingagent')
-                ) THEN 1 ELSE 0 END as "has_running_attempt!: i64"
+                ) THEN 1 ELSE 0 END as has_running_attempt
             FROM tasks t
             JOIN projects p ON t.project_id = p.id
-        "#.to_string();
+            WHERE t.status != 'cancelled'
+            ORDER BY t.updated_at DESC
+            LIMIT ?1 OFFSET ?2
+            "#
+        } else {
+            r#"
+            SELECT 
+                t.id,
+                t.project_id,
+                t.title,
+                t.description,
+                t.status,
+                t.created_at,
+                t.updated_at,
+                p.name as project_name,
+                CASE WHEN EXISTS(
+                    SELECT 1 FROM task_attempts ta 
+                    JOIN execution_processes ep ON ep.task_attempt_id = ta.id
+                    WHERE ta.task_id = t.id 
+                    AND ep.status = 'running'
+                    AND ep.process_type IN ('setupscript','cleanupscript','codingagent')
+                ) THEN 1 ELSE 0 END as has_running_attempt
+            FROM tasks t
+            JOIN projects p ON t.project_id = p.id
+            ORDER BY t.updated_at DESC
+            LIMIT ?1 OFFSET ?2
+            "#
+        };
         
-        if exclude_cancelled {
-            query_str.push_str(" WHERE t.status != 'cancelled'");
-        }
-        
-        query_str.push_str(" ORDER BY t.updated_at DESC LIMIT ? OFFSET ?");
-        
-        let records = sqlx::query(&query_str)
+        let records = sqlx::query(query)
             .bind(limit)
             .bind(offset)
             .fetch_all(pool)
