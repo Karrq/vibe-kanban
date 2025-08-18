@@ -159,7 +159,7 @@ impl AmpContentItem {
                     timestamp,
                     entry_type,
                     content: text.clone(),
-                    metadata: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
+                    tool_args: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
                     tool_result: None,
                 })
             }
@@ -167,7 +167,7 @@ impl AmpContentItem {
                 timestamp,
                 entry_type: NormalizedEntryType::Thinking,
                 content: thinking.clone(),
-                metadata: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
+                tool_args: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
                 tool_result: None,
             }),
             AmpContentItem::ToolUse { name, input, .. } => {
@@ -182,7 +182,7 @@ impl AmpContentItem {
                         action_type,
                     },
                     content,
-                    metadata: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
+                    tool_args: Some(serde_json::to_value(self).unwrap_or(Value::Null)),
                     tool_result: None,
                 })
             }
@@ -323,7 +323,7 @@ impl Executor for AmpExecutor {
                         timestamp: None,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
-                        metadata: None,
+                        tool_args: None,
                         tool_result: None,
                     });
                     continue;
@@ -542,6 +542,7 @@ impl AmpExecutor {
                 } else {
                     ActionType::Other {
                         description: "File read operation".to_string(),
+                        
                     }
                 }
             }
@@ -557,6 +558,7 @@ impl AmpExecutor {
                 } else {
                     ActionType::Other {
                         description: "File write operation".to_string(),
+                        
                     }
                 }
             }
@@ -572,6 +574,7 @@ impl AmpExecutor {
                 } else {
                     ActionType::Other {
                         description: "Command execution".to_string(),
+                        
                     }
                 }
             }
@@ -587,6 +590,7 @@ impl AmpExecutor {
                 } else {
                     ActionType::Other {
                         description: "Search operation".to_string(),
+                        
                     }
                 }
             }
@@ -598,6 +602,7 @@ impl AmpExecutor {
                 } else {
                     ActionType::Other {
                         description: "Web fetch operation".to_string(),
+                        
                     }
                 }
             }
@@ -613,20 +618,29 @@ impl AmpExecutor {
                 } else {
                     ActionType::Other {
                         description: "Task creation".to_string(),
+                        
                     }
                 }
             }
             "glob" => ActionType::Other {
                 description: "File pattern search".to_string(),
+                
             },
             "ls" => ActionType::Other {
                 description: "List directory".to_string(),
+                        
+            },
+            "websearch" | "web_search" => ActionType::Other {
+                description: "Web search".to_string(),
+                
             },
             "todowrite" | "todoread" | "todo_write" | "todo_read" => ActionType::Other {
                 description: "Manage TODO list".to_string(),
+                
             },
             _ => ActionType::Other {
                 description: format!("Tool: {}", tool_name),
+                
             },
         }
     }

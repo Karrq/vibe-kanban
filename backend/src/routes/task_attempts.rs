@@ -158,7 +158,7 @@ async fn normalize_process_logs(
                             timestamp: Some(chrono::Utc::now().to_rfc3339()),
                             entry_type: NormalizedEntryType::ErrorMessage,
                             content: filtered_content.trim().to_string(),
-                            metadata: None,
+                            tool_args: None,
                             tool_result: None,
                         });
                     }

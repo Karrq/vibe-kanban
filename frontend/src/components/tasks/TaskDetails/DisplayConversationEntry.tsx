@@ -32,6 +32,7 @@ type Props = {
   index: number;
   diffDeletable?: boolean;
   isLast?: boolean;
+  sessionIdToCommand?: Record<string, string>;
 };
 
 const getEntryIcon = (entryType: NormalizedEntryType) => {
@@ -64,6 +65,16 @@ const getEntryIcon = (entryType: NormalizedEntryType) => {
       return <CheckSquare className="h-4 w-4 text-purple-600" />;
     }
 
+    // Special handling for BashOutput tool
+    if (tool_name && tool_name.toLowerCase() === 'bashoutput') {
+      return <Terminal className="h-4 w-4 text-yellow-600" />;
+    }
+
+    // Special handling for KillBash tool
+    if (tool_name && tool_name.toLowerCase() === 'killbash') {
+      return <Terminal className="h-4 w-4 text-red-600" />;
+    }
+
     if (action_type.action === 'file_read') {
       return <Eye className="h-4 w-4 text-orange-600" />;
     }
@@ -78,6 +89,19 @@ const getEntryIcon = (entryType: NormalizedEntryType) => {
     }
     if (action_type.action === 'web_fetch') {
       return <Globe className="h-4 w-4 text-cyan-600" />;
+    }
+    // Special handling for search tools with 'other' action
+    if (action_type.action === 'other' && tool_name) {
+      const toolNameLower = tool_name.toLowerCase();
+      if (toolNameLower === 'glob') {
+        return <Search className="h-4 w-4 text-green-600" />;
+      }
+      if (toolNameLower === 'grep') {
+        return <Search className="h-4 w-4 text-indigo-600" />;
+      }
+      if (toolNameLower === 'websearch' || toolNameLower === 'web_search') {
+        return <Globe className="h-4 w-4 text-blue-600" />;
+      }
     }
     if (action_type.action === 'task_create') {
       return <Plus className="h-4 w-4 text-teal-600" />;
@@ -267,6 +291,8 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
         entryType.tool_name.toLowerCase() === 'multiedit' ||
         entryType.tool_name.toLowerCase() === 'bash' ||
         entryType.tool_name.toLowerCase() === 'run_command' ||
+        entryType.tool_name.toLowerCase() === 'bashoutput' ||
+        entryType.tool_name.toLowerCase() === 'killbash' ||
         entryType.tool_name.toLowerCase() === 'grep' ||
         entryType.tool_name.toLowerCase() === 'search' ||
         entryType.tool_name.toLowerCase() === 'webfetch' ||
@@ -275,7 +301,7 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
   );
 };
 
-function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false }: Props) {
+function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false, sessionIdToCommand }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(new Set());
@@ -368,13 +394,35 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
       entry.entry_type.tool_name.toLowerCase() === 'todo_read'
     );
 
-  // Check if this is a command run (Bash), file read (Read), or TodoWrite tool call with results
+  // Check if this is a search-related tool
+  const isSearchTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && (
+      entry.entry_type.tool_name.toLowerCase() === 'grep' ||
+      entry.entry_type.tool_name.toLowerCase() === 'search' ||
+      entry.entry_type.tool_name.toLowerCase() === 'websearch' ||
+      entry.entry_type.tool_name.toLowerCase() === 'web_search' ||
+      entry.entry_type.tool_name.toLowerCase() === 'glob'
+    );
+
+  // Check if this is a BashOutput or KillBash tool
+  const isBashOutputTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && 
+    entry.entry_type.tool_name.toLowerCase() === 'bashoutput';
+  const isKillBashTool = entry.entry_type.type === 'tool_use' && 
+    entry.entry_type.tool_name && 
+    entry.entry_type.tool_name.toLowerCase() === 'killbash';
+
+  // Check if this is a command run (Bash), file read (Read), search, TodoWrite, BashOutput, or KillBash tool call with results
   const hasCollapsibleToolResult = entry.tool_result !== null && 
     entry.tool_result !== undefined && 
     entry.entry_type.type === 'tool_use' && 
     (entry.entry_type.action_type.action === 'command_run' || 
      entry.entry_type.action_type.action === 'file_read' ||
-     isTodoTool);
+     entry.entry_type.action_type.action === 'search' ||
+     isTodoTool ||
+     isSearchTool ||
+     isBashOutputTool ||
+     isKillBashTool);
   const isToolResultExpanded = expandedToolResults.has(index);
   const isDiffExpanded = expandedDiffs.has(index);
 
@@ -505,6 +553,8 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
                   expanded={isToolResultExpanded}
                   toolName={entry.entry_type.tool_name}
                   content={entry.content}
+                  toolArgs={entry.tool_args}
+                  sessionIdToCommand={sessionIdToCommand}
                 />
               ) : shouldRenderMarkdown(entry.entry_type) ? (
                 <MarkdownRenderer

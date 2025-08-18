@@ -201,7 +201,7 @@ impl Executor for ClaudeExecutor {
                         timestamp: None,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
-                        metadata: None,
+                        tool_args: None,
                         tool_result: None,
                     });
                     continue;
@@ -237,7 +237,7 @@ impl Executor for ClaudeExecutor {
                                                         entry_type:
                                                             NormalizedEntryType::AssistantMessage,
                                                         content: text.to_string(),
-                                                        metadata: Some(content_item.clone()),
+                                                        tool_args: None,
                                                         tool_result: None,
                                                     });
                                                 }
@@ -251,7 +251,7 @@ impl Executor for ClaudeExecutor {
                                                         timestamp: None,
                                                         entry_type: NormalizedEntryType::Thinking,
                                                         content: thinking_text.to_string(),
-                                                        metadata: Some(content_item.clone()),
+                                                        tool_args: None,
                                                         tool_result: None,
                                                     });
                                                 }
@@ -275,6 +275,14 @@ impl Executor for ClaudeExecutor {
                                                         &action_type,
                                                         worktree_path,
                                                     );
+                                                    
+                                                    // Store input as tool_args, but keep tool id in a wrapper for result matching
+                                                    let mut tool_args_with_id = serde_json::json!({
+                                                        "_tool_input": input.clone()
+                                                    });
+                                                    if let Some(id) = content_item.get("id") {
+                                                        tool_args_with_id["_tool_id"] = id.clone();
+                                                    }
 
                                                     entries.push(NormalizedEntry {
                                                         timestamp: None,
@@ -283,7 +291,7 @@ impl Executor for ClaudeExecutor {
                                                             action_type,
                                                         },
                                                         content,
-                                                        metadata: Some(content_item.clone()),
+                                                        tool_args: Some(tool_args_with_id),
                                                         tool_result: None,
                                                     });
                                                 }
@@ -315,7 +323,7 @@ impl Executor for ClaudeExecutor {
                                                         entry_type:
                                                             NormalizedEntryType::UserMessage,
                                                         content: text.to_string(),
-                                                        metadata: Some(content_item.clone()),
+                                                        tool_args: None,
                                                         tool_result: None,
                                                     });
                                                 }
@@ -353,15 +361,21 @@ impl Executor for ClaudeExecutor {
                                                         } = &entry.entry_type
                                                         {
                                                             if entry
-                                                                .metadata
+                                                                .tool_args
                                                                 .as_ref()
-                                                                .and_then(|m| m.get("id"))
+                                                                .and_then(|m| m.get("_tool_id"))
                                                                 .and_then(|id| id.as_str())
                                                                 == Some(tool_use_id)
                                                                 && entry.tool_result.is_none()
                                                             {
                                                                 entry.tool_result =
                                                                     Some(tool_result);
+                                                                // Also clean up tool_args to only contain the input
+                                                                if let Some(tool_args) = &entry.tool_args {
+                                                                    if let Some(input) = tool_args.get("_tool_input") {
+                                                                        entry.tool_args = Some(input.clone());
+                                                                    }
+                                                                }
                                                                 break;
                                                             }
                                                         }
@@ -388,7 +402,7 @@ impl Executor for ClaudeExecutor {
                                             .and_then(|m| m.as_str())
                                             .unwrap_or("unknown")
                                     ),
-                                    metadata: Some(json.clone()),
+                                    tool_args: None,
                                     tool_result: None,
                                 });
                             }
@@ -412,7 +426,7 @@ impl Executor for ClaudeExecutor {
                     timestamp: None,
                     entry_type: NormalizedEntryType::SystemMessage,
                     content: format!("Unrecognized JSON: {}", trimmed),
-                    metadata: Some(json),
+                    tool_args: None,
                     tool_result: None,
                 });
             }
@@ -605,6 +619,7 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "File read operation".to_string(),
+                        
                     }
                 }
             }
@@ -620,6 +635,7 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "File write operation".to_string(),
+                        
                     }
                 }
             }
@@ -631,6 +647,7 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "Command execution".to_string(),
+                        
                     }
                 }
             }
@@ -642,18 +659,14 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "Search operation".to_string(),
+                        
                     }
                 }
             }
             "glob" => {
-                if let Some(pattern) = input.get("pattern").and_then(|p| p.as_str()) {
-                    ActionType::Other {
-                        description: format!("Find files: {}", pattern),
-                    }
-                } else {
-                    ActionType::Other {
-                        description: "File pattern search".to_string(),
-                    }
+                ActionType::Other {
+                    description: "Find files".to_string(),
+                    
                 }
             }
             "webfetch" => {
@@ -664,6 +677,7 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "Web fetch operation".to_string(),
+                        
                     }
                 }
             }
@@ -679,7 +693,14 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "Task creation".to_string(),
+                        
                     }
+                }
+            }
+            "websearch" | "web_search" => {
+                ActionType::Other {
+                    description: "Web search".to_string(),
+                    
                 }
             }
             "exit_plan_mode" | "exitplanmode" | "exit-plan-mode" => {
@@ -690,11 +711,13 @@ impl ClaudeExecutor {
                 } else {
                     ActionType::Other {
                         description: "Plan presentation".to_string(),
+                        
                     }
                 }
             }
             _ => ActionType::Other {
                 description: format!("Tool: {}", tool_name),
+                        
             },
         }
     }
@@ -780,6 +803,7 @@ mod tests {
             &todo_input,
             &ActionType::Other {
                 description: "Tool: TodoWrite".to_string(),
+                        
             },
             "/tmp/test-worktree",
         );
@@ -804,6 +828,7 @@ mod tests {
             &empty_input,
             &ActionType::Other {
                 description: "Tool: TodoWrite".to_string(),
+                        
             },
             "/tmp/test-worktree",
         );
@@ -825,6 +850,7 @@ mod tests {
             &no_todos_input,
             &ActionType::Other {
                 description: "Tool: TodoWrite".to_string(),
+                        
             },
             "/tmp/test-worktree",
         );
@@ -847,6 +873,7 @@ mod tests {
             &glob_input,
             &ActionType::Other {
                 description: "Find files: **/*.ts".to_string(),
+                        
             },
             "/tmp/test-worktree",
         );
@@ -868,6 +895,7 @@ mod tests {
             &glob_input,
             &ActionType::Other {
                 description: "Find files: *.js".to_string(),
+                        
             },
             "/tmp/test-worktree",
         );
@@ -889,6 +917,7 @@ mod tests {
             &ls_input,
             &ActionType::Other {
                 description: "Tool: LS".to_string(),
+                        
             },
             "/tmp/test-worktree",
         );

@@ -368,7 +368,7 @@ fn format_diff_as_normalized_json(
             action_type: ActionType::FileWrite { path: path.clone() },
         },
         content: format!("`{}`", path),
-        metadata: None,
+        tool_args: None,
         tool_result: None,
     };
 
@@ -422,7 +422,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 timestamp: Some(timestamp_str),
                 entry_type: NormalizedEntryType::SystemMessage,
                 content: trimmed.to_string(),
-                metadata: None,
+                tool_args: None,
                 tool_result: None,
             }
         } else if AiderFilter::is_error(trimmed) {
@@ -430,7 +430,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 timestamp: Some(timestamp_str),
                 entry_type: NormalizedEntryType::ErrorMessage,
                 content: trimmed.to_string(),
-                metadata: None,
+                tool_args: None,
                 tool_result: None,
             }
         } else {
@@ -439,7 +439,7 @@ pub fn format_aider_content_as_normalized_json(content: &str, _worktree_path: &s
                 timestamp: Some(timestamp_str),
                 entry_type: NormalizedEntryType::AssistantMessage,
                 content: trimmed.to_string(),
-                metadata: None,
+                tool_args: None,
                 tool_result: None,
             }
         };
