@@ -11,6 +11,7 @@ use ts_rs::TS;
 
 use crate::{
     models::task_attempt::{DiffChunk, DiffChunkType, FileDiff, FileStatus, WorktreeDiff},
+    services::commit_signer::CommitSigner,
     utils::worktree_manager::WorktreeManager,
 };
 
@@ -35,11 +36,22 @@ pub struct FileChangeMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct CommitSignature {
+    pub key_id: String,
+    pub fingerprint: Option<String>,
+    pub signer_name: Option<String>,
+    pub signer_email: Option<String>,
+    pub status: String,  // "good", "bad", "untrusted", etc.
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CommitDetails {
     pub sha: String,
     pub message: String,
     pub author: Option<CommitAuthor>,
     pub files: Vec<FileChangeMetadata>,
+    pub signature: Option<CommitSignature>,
 }
 
 #[derive(Debug)]
@@ -200,8 +212,14 @@ impl GitService {
         };
         let tree = repo.find_tree(tree_id)?;
 
+        // Create a commit signer to handle GPG signing if configured
+        let signer = CommitSigner::from_repo(repo)
+            .map_err(|e| GitServiceError::Git(git2::Error::from_str(&format!("Failed to initialize commit signer: {}", e))))?;
+
         // Create initial commit on main branch
-        let _commit_id = repo.commit(
+        // This will automatically sign the commit if GPG signing is configured
+        let _commit_id = signer.create_commit(
+            repo,
             Some("refs/heads/main"),
             &signature,
             &signature,
@@ -342,8 +360,14 @@ impl GitService {
         let tree_id = index.write_tree_to(repo)?;
         let tree = repo.find_tree(tree_id)?;
 
+        // Create a commit signer to handle GPG signing if configured
+        let signer = CommitSigner::from_repo(repo)
+            .map_err(|e| GitServiceError::Git(git2::Error::from_str(&format!("Failed to initialize commit signer: {}", e))))?;
+
         // Create a squash commit: use merged tree with base_commit as sole parent
-        let squash_commit_id = repo.commit(
+        // This will automatically sign the commit if GPG signing is configured
+        let squash_commit_id = signer.create_commit(
+            repo,
             None,           // Don't update any reference yet
             signature,      // Author
             signature,      // Committer
@@ -1137,8 +1161,14 @@ impl GitService {
         let head = repo.head()?;
         let parent_commit = head.peel_to_commit()?;
 
+        // Create a commit signer to handle GPG signing if configured
+        let signer = CommitSigner::from_repo(&repo)
+            .map_err(|e| GitServiceError::Git(git2::Error::from_str(&format!("Failed to initialize commit signer: {}", e))))?;
+
         let commit_message = format!("Delete file: {}", file_path);
-        let commit_id = repo.commit(
+        // This will automatically sign the commit if GPG signing is configured
+        let commit_id = signer.create_commit(
+            &repo,
             Some("HEAD"),
             &signature,
             &signature,
@@ -1274,6 +1304,9 @@ impl GitService {
                 .unwrap_or_else(|| chrono::Utc::now())),
         });
         
+        // Get commit signature information if available
+        let signature = self.get_commit_signature(&commit_sha);
+        
         // Get the diff between this commit and its parent
         let files;
         
@@ -1391,7 +1424,144 @@ impl GitService {
             message,
             author,
             files,
+            signature,
         })
+    }
+    
+    /// Get commit signature information using git command
+    fn get_commit_signature(&self, commit_sha: &str) -> Option<CommitSignature> {
+        use std::process::Command;
+        
+        // Run git show with signature verification
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(&["show", "--format=%GG", "-s", commit_sha])
+            .output()
+            .ok()?;
+        
+        if !output.status.success() {
+            return None;
+        }
+        
+        let signature_info = String::from_utf8_lossy(&output.stdout);
+        
+        // If there's no signature info, the output will be empty or just whitespace
+        if signature_info.trim().is_empty() {
+            return None;
+        }
+        
+        // Get additional signature details
+        let verify_output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(&["verify-commit", commit_sha])
+            .output()
+            .ok()?;
+        
+        // The signature info is in stderr for git verify-commit
+        let verify_info = String::from_utf8_lossy(&verify_output.stderr);
+        
+        // Parse the signature information
+        let mut key_id = String::new();
+        let mut fingerprint = None;
+        let mut signer_name = None;
+        let mut signer_email = None;
+        let mut status = "unknown".to_string();
+        
+        // Look for GPG signature patterns in the output
+        for line in verify_info.lines() {
+            if line.contains("Good signature from") {
+                status = "good".to_string();
+                // Extract signer info from lines like: Good signature from "Name <email>" [trust]
+                if let Some(start) = line.find('"') {
+                    if let Some(end) = line[start+1..].find('"') {
+                        let signer_info = &line[start+1..start+1+end];
+                        // Parse "Name <email>" format
+                        if let Some(email_start) = signer_info.find('<') {
+                            if let Some(email_end) = signer_info.find('>') {
+                                signer_name = Some(signer_info[..email_start].trim().to_string());
+                                signer_email = Some(signer_info[email_start+1..email_end].to_string());
+                            }
+                        } else {
+                            // Just name or email without brackets
+                            if signer_info.contains('@') {
+                                signer_email = Some(signer_info.to_string());
+                            } else {
+                                signer_name = Some(signer_info.to_string());
+                            }
+                        }
+                    }
+                }
+            } else if line.contains("BAD signature from") {
+                status = "bad".to_string();
+                // Extract signer info (same format as good signature)
+                if let Some(start) = line.find('"') {
+                    if let Some(end) = line[start+1..].find('"') {
+                        let signer_info = &line[start+1..start+1+end];
+                        if let Some(email_start) = signer_info.find('<') {
+                            if let Some(email_end) = signer_info.find('>') {
+                                signer_name = Some(signer_info[..email_start].trim().to_string());
+                                signer_email = Some(signer_info[email_start+1..email_end].to_string());
+                            }
+                        } else {
+                            if signer_info.contains('@') {
+                                signer_email = Some(signer_info.to_string());
+                            } else {
+                                signer_name = Some(signer_info.to_string());
+                            }
+                        }
+                    }
+                }
+            } else if line.contains("gpg: Can't check signature") {
+                status = "untrusted".to_string();
+            } else if line.contains("using") && line.contains("key") {
+                // Extract key ID from lines like "gpg: using RSA key 0B2204659A43F9E5F3199953ED7693491E0949C4"
+                if let Some(key_part) = line.split("key ").nth(1) {
+                    key_id = key_part.split_whitespace().next().unwrap_or("").to_string();
+                }
+            } else if line.contains("Primary key fingerprint:") {
+                // Extract fingerprint
+                if let Some(fp) = line.split("fingerprint:").nth(1) {
+                    fingerprint = Some(fp.trim().to_string());
+                }
+            } else if line.contains("issuer") && signer_email.is_none() {
+                // Fallback: extract email from issuer line like 'gpg:                issuer "email@example.com"'
+                if let Some(start) = line.find('"') {
+                    if let Some(end) = line[start+1..].find('"') {
+                        let email = &line[start+1..start+1+end];
+                        if email.contains('@') {
+                            signer_email = Some(email.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        
+        // If we didn't find a key ID but have signature info, try to extract from the raw output
+        if key_id.is_empty() && !signature_info.trim().is_empty() {
+            // The %GG format shows the raw GPG signature
+            // Try to extract key info from the signature block
+            for line in signature_info.lines() {
+                if line.contains("keyid") {
+                    if let Some(keyid_part) = line.split("keyid ").nth(1) {
+                        key_id = keyid_part.trim().to_string();
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Only return signature info if we found something meaningful
+        if !key_id.is_empty() || fingerprint.is_some() {
+            Some(CommitSignature {
+                key_id,
+                fingerprint,
+                signer_name,
+                signer_email,
+                status,
+            })
+        } else {
+            None
+        }
     }
 
     pub fn get_github_repo_info(&self) -> Result<(String, String), GitServiceError> {
@@ -1594,7 +1764,13 @@ impl GitService {
             let tree = repo.find_tree(tree_id)?;
             let head_commit = repo.head()?.peel_to_commit()?;
 
-            repo.commit(
+            // Create a commit signer to handle GPG signing if configured
+            let signer = CommitSigner::from_repo(repo)
+                .map_err(|e| GitServiceError::Git(git2::Error::from_str(&format!("Failed to initialize commit signer: {}", e))))?;
+
+            // This will automatically sign the commit if GPG signing is configured
+            signer.create_commit(
+                repo,
                 Some("HEAD"),
                 signature,
                 signature,

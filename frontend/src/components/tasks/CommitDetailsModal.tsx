@@ -3,7 +3,7 @@ import { Loader } from '@/components/ui/loader';
 import { attemptsApi } from '@/lib/api';
 import { DiffCard } from '@/components/tasks/TaskDetails/DiffCard';
 import type { CommitDetails, WorktreeDiff, FileDiff } from 'shared/types';
-import { GitCommit, Check, X } from 'lucide-react';
+import { GitCommit, Check, X, Shield, ShieldCheck, ShieldAlert, ShieldOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CommitDetailsModalProps {
@@ -223,19 +223,66 @@ export function CommitDetailsModal({
             <GitCommit className="h-5 w-5" />
             Commit Details
             {commitDetails && (
-              <button
-                onClick={handleCopySha}
-                className={`ml-2 text-xs font-mono px-2 py-0.5 rounded transition-all duration-300 ${
-                  copied
-                    ? 'bg-green-100 text-green-800 border border-green-300'
-                    : 'text-muted-foreground bg-muted/50 hover:bg-muted/80'
-                }`}
-                title={copied ? 'Copied!' : 'Click to copy full SHA'}
-              >
-                {copied && <Check className="inline h-3 w-3 mr-1" />}
-                {commitDetails.sha.slice(0, 8)}
-                {copied && <span className="ml-1 text-green-700">Copied!</span>}
-              </button>
+              <>
+                <button
+                  onClick={handleCopySha}
+                  className={`ml-2 text-xs font-mono px-2 py-0.5 rounded transition-all duration-300 ${
+                    copied
+                      ? 'bg-green-100 text-green-800 border border-green-300'
+                      : 'text-muted-foreground bg-muted/50 hover:bg-muted/80'
+                  }`}
+                  title={copied ? 'Copied!' : 'Click to copy full SHA'}
+                >
+                  {copied && <Check className="inline h-3 w-3 mr-1" />}
+                  {commitDetails.sha.slice(0, 8)}
+                  {copied && <span className="ml-1 text-green-700">Copied!</span>}
+                </button>
+                
+                {/* Signature Information */}
+                {commitDetails.signature && (
+                  <div 
+                    className="ml-auto flex items-center gap-2"
+                    title={`Signed by: ${commitDetails.signature.signer_name || 'Unknown'} ${
+                      commitDetails.signature.signer_email ? `<${commitDetails.signature.signer_email}>` : ''
+                    }${
+                      commitDetails.signature.fingerprint ? `\nKey fingerprint: ${commitDetails.signature.fingerprint}` : ''
+                    }${
+                      commitDetails.signature.key_id ? `\nKey ID: ${commitDetails.signature.key_id}` : ''
+                    }`}
+                  >
+                    {commitDetails.signature.status === 'good' ? (
+                      <ShieldCheck className="h-4 w-4 text-green-600" />
+                    ) : commitDetails.signature.status === 'bad' ? (
+                      <ShieldAlert className="h-4 w-4 text-red-600" />
+                    ) : commitDetails.signature.status === 'untrusted' ? (
+                      <ShieldOff className="h-4 w-4 text-yellow-600" />
+                    ) : (
+                      <Shield className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    
+                    <div className="text-xs">
+                      <div className="font-medium">
+                        {commitDetails.signature.status === 'good' ? (
+                          <span className="text-green-600">Signed</span>
+                        ) : commitDetails.signature.status === 'bad' ? (
+                          <span className="text-red-600">Bad signature</span>
+                        ) : commitDetails.signature.status === 'untrusted' ? (
+                          <span className="text-yellow-600">Untrusted</span>
+                        ) : (
+                          <span className="text-muted-foreground">Signed</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate max-w-[200px]">
+                        {commitDetails.signature.signer_email || 
+                         commitDetails.signature.signer_name || 
+                         (commitDetails.signature.key_id ? 
+                          `Key: ${commitDetails.signature.key_id.slice(-8)}` : 
+                          'Unknown signer')}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </h3>
         </div>

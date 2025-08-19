@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod commit_signer;
 pub mod git_service;
 pub mod github_service;
 pub mod notification_service;
