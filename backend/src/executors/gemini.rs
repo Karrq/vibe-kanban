@@ -191,7 +191,6 @@ impl Executor for GeminiExecutor {
                             timestamp: Some(chrono::Utc::now().to_rfc3339()),
                             entry_type: NormalizedEntryType::SystemMessage,
                             content: format!("Raw output: {}", trimmed),
-                            tool_args: None,
                             tool_result: None,
                             tool_args: None,
                         };
@@ -204,7 +203,6 @@ impl Executor for GeminiExecutor {
                     timestamp: Some(chrono::Utc::now().to_rfc3339()),
                     entry_type: NormalizedEntryType::AssistantMessage,
                     content: trimmed.to_string(),
-                    tool_args: None,
                     tool_result: None,
                     tool_args: None,
                 };

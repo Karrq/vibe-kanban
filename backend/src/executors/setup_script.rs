@@ -70,7 +70,6 @@ impl Executor for SetupScriptExecutor {
             content: format!("Executing setup script:\n{}", self.script),
             tool_args: None,
             tool_result: None,
-                        tool_args: None,
         });
 
         // Process the logs - split by lines and create entries
@@ -101,7 +100,6 @@ impl Executor for SetupScriptExecutor {
                         timestamp: Some(chrono::Utc::now().to_rfc3339()),
                         entry_type,
                         content: current_chunk.trim().to_string(),
-                        tool_args: None,
                         tool_result: None,
                         tool_args: None,
                     });
@@ -118,7 +116,6 @@ impl Executor for SetupScriptExecutor {
                     content: current_chunk.trim().to_string(),
                     tool_args: None,
                     tool_result: None,
-                        tool_args: None,
                 });
             }
         }

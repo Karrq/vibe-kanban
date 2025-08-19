@@ -201,7 +201,6 @@ impl Executor for ClaudeExecutor {
                         timestamp: None,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
-                        tool_args: None,
                         tool_result: None,
                         tool_args: None,
                     });
@@ -238,7 +237,6 @@ impl Executor for ClaudeExecutor {
                                                         entry_type:
                                                             NormalizedEntryType::AssistantMessage,
                                                         content: text.to_string(),
-                                                        tool_args: None,
                                                         tool_result: None,
                                                         tool_args: None,
                                                     });
@@ -253,7 +251,6 @@ impl Executor for ClaudeExecutor {
                                                         timestamp: None,
                                                         entry_type: NormalizedEntryType::Thinking,
                                                         content: thinking_text.to_string(),
-                                                        tool_args: None,
                                                         tool_result: None,
                                                         tool_args: None,
                                                     });
@@ -296,7 +293,6 @@ impl Executor for ClaudeExecutor {
                                                         content,
                                                         tool_args: Some(tool_args_with_id),
                                                         tool_result: None,
-                                                        tool_args: Some(input.clone()),
                                                     });
                                                 }
                                             }
@@ -327,7 +323,6 @@ impl Executor for ClaudeExecutor {
                                                         entry_type:
                                                             NormalizedEntryType::UserMessage,
                                                         content: text.to_string(),
-                                                        tool_args: None,
                                                         tool_result: None,
                                                         tool_args: None,
                                                     });
@@ -407,7 +402,6 @@ impl Executor for ClaudeExecutor {
                                             .and_then(|m| m.as_str())
                                             .unwrap_or("unknown")
                                     ),
-                                    tool_args: None,
                                     tool_result: None,
                                     tool_args: None,
                                 });
@@ -432,7 +426,6 @@ impl Executor for ClaudeExecutor {
                     timestamp: None,
                     entry_type: NormalizedEntryType::SystemMessage,
                     content: format!("Unrecognized JSON: {}", trimmed),
-                    tool_args: None,
                     tool_result: None,
                     tool_args: None,
                 });
@@ -689,13 +682,21 @@ impl ClaudeExecutor {
                 }
             }
             "task" => {
+                // For Task tool, extract the description (or prompt as fallback)
+                // The full details including subagent_type and prompt are stored in tool_args
                 if let Some(description) = input.get("description").and_then(|d| d.as_str()) {
                     ActionType::TaskCreate {
                         description: description.to_string(),
                     }
                 } else if let Some(prompt) = input.get("prompt").and_then(|p| p.as_str()) {
+                    // Fallback to showing a truncated prompt if no description
+                    let truncated = if prompt.len() > 100 {
+                        format!("{}...", &prompt[..100])
+                    } else {
+                        prompt.to_string()
+                    };
                     ActionType::TaskCreate {
-                        description: prompt.to_string(),
+                        description: truncated,
                     }
                 } else {
                     ActionType::Other {

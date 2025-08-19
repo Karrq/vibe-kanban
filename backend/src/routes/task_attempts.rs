@@ -29,9 +29,7 @@ use crate::{
         },
         ApiResponse,
     },
-    services::{
-        git_service::{CommitDetails, GitService},
-    },
+    services::git_service::{CommitDetails, GitService},
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -158,7 +156,6 @@ async fn normalize_process_logs(
                             timestamp: Some(chrono::Utc::now().to_rfc3339()),
                             entry_type: NormalizedEntryType::ErrorMessage,
                             content: filtered_content.trim().to_string(),
-                            tool_args: None,
                             tool_result: None,
                             tool_args: None,
                         });

@@ -217,7 +217,6 @@ impl GeminiStreaming {
             content: content.to_string(),
             tool_args: None,
             tool_result: None,
-            tool_args: None,
         };
 
         match serde_json::to_string(&entry) {
