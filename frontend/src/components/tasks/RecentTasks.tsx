@@ -26,7 +26,7 @@ const TASK_COLUMNS = [
 
 export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
   const navigate = useNavigate();
-  const { isTaskArchived } = useArchive();
+  const { isTaskArchived, isProjectArchived } = useArchive();
   const [allTasks, setAllTasks] = useState<TaskWithProject[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -63,9 +63,13 @@ export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
   }, [fetchAllTasks]);
 
   const tasksByStatus = useMemo(() => {
-    // Filter out cancelled and archived tasks and get recent ones
+    // Filter out cancelled tasks, archived tasks, and tasks from archived projects
     const recentTasks = [...allTasks]
-      .filter(task => task.status !== 'cancelled' && !isTaskArchived(task.id))
+      .filter(task => 
+        task.status !== 'cancelled' && 
+        !isTaskArchived(task.id) && 
+        !isProjectArchived(task.project_id)
+      )
       .sort((a, b) => {
         const dateA = new Date(a.updated_at).getTime();
         const dateB = new Date(b.updated_at).getTime();
@@ -88,7 +92,7 @@ export function RecentTasks({ limit = 20, className }: RecentTasksProps) {
     });
 
     return grouped;
-  }, [allTasks, limit, isTaskArchived]);
+  }, [allTasks, limit, isTaskArchived, isProjectArchived]);
 
   const handleTaskClick = useCallback((task: TaskWithProject) => {
     navigate(`/projects/${task.project_id}/tasks/${task.id}`);
