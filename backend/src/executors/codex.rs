@@ -411,7 +411,7 @@ impl Executor for CodexExecutor {
                         timestamp: None,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content: format!("Raw output: {}", trimmed),
-                        metadata: None,
+                        tool_args: None,
                         tool_result: None,
                         tool_args: None,
                     });
@@ -458,7 +458,7 @@ impl Executor for CodexExecutor {
                         timestamp: None,
                         entry_type: NormalizedEntryType::SystemMessage,
                         content,
-                        metadata: Some(json.clone()),
+                        tool_args: Some(json.clone()),
                         tool_result: None,
                         tool_args: None,
                     });
@@ -485,7 +485,7 @@ impl Executor for CodexExecutor {
                                     timestamp: None,
                                     entry_type: NormalizedEntryType::Thinking,
                                     content: text.to_string(),
-                                    metadata: Some(json.clone()),
+                                    tool_args: Some(json.clone()),
                                     tool_result: None,
                         tool_args: None,
                                 });
@@ -528,7 +528,7 @@ impl Executor for CodexExecutor {
                                         action_type,
                                     },
                                     content: format!("`{}`", command),
-                                    metadata: Some(json.clone()),
+                                    tool_args: Some(json.clone()),
                                     tool_result: None,
                         tool_args: None,
                                 });
@@ -552,7 +552,7 @@ impl Executor for CodexExecutor {
                                     timestamp: None,
                                     entry_type: NormalizedEntryType::AssistantMessage,
                                     content: message.to_string(),
-                                    metadata: Some(json.clone()),
+                                    tool_args: Some(json.clone()),
                                     tool_result: None,
                         tool_args: None,
                                 });
@@ -576,7 +576,7 @@ impl Executor for CodexExecutor {
                                             },
                                         },
                                         content: format!("`{}`", relative_path),
-                                        metadata: Some(json.clone()),
+                                        tool_args: Some(json.clone()),
                                         tool_result: None,
                         tool_args: None,
                                     });
@@ -594,7 +594,7 @@ impl Executor for CodexExecutor {
                                     timestamp: None,
                                     entry_type: NormalizedEntryType::ErrorMessage,
                                     content: error_message.to_string(),
-                                    metadata: Some(json.clone()),
+                                    tool_args: Some(json.clone()),
                                     tool_result: None,
                         tool_args: None,
                                 });
@@ -603,7 +603,7 @@ impl Executor for CodexExecutor {
                                     timestamp: None,
                                     entry_type: NormalizedEntryType::ErrorMessage,
                                     content: "Unknown error occurred".to_string(),
-                                    metadata: Some(json.clone()),
+                                    tool_args: Some(json.clone()),
                                     tool_result: None,
                         tool_args: None,
                                 });
@@ -615,7 +615,7 @@ impl Executor for CodexExecutor {
                                 timestamp: None,
                                 entry_type: NormalizedEntryType::SystemMessage,
                                 content: format!("Unknown message type: {}", msg_type),
-                                metadata: Some(json.clone()),
+                                tool_args: Some(json.clone()),
                                 tool_result: None,
                         tool_args: None,
                             });
@@ -628,7 +628,7 @@ impl Executor for CodexExecutor {
                     timestamp: None,
                     entry_type: NormalizedEntryType::SystemMessage,
                     content: format!("Unrecognized JSON: {}", trimmed),
-                    metadata: Some(json),
+                    tool_args: Some(json),
                     tool_result: None,
                         tool_args: None,
                 });

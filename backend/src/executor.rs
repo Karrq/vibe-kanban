@@ -48,8 +48,6 @@ pub struct NormalizedEntry {
     pub timestamp: Option<String>,
     pub entry_type: NormalizedEntryType,
     pub content: String,
-    #[ts(skip)]
-    pub metadata: Option<serde_json::Value>,
     pub tool_result: Option<ToolResult>,
     /// Raw tool input/arguments as JSON (for frontend to parse based on tool type)
     #[ts(type = "any")]

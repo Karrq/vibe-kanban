@@ -23,7 +23,7 @@ pub fn determine_action_type(tool_name: &str, input: &Value, worktree_path: &str
                     "path": make_path_relative(file_path, worktree_path)
                 })
             } else {
-                json!({"action": "other", "description": "File read operation"})
+                json!({"action": "other", "description": "File read operation", })
             }
         }
         "write" | "edit" => {
@@ -33,25 +33,39 @@ pub fn determine_action_type(tool_name: &str, input: &Value, worktree_path: &str
                     "path": make_path_relative(file_path, worktree_path)
                 })
             } else {
-                json!({"action": "other", "description": "File write operation"})
+                json!({"action": "other", "description": "File write operation", })
             }
         }
         "bash" => {
             if let Some(command) = input.get("command").and_then(|c| c.as_str()) {
                 json!({"action": "command_run", "command": command})
             } else {
-                json!({"action": "other", "description": "Command execution"})
+                json!({"action": "other", "description": "Command execution", })
             }
         }
         "grep" => {
             if let Some(pattern) = input.get("pattern").and_then(|p| p.as_str()) {
                 json!({"action": "search", "query": pattern})
             } else {
-                json!({"action": "other", "description": "Search operation"})
+                json!({"action": "other", "description": "Search operation", })
             }
         }
+        "glob" => {
+            json!({
+                "action": "other", 
+                "description": "Find files",
+                
+            })
+        }
+        "websearch" | "web_search" => {
+            json!({
+                "action": "other", 
+                "description": "Web search",
+                
+            })
+        }
         "todowrite" | "todoread" => {
-            json!({"action": "other", "description": "TODO list management"})
+            json!({"action": "other", "description": "TODO list management", })
         }
         "exitplanmode" => {
             // Extract the plan from the input
@@ -66,7 +80,7 @@ pub fn determine_action_type(tool_name: &str, input: &Value, worktree_path: &str
                 "plan": plan_content
             })
         }
-        _ => json!({"action": "other", "description": format!("Tool: {}", tool_name)}),
+        _ => json!({"action": "other", "description": format!("Tool: {}", tool_name), }),
     }
 }
 

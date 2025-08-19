@@ -90,6 +90,19 @@ const getEntryIcon = (entryType: NormalizedEntryType) => {
     if (action_type.action === 'web_fetch') {
       return <Globe className="h-4 w-4 text-cyan-600" />;
     }
+    // Special handling for search tools with 'other' action
+    if (action_type.action === 'other' && tool_name) {
+      const toolNameLower = tool_name.toLowerCase();
+      if (toolNameLower === 'glob') {
+        return <Search className="h-4 w-4 text-green-600" />;
+      }
+      if (toolNameLower === 'grep') {
+        return <Search className="h-4 w-4 text-indigo-600" />;
+      }
+      if (toolNameLower === 'websearch' || toolNameLower === 'web_search') {
+        return <Globe className="h-4 w-4 text-blue-600" />;
+      }
+    }
     if (action_type.action === 'task_create') {
       return <Plus className="h-4 w-4 text-teal-600" />;
     }
@@ -288,12 +301,20 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
   );
 };
 
-function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false, sessionIdToCommand }: Props) {
+function DisplayConversationEntry({
+  entry,
+  index,
+  diffDeletable,
+  isLast = false,
+  sessionIdToCommand,
+}: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
-  const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(new Set());
+  const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(
+    new Set()
+  );
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-  
+
   // Check if this entry is a file modification to set initial expanded state
   const isFileModEntry = isFileModificationToolCall(entry.entry_type);
   const [expandedDiffs, setExpandedDiffs] = useState<Set<number>>(() => {
@@ -345,13 +366,15 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
   const copyToClipboard = async () => {
     try {
       let textToCopy = entry.content;
-      
+
       // For command_run tool use, copy just the command
-      if (entry.entry_type.type === 'tool_use' && 
-          entry.entry_type.action_type.action === 'command_run') {
+      if (
+        entry.entry_type.type === 'tool_use' &&
+        entry.entry_type.action_type.action === 'command_run'
+      ) {
         textToCopy = entry.entry_type.action_type.command;
       }
-      
+
       await navigator.clipboard.writeText(textToCopy);
       setCopiedIndex(index);
       setTimeout(() => {
@@ -362,42 +385,56 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
     }
   };
 
-
   const isErrorMessage = entry.entry_type.type === 'error_message';
   const isExpanded = expandedErrors.has(index);
   const hasMultipleLines = isErrorMessage && entry.content.includes('\n');
-  
+
   const isFileModification = useMemo(
     () => isFileModificationToolCall(entry.entry_type),
     [entry.entry_type]
   );
 
   // Check if this is a tool with TodoWrite/TodoRead
-  const isTodoTool = entry.entry_type.type === 'tool_use' && 
-    entry.entry_type.tool_name && (
-      entry.entry_type.tool_name.toLowerCase() === 'todowrite' ||
+  const isTodoTool =
+    entry.entry_type.type === 'tool_use' &&
+    entry.entry_type.tool_name &&
+    (entry.entry_type.tool_name.toLowerCase() === 'todowrite' ||
       entry.entry_type.tool_name.toLowerCase() === 'todoread' ||
       entry.entry_type.tool_name.toLowerCase() === 'todo_write' ||
-      entry.entry_type.tool_name.toLowerCase() === 'todo_read'
-    );
+      entry.entry_type.tool_name.toLowerCase() === 'todo_read');
+
+  // Check if this is a search-related tool
+  const isSearchTool =
+    entry.entry_type.type === 'tool_use' &&
+    entry.entry_type.tool_name &&
+    (entry.entry_type.tool_name.toLowerCase() === 'grep' ||
+      entry.entry_type.tool_name.toLowerCase() === 'search' ||
+      entry.entry_type.tool_name.toLowerCase() === 'websearch' ||
+      entry.entry_type.tool_name.toLowerCase() === 'web_search' ||
+      entry.entry_type.tool_name.toLowerCase() === 'glob');
 
   // Check if this is a BashOutput or KillBash tool
-  const isBashOutputTool = entry.entry_type.type === 'tool_use' && 
-    entry.entry_type.tool_name && 
+  const isBashOutputTool =
+    entry.entry_type.type === 'tool_use' &&
+    entry.entry_type.tool_name &&
     entry.entry_type.tool_name.toLowerCase() === 'bashoutput';
-  const isKillBashTool = entry.entry_type.type === 'tool_use' && 
-    entry.entry_type.tool_name && 
+  const isKillBashTool =
+    entry.entry_type.type === 'tool_use' &&
+    entry.entry_type.tool_name &&
     entry.entry_type.tool_name.toLowerCase() === 'killbash';
 
-  // Check if this is a command run (Bash), file read (Read), TodoWrite, BashOutput, or KillBash tool call with results
-  const hasCollapsibleToolResult = entry.tool_result !== null && 
-    entry.tool_result !== undefined && 
-    entry.entry_type.type === 'tool_use' && 
-    (entry.entry_type.action_type.action === 'command_run' || 
-     entry.entry_type.action_type.action === 'file_read' ||
-     isTodoTool ||
-     isBashOutputTool ||
-     isKillBashTool);
+  // Check if this is a command run (Bash), file read (Read), search, TodoWrite, BashOutput, or KillBash tool call with results
+  const hasCollapsibleToolResult =
+    entry.tool_result !== null &&
+    entry.tool_result !== undefined &&
+    entry.entry_type.type === 'tool_use' &&
+    (entry.entry_type.action_type.action === 'command_run' ||
+      entry.entry_type.action_type.action === 'file_read' ||
+      entry.entry_type.action_type.action === 'search' ||
+      isTodoTool ||
+      isSearchTool ||
+      isBashOutputTool ||
+      isKillBashTool);
   const isToolResultExpanded = expandedToolResults.has(index);
   const isDiffExpanded = expandedDiffs.has(index);
 
@@ -429,12 +466,14 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
         title="Copy message"
       >
         {copiedIndex === index ? (
-          <span className="text-xs text-green-600 dark:text-green-400 font-medium">Copied!</span>
+          <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+            Copied!
+          </span>
         ) : (
           <Copy className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
         )}
       </button>
-      
+
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
           {isErrorMessage && hasMultipleLines ? (
@@ -448,7 +487,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
             <button
               onClick={() => toggleToolResultExpansion(index)}
               className="relative group transition-opacity"
-              title={isToolResultExpanded ? "Hide output" : "Show output"}
+              title={isToolResultExpanded ? 'Hide output' : 'Show output'}
             >
               <div className="relative">
                 {getEntryIcon(entry.entry_type)}
@@ -465,7 +504,7 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
             <button
               onClick={() => toggleDiffExpansion(index)}
               className="relative group transition-opacity"
-              title={isDiffExpanded ? "Hide diff" : "Show diff"}
+              title={isDiffExpanded ? 'Hide diff' : 'Show diff'}
             >
               <div className="relative">
                 {getEntryIcon(entry.entry_type)}
@@ -520,9 +559,10 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
             </div>
           ) : (
             <div className={getContentClassName(entry.entry_type)}>
-              {hasCollapsibleToolResult && entry.entry_type.type === 'tool_use' ? (
+              {hasCollapsibleToolResult &&
+              entry.entry_type.type === 'tool_use' ? (
                 // For Bash/Read/TodoWrite/Edit tools with results, use the special component
-                <ToolResultDisplay 
+                <ToolResultDisplay
                   toolResult={entry.tool_result!}
                   actionType={entry.entry_type.action_type}
                   expanded={isToolResultExpanded}
@@ -544,7 +584,6 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
         </div>
       </div>
 
-
       {/* Render incremental diff card inline after file modification entries */}
       {shouldShowDiff && incrementalDiff && isDiffExpanded && (
         <div className="mt-4 mb-2">
@@ -555,9 +594,11 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false,
           />
         </div>
       )}
-      
+
       {/* Add a separator line between messages */}
-      {!isLast && <div className="my-4 border-b-2 border-gray-300 dark:border-gray-600" />}
+      {!isLast && (
+        <div className="my-4 border-b-2 border-gray-300 dark:border-gray-600" />
+      )}
     </div>
   );
 }

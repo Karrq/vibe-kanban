@@ -62,7 +62,7 @@ impl Executor for CleanupScriptExecutor {
             timestamp: None,
             entry_type: crate::executor::NormalizedEntryType::SystemMessage,
             content: format!("Executing cleanup script:\n{}", self.script),
-            metadata: None,
+            tool_args: None,
             tool_result: None,
                         tool_args: None,
         });
@@ -95,7 +95,7 @@ impl Executor for CleanupScriptExecutor {
                         timestamp: Some(chrono::Utc::now().to_rfc3339()),
                         entry_type,
                         content: current_chunk.trim().to_string(),
-                        metadata: None,
+                        tool_args: None,
                         tool_result: None,
                         tool_args: None,
                     });
@@ -110,7 +110,7 @@ impl Executor for CleanupScriptExecutor {
                     timestamp: Some(chrono::Utc::now().to_rfc3339()),
                     entry_type: crate::executor::NormalizedEntryType::SystemMessage,
                     content: current_chunk.trim().to_string(),
-                    metadata: None,
+                    tool_args: None,
                     tool_result: None,
                         tool_args: None,
                 });
