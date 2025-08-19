@@ -206,13 +206,15 @@ function DiffFile({
 
   // Determine background color based on file status
   const getFileHeaderClasses = () => {
-    const baseClasses = 'px-3 py-1.5 flex items-center justify-between';
-    const borderClasses = !collapsedFiles.has(file.path) ? 'border-b' : '';
-    
+    const baseClasses = 'px-3 py-1.5 flex items-center justify-between rounded-t-lg';
+    const borderClasses = !collapsedFiles.has(file.path)
+      ? 'flex-shrink-0 border-b'
+      : 'rounded-b-lg';
+
     if (!file.status) {
       return `${baseClasses} ${borderClasses} bg-muted`;
     }
-    
+
     if (file.status === 'Added') {
       return `${baseClasses} ${borderClasses} bg-green-50 dark:bg-green-950/30`;
     } else if (file.status === 'Deleted') {
@@ -227,7 +229,11 @@ function DiffFile({
 
   // Format file path display for renamed files
   const getFilePathDisplay = () => {
-    if (file.status && typeof file.status === 'object' && 'Renamed' in file.status) {
+    if (
+      file.status &&
+      typeof file.status === 'object' &&
+      'Renamed' in file.status
+    ) {
       const oldPath = file.status.Renamed.old_path;
       return (
         <span className="text-xs font-medium font-mono">
@@ -248,7 +254,7 @@ function DiffFile({
     <div
       className={`border rounded-lg overflow-hidden ${
         collapsedFiles.has(file.path) ? 'border-muted' : 'border-border'
-      }`}
+      } ${!collapsedFiles.has(file.path) ? 'flex flex-col max-h-[600px]' : ''}`}
     >
       <div className={getFileHeaderClasses()}>
         <div className="flex items-center gap-2">
@@ -278,18 +284,28 @@ function DiffFile({
                     if (!chunk.content) return sum;
                     const lines = chunk.content.split('\n');
                     // Don't count empty last element from trailing newline
-                    return sum + (lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
+                    return (
+                      sum +
+                      (lines[lines.length - 1] === ''
+                        ? lines.length - 1
+                        : lines.length)
+                    );
                   }, 0);
-                  
+
                 const deletions = file.chunks
                   .filter((c) => c.chunk_type === 'Delete')
                   .reduce((sum, chunk) => {
                     if (!chunk.content) return sum;
                     const lines = chunk.content.split('\n');
                     // Don't count empty last element from trailing newline
-                    return sum + (lines[lines.length - 1] === '' ? lines.length - 1 : lines.length);
+                    return (
+                      sum +
+                      (lines[lines.length - 1] === ''
+                        ? lines.length - 1
+                        : lines.length)
+                    );
                   }, 0);
-                
+
                 return (
                   <>
                     {additions > 0 && (
@@ -327,7 +343,7 @@ function DiffFile({
         )}
       </div>
       {!collapsedFiles.has(file.path) && (
-        <div className="overflow-x-auto">
+        <div className="overflow-auto flex-1 min-h-0">
           <div className="inline-block min-w-full">
             {processedFileChunks.map((section, sectionIndex) => (
               <DiffChunkSection
