@@ -36,7 +36,7 @@ export function ProjectList() {
     toggleShowArchivedProjects,
     hasArchivedProjects,
   } = useArchive();
-  const { sortProjects, updateProjectOrder } = useProjectOrder();
+  const { sortProjects, updateProjectOrder, removeFromOrder } = useProjectOrder();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -79,6 +79,14 @@ export function ProjectList() {
     setEditingProject(null);
     fetchProjects();
   };
+
+  const handleArchiveProject = useCallback((projectId: string) => {
+    // If archiving (not unarchiving), remove from order
+    if (!isProjectArchived(projectId)) {
+      removeFromOrder(projectId);
+    }
+    toggleProjectArchive(projectId);
+  }, [isProjectArchived, removeFromOrder, toggleProjectArchive]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -300,7 +308,7 @@ export function ProjectList() {
                   setEditingProject={setEditingProject}
                   setShowForm={setShowForm}
                   fetchProjects={fetchProjects}
-                  onArchive={toggleProjectArchive}
+                  onArchive={handleArchiveProject}
                   isArchived={isProjectArchived(project.id)}
                 />
               ))}

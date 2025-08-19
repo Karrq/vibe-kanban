@@ -25,6 +25,7 @@ interface TaskKanbanBoardProps {
   onDeleteTask: (taskId: string) => void;
   onViewTaskDetails: (task: Task) => void;
   isPanelOpen: boolean;
+  onArchiveTask?: (taskId: string) => void;
 }
 
 const allTaskStatuses: TaskStatus[] = [
@@ -59,6 +60,7 @@ function TaskKanbanBoard({
   onDeleteTask,
   onViewTaskDetails,
   isPanelOpen,
+  onArchiveTask,
 }: TaskKanbanBoardProps) {
   const { projectId, taskId } = useParams<{
     projectId: string;
@@ -175,7 +177,7 @@ function TaskKanbanBoard({
                 status={status}
                 onEdit={onEditTask}
                 onDelete={onDeleteTask}
-                onArchive={toggleTaskArchive}
+                onArchive={onArchiveTask || toggleTaskArchive}
                 isArchived={isTaskArchived(task.id)}
                 onViewDetails={onViewTaskDetails}
                 isFocused={focusedTaskId === task.id}

@@ -92,9 +92,32 @@ export function useTaskOrder(projectId: string | undefined) {
     return reorderedTasks;
   }, [saveTaskOrder]);
 
+  // Remove a task from the stored order (e.g., when archived)
+  const removeFromOrder = useCallback((taskId: string) => {
+    if (!projectId) return;
+    
+    const storedOrder = localStorage.getItem('vibe-kanban-task-order');
+    let allOrders: TaskOrder = {};
+    
+    if (storedOrder) {
+      try {
+        allOrders = JSON.parse(storedOrder);
+      } catch (e) {
+        console.error('Failed to parse task order from localStorage:', e);
+      }
+    }
+    
+    if (allOrders[projectId]) {
+      allOrders[projectId] = allOrders[projectId].filter(id => id !== taskId);
+      localStorage.setItem('vibe-kanban-task-order', JSON.stringify(allOrders));
+      setTaskOrder(allOrders[projectId]);
+    }
+  }, [projectId]);
+
   return {
     sortTasks,
     updateTaskOrder,
     saveTaskOrder,
+    removeFromOrder,
   };
 }

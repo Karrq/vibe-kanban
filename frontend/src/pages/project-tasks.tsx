@@ -54,8 +54,8 @@ export function ProjectTasks() {
     taskId?: string;
   }>();
   const navigate = useNavigate();
-  const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount } = useArchive();
-  const { sortTasks, updateTaskOrder } = useTaskOrder(projectId);
+  const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount, toggleTaskArchive, isTaskArchived } = useArchive();
+  const { sortTasks, updateTaskOrder, removeFromOrder } = useTaskOrder(projectId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
   const [loading, setLoading] = useState(true);
@@ -288,6 +288,14 @@ export function ProjectTasks() {
     setIsProjectSettingsOpen(false);
     fetchProject(); // Refresh project data after settings change
   }, [fetchProject]);
+
+  const handleArchiveTask = useCallback((taskId: string) => {
+    // If archiving (not unarchiving), remove from order
+    if (!isTaskArchived(taskId)) {
+      removeFromOrder(taskId);
+    }
+    toggleTaskArchive(taskId);
+  }, [isTaskArchived, removeFromOrder, toggleTaskArchive]);
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -580,6 +588,7 @@ export function ProjectTasks() {
                 onDeleteTask={handleDeleteTask}
                 onViewTaskDetails={handleViewTaskDetails}
                 isPanelOpen={isPanelOpen}
+                onArchiveTask={handleArchiveTask}
               />
             </div>
           </div>
