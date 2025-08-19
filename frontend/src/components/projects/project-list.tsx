@@ -105,7 +105,10 @@ export function ProjectList() {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { 
+        distance: 3, // Reduced from 8 to make dragging more responsive
+        tolerance: 5,
+      },
     })
   );
 

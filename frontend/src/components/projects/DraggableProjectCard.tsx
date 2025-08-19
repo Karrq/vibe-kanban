@@ -43,19 +43,24 @@ export function DraggableProjectCard({
     setDropRef(node);
   };
 
+  // Use CSS transform for better performance
+  const style = {
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    transition: isDragging ? 'none' : undefined,
+  };
+
   return (
     <div
       ref={combinedRef}
       className={cn(
-        'transition-all',
-        isDragging && 'opacity-50 scale-95',
+        'transition-opacity transition-transform duration-200',
+        isDragging && 'opacity-50 scale-95 cursor-grabbing',
+        !isDragging && 'cursor-grab',
         isOver && 'ring-2 ring-primary'
       )}
-      style={{
-        transform: transform
-          ? `translateX(${transform.x}px) translateY(${transform.y}px)`
-          : 'none',
-      }}
+      style={style}
       {...listeners}
       {...attributes}
     >
