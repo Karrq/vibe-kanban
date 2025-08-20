@@ -45,21 +45,33 @@ function AppContent() {
     offlineStorage.initialize().catch(console.error);
   }, []);
 
-  // Register service worker
+  // Register service worker (only on HTTPS or localhost)
   useEffect(() => {
-    const updateSW = registerSW({
-      onNeedRefresh() {
-        // Optionally show a prompt to reload
-        console.log('New content available, please refresh');
-      },
-      onOfflineReady() {
-        console.log('App ready for offline use');
-      },
-    });
+    const isSecureContext = window.isSecureContext;
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1' ||
+                       window.location.hostname === '[::1]';
+    
+    if (isSecureContext || isLocalhost) {
+      const updateSW = registerSW({
+        onNeedRefresh() {
+          // Optionally show a prompt to reload
+          console.log('New content available, please refresh');
+        },
+        onOfflineReady() {
+          console.log('App ready for offline use');
+        },
+        onRegisterError(error) {
+          console.warn('Service worker registration failed:', error);
+        },
+      });
 
-    return () => {
-      updateSW();
-    };
+      return () => {
+        updateSW();
+      };
+    } else {
+      console.info('Service worker disabled: requires HTTPS or localhost');
+    }
   }, []);
 
   // Handle page visibility changes and sync data

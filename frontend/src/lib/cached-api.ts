@@ -1,4 +1,5 @@
 import { offlineStorage } from './offline-storage';
+import { offlineFallback } from './offline-fallback';
 import { projectsApi, tasksApi, templatesApi } from './api';
 import type {
   ProjectWithBranch,
@@ -17,6 +18,20 @@ export interface CachedData<T> {
 
 class CachedApi {
   private syncInProgress = new Set<string>();
+  private useIndexedDB = true;
+
+  constructor() {
+    // Check if we can use IndexedDB (requires HTTPS or localhost)
+    const isSecureContext = window.isSecureContext;
+    const isLocalhost = window.location.hostname === 'localhost' || 
+                       window.location.hostname === '127.0.0.1';
+    
+    this.useIndexedDB = isSecureContext || isLocalhost;
+    
+    if (!this.useIndexedDB) {
+      console.info('Using localStorage fallback for offline caching (IndexedDB requires HTTPS)');
+    }
+  }
 
   // Project operations
   async getProject(id: string, forceRefresh = false): Promise<CachedData<ProjectWithBranch | null>> {
@@ -24,7 +39,9 @@ class CachedApi {
     
     // Try to get from cache first
     if (!forceRefresh && !navigator.onLine) {
-      const cached = await offlineStorage.getProject(id);
+      const cached = this.useIndexedDB 
+        ? await offlineStorage.getProject(id)
+        : offlineFallback.get<ProjectWithBranch>(`project-${id}`);
       if (cached) {
         return {
           data: cached,
@@ -40,7 +57,11 @@ class CachedApi {
       this.syncInProgress.add(cacheKey);
       try {
         const fresh = await projectsApi.getWithBranch(id);
-        await offlineStorage.saveProject(fresh);
+        if (this.useIndexedDB) {
+          await offlineStorage.saveProject(fresh);
+        } else {
+          offlineFallback.set(`project-${id}`, fresh);
+        }
         this.syncInProgress.delete(cacheKey);
         return {
           data: fresh,
@@ -51,7 +72,9 @@ class CachedApi {
       } catch (error) {
         this.syncInProgress.delete(cacheKey);
         // Fall back to cache on error
-        const cached = await offlineStorage.getProject(id);
+        const cached = this.useIndexedDB 
+          ? await offlineStorage.getProject(id)
+          : offlineFallback.get<ProjectWithBranch>(`project-${id}`);
         if (cached) {
           return {
             data: cached,
@@ -65,7 +88,9 @@ class CachedApi {
     }
 
     // Return cached data if available
-    const cached = await offlineStorage.getProject(id);
+    const cached = this.useIndexedDB 
+      ? await offlineStorage.getProject(id)
+      : offlineFallback.get<ProjectWithBranch>(`project-${id}`);
     return {
       data: cached || null,
       isStale: !!cached,
@@ -145,7 +170,9 @@ class CachedApi {
     
     // Try cache first if offline
     if (!forceRefresh && !navigator.onLine) {
-      const cached = await offlineStorage.getTasksByProject(projectId);
+      const cached = this.useIndexedDB
+        ? await offlineStorage.getTasksByProject(projectId)
+        : offlineFallback.get<TaskWithAttemptStatus[]>(`tasks-${projectId}`) || [];
       return {
         data: cached,
         isStale: true,
@@ -159,7 +186,11 @@ class CachedApi {
       this.syncInProgress.add(cacheKey);
       try {
         const fresh = await tasksApi.getAll(projectId);
-        await offlineStorage.saveTasks(fresh, projectId);
+        if (this.useIndexedDB) {
+          await offlineStorage.saveTasks(fresh, projectId);
+        } else {
+          offlineFallback.set(`tasks-${projectId}`, fresh);
+        }
         this.syncInProgress.delete(cacheKey);
         return {
           data: fresh,
@@ -170,7 +201,9 @@ class CachedApi {
       } catch (error) {
         this.syncInProgress.delete(cacheKey);
         // Fall back to cache
-        const cached = await offlineStorage.getTasksByProject(projectId);
+        const cached = this.useIndexedDB
+          ? await offlineStorage.getTasksByProject(projectId)
+          : offlineFallback.get<TaskWithAttemptStatus[]>(`tasks-${projectId}`) || [];
         return {
           data: cached,
           isStale: true,
@@ -181,7 +214,9 @@ class CachedApi {
     }
 
     // Return cached data
-    const cached = await offlineStorage.getTasksByProject(projectId);
+    const cached = this.useIndexedDB
+      ? await offlineStorage.getTasksByProject(projectId)
+      : offlineFallback.get<TaskWithAttemptStatus[]>(`tasks-${projectId}`) || [];
     return {
       data: cached,
       isStale: true,

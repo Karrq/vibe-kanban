@@ -48,8 +48,15 @@ export default defineConfig({
         ]
       },
       devOptions: {
-        enabled: true
-      }
+        enabled: false, // Disable in dev unless on localhost
+        type: 'module'
+      },
+      // Disable service worker on non-HTTPS in production
+      disable: process.env.NODE_ENV === 'production' && 
+               !process.env.VITE_HTTPS_ENABLED &&
+               typeof window !== 'undefined' && 
+               window.location.protocol !== 'https:',
+      selfDestroying: true // Auto-unregister if disabled
     }),
     sentryVitePlugin({
       org: "bloop-ai",
