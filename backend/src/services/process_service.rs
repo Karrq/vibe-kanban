@@ -17,6 +17,16 @@ use crate::{
     utils::shell::get_shell_command,
 };
 
+/// Prompt sent to Claude for manual compaction request
+/// This creates a summary that will be used as context for a new session
+pub const COMPACTION_REQUEST_PROMPT: &str = "Please provide a comprehensive summary of our conversation including:
+- Key decisions made
+- Tasks completed  
+- Current state of the work
+- Any important context needed to continue
+
+This summary will be used to preserve context in a fresh session.";
+
 /// Service responsible for managing process execution lifecycle
 pub struct ProcessService;
 
@@ -48,7 +58,7 @@ impl ProcessService {
 
     /// Estimate approximate context usage based on output size
     /// Returns a value between 0.0 and 1.0 representing the estimated context usage
-    fn estimate_context_usage(stdout: &str) -> f32 {
+    pub fn estimate_context_usage(stdout: &str) -> f32 {
         // Rough estimation: Claude Code has approximately 200k token context
         // Average token is ~4 characters
         // So roughly 800k characters max
@@ -60,8 +70,8 @@ impl ProcessService {
         usage.min(1.0)
     }
 
-    /// Check if we should proactively compact the conversation
-    async fn should_compact_conversation(
+    /// Check if we should compact the conversation (context usage >= 85%)
+    pub async fn should_compact_conversation(
         pool: &SqlitePool,
         execution_process_id: Uuid,
     ) -> Result<bool, TaskAttemptError> {
@@ -175,8 +185,13 @@ impl ProcessService {
                         .and_then(|p| p.get("prompt"))
                         .and_then(|p| p.as_str())
                         .unwrap_or("");
+                    let restart_session = operation_params
+                        .as_ref()
+                        .and_then(|p| p.get("restart_session"))
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false);
                     Self::start_followup_execution_direct(
-                        pool, app_state, attempt_id, task_id, project_id, prompt,
+                        pool, app_state, attempt_id, task_id, project_id, prompt, restart_session,
                     )
                     .await
                     .map(|_| ())
@@ -410,6 +425,7 @@ impl ProcessService {
         result
     }
 
+
     /// Start a follow-up execution using the same executor type as the first process (with automatic setup)
     /// Returns the attempt_id that was actually used (always the original attempt_id for session continuity)
     pub async fn start_followup_execution(
@@ -419,6 +435,7 @@ impl ProcessService {
         task_id: Uuid,
         project_id: Uuid,
         prompt: &str,
+        restart_session: bool,
     ) -> Result<Uuid, TaskAttemptError> {
         use crate::models::task::{Task, TaskStatus};
 
@@ -452,7 +469,8 @@ impl ProcessService {
 
         // Use automatic setup logic with followup parameters
         let operation_params = serde_json::json!({
-            "prompt": prompt
+            "prompt": prompt,
+            "restart_session": restart_session
         });
 
         Self::auto_setup_and_execute(
@@ -477,6 +495,7 @@ impl ProcessService {
         task_id: Uuid,
         project_id: Uuid,
         prompt: &str,
+        restart_session: bool,
     ) -> Result<Uuid, TaskAttemptError> {
         // Ensure worktree exists (recreate if needed for cold task support)
         // This will resurrect the worktree at the exact same path for session continuity
@@ -539,21 +558,18 @@ impl ProcessService {
             }
         };
 
-        // Check if the previous execution had a context limit error or is approaching the limit
+        // Check if the previous execution had a context limit error
         let had_context_limit_error = Self::has_context_limit_error(pool, most_recent_coding_agent.id)
-            .await
-            .unwrap_or(false);
-        
-        let should_compact = Self::should_compact_conversation(pool, most_recent_coding_agent.id)
             .await
             .unwrap_or(false);
 
         // Determine how to proceed based on context state
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
-            if had_context_limit_error {
-                // Previous session hit context limit, start new session with summary
+            if had_context_limit_error || restart_session {
+                // Previous session hit context limit OR user requested restart, start new session with summary
                 tracing::info!(
-                    "SESSION_FOLLOWUP: Previous session hit context limit, starting new session with summary for attempt {} (worktree: {})",
+                    "SESSION_FOLLOWUP: {}, starting new session with summary for attempt {} (worktree: {})",
+                    if had_context_limit_error { "Previous session hit context limit" } else { "Restart requested" },
                     attempt_id, worktree_path
                 );
                 
@@ -574,27 +590,6 @@ impl ProcessService {
                     follow_up: Some(crate::executor::FollowUpInfo {
                         session_id: String::new(), // Empty session ID forces new session
                         prompt: context_prompt,
-                    }),
-                }
-            } else if should_compact {
-                // Approaching context limit, start new session with a compacting prompt
-                tracing::info!(
-                    "SESSION_FOLLOWUP: Approaching context limit (85%+), starting new session with compact prompt (attempt: {}, worktree: {})",
-                    attempt_id, worktree_path
-                );
-                
-                // Create a prompt that asks for summary and continues with the task
-                let compact_prompt = format!(
-                    "I'm starting a new session to continue our work. Please first provide a brief summary of what we've accomplished so far, then proceed with the following request:\n\n{}",
-                    prompt
-                );
-                
-                // Start new session with the compact prompt
-                crate::executor::ExecutorType::CodingAgent {
-                    config: executor_config.clone(),
-                    follow_up: Some(crate::executor::FollowUpInfo {
-                        session_id: String::new(), // Empty session ID forces new session
-                        prompt: compact_prompt,
                     }),
                 }
             } else {

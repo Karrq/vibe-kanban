@@ -132,6 +132,8 @@ pub struct CreatePrParams<'a> {
 #[ts(export)]
 pub struct CreateFollowUpAttempt {
     pub prompt: String,
+    #[serde(default)]
+    pub restart_session: bool,  // Force a new session with previous summary as context
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -629,12 +631,14 @@ impl TaskAttempt {
         task_id: Uuid,
         project_id: Uuid,
         prompt: &str,
+        restart_session: bool,
     ) -> Result<Uuid, TaskAttemptError> {
         ProcessService::start_followup_execution(
-            pool, app_state, attempt_id, task_id, project_id, prompt,
+            pool, app_state, attempt_id, task_id, project_id, prompt, restart_session,
         )
         .await
     }
+
 
     /// Ensure worktree exists, recreating from branch if needed (cold task support)
     pub async fn ensure_worktree_exists(

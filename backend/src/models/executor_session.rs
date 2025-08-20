@@ -124,7 +124,7 @@ impl ExecutorSession {
             ExecutorSession,
             r#"INSERT INTO executor_sessions (
                 id, task_attempt_id, execution_process_id, session_id, prompt, summary,
-                created_at, updated_at
+created_at, updated_at
                )
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING
@@ -206,6 +206,7 @@ impl ExecutorSession {
 
         Ok(())
     }
+
 
     /// Delete executor sessions for a task attempt (cleanup)
     #[allow(dead_code)]

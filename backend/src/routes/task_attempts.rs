@@ -783,6 +783,7 @@ pub async fn delete_task_attempt_file(
     }
 }
 
+
 pub async fn create_followup_attempt(
     Extension(project): Extension<Project>,
     Extension(task): Extension<Task>,
@@ -798,6 +799,7 @@ pub async fn create_followup_attempt(
         task.id,
         project.id,
         &payload.prompt,
+        payload.restart_session,
     )
     .await
     {
