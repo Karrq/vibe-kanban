@@ -1169,6 +1169,23 @@ impl GitService {
         result
     }
 
+    /// Delete a branch from the repository
+    pub fn delete_branch(&self, branch_name: &str) -> Result<(), GitServiceError> {
+        let repo = self.open_repo()?;
+        
+        // Find the branch
+        let mut branch = repo
+            .find_branch(branch_name, BranchType::Local)
+            .map_err(|_| GitServiceError::BranchNotFound(branch_name.to_string()))?;
+        
+        // Delete the branch
+        branch.delete()
+            .map_err(|e| GitServiceError::Git(e))?;
+        
+        info!("Successfully deleted branch: {}", branch_name);
+        Ok(())
+    }
+
     /// Recreate a worktree from an existing branch (for cold task support)
     pub async fn recreate_worktree_from_branch(
         &self,

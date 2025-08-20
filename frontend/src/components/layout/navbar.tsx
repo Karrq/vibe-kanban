@@ -6,11 +6,15 @@ import {
   BookOpen,
   Server,
   MessageCircleQuestion,
+  GitBranch,
 } from 'lucide-react';
 import { Logo } from '@/components/logo';
+import { useState } from 'react';
+import { WorktreeManagementModal } from '@/components/WorktreeManagementModal';
 
 export function Navbar() {
   const location = useLocation();
+  const [worktreeModalOpen, setWorktreeModalOpen] = useState(false);
 
   return (
     <div className="border-b">
@@ -55,6 +59,14 @@ export function Navbar() {
                   Settings
                 </Link>
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setWorktreeModalOpen(true)}
+              >
+                <GitBranch className="mr-2 h-4 w-4" />
+                Worktrees
+              </Button>
             </div>
           </div>
           <div className="flex items-center space-x-1">
@@ -81,6 +93,10 @@ export function Navbar() {
           </div>
         </div>
       </div>
+      <WorktreeManagementModal 
+        isOpen={worktreeModalOpen}
+        onClose={() => setWorktreeModalOpen(false)}
+      />
     </div>
   );
 }

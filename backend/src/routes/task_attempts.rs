@@ -6,6 +6,7 @@ use axum::{
     routing::get,
     Extension, Json, Router,
 };
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use ts_rs::TS;
@@ -30,6 +31,7 @@ use crate::{
         ApiResponse,
     },
     services::git_service::{CommitDetails, GitService},
+    utils::worktree_manager::WorktreeManager,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -67,6 +69,25 @@ pub struct ProcessLogsResponse {
     pub status: ExecutionProcessStatus,
     pub normalized_conversation: NormalizedConversation,
 }
+
+#[derive(Debug, Serialize, TS)]
+#[ts(export)]
+pub struct WorktreeInfo {
+    pub attempt_id: Uuid,
+    pub task_id: Uuid,
+    pub task_title: String,
+    pub task_status: TaskStatus,
+    pub branch: String,
+    pub worktree_path: String,
+    pub worktree_exists: bool,
+    pub worktree_deleted: bool,
+    pub pr_url: Option<String>,
+    pub pr_status: Option<String>,
+    pub pr_merged_at: Option<DateTime<Utc>>,
+    pub merge_commit: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
 
 // Helper to normalize logs for a process (extracted from get_execution_process_normalized_logs)
 async fn normalize_process_logs(
@@ -1137,6 +1158,14 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/commit/:commit_sha",
             get(get_commit_details),
         )
+        .route(
+            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/delete-worktree",
+            post(delete_worktree),
+        )
+        .route(
+            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/delete-branch",
+            post(delete_branch),
+        )
         .merge(
             Router::new()
                 .route(
@@ -1145,4 +1174,299 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
                 )
                 .route_layer(from_fn_with_state(_state.clone(), load_task_attempt_middleware))
         )
+}
+
+/// Delete a worktree (filesystem only, keep branch)
+pub async fn delete_worktree(
+    Extension(project): Extension<Project>,
+    Extension(_task): Extension<Task>,
+    Extension(task_attempt): Extension<TaskAttempt>,
+    State(app_state): State<AppState>,
+) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
+    let worktree_path = std::path::Path::new(&task_attempt.worktree_path);
+    
+    // Use WorktreeManager to clean up the worktree
+    if let Err(e) = WorktreeManager::cleanup_worktree(
+        worktree_path,
+        Some(&project.git_repo_path),
+    )
+    .await
+    {
+        tracing::error!("Failed to cleanup worktree: {}", e);
+        return Ok(ResponseJson(ApiResponse::error(&format!(
+            "Failed to cleanup worktree: {}",
+            e
+        ))));
+    }
+
+    // Mark the worktree as deleted in the database
+    if let Err(e) = TaskAttempt::mark_worktree_deleted(&app_state.db_pool, task_attempt.id).await {
+        tracing::error!("Failed to mark worktree as deleted: {}", e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    Ok(ResponseJson(ApiResponse::success(())))
+}
+
+/// Delete a branch (requires worktree to be deleted first)
+pub async fn delete_branch(
+    Extension(project): Extension<Project>,
+    Extension(_task): Extension<Task>,
+    Extension(task_attempt): Extension<TaskAttempt>,
+    State(_app_state): State<AppState>,
+) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
+    // Check if worktree still exists
+    if std::path::Path::new(&task_attempt.worktree_path).exists() {
+        return Ok(ResponseJson(ApiResponse::error(
+            "Worktree must be deleted before deleting the branch",
+        )));
+    }
+
+    // Delete the branch using GitService
+    let git_service = match GitService::new(&project.git_repo_path) {
+        Ok(service) => service,
+        Err(e) => {
+            tracing::error!("Failed to initialize git service: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Delete the branch
+    if let Err(e) = git_service.delete_branch(&task_attempt.branch) {
+        tracing::error!("Failed to delete branch: {}", e);
+        return Ok(ResponseJson(ApiResponse::error(&format!(
+            "Failed to delete branch: {}",
+            e
+        ))));
+    }
+
+    Ok(ResponseJson(ApiResponse::success(())))
+}
+
+/// Get all worktrees across all projects with their task information
+pub async fn get_all_worktrees(
+    State(app_state): State<AppState>,
+) -> Result<ResponseJson<ApiResponse<Vec<WorktreeInfo>>>, StatusCode> {
+    use std::collections::HashMap;
+    use std::path::Path;
+    
+    // First, get all projects to scan their directories
+    let projects = match Project::find_all(&app_state.db_pool).await {
+        Ok(projects) => projects,
+        Err(e) => {
+            tracing::error!("Failed to fetch projects: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Query all task attempts with their tasks for matching
+    let query = r#"
+        SELECT 
+            ta.id,
+            ta.task_id,
+            ta.branch,
+            ta.worktree_path,
+            ta.worktree_deleted,
+            ta.pr_url,
+            ta.pr_status,
+            ta.pr_merged_at,
+            ta.merge_commit,
+            ta.created_at,
+            t.title as task_title,
+            t.status as task_status
+        FROM task_attempts ta
+        JOIN tasks t ON ta.task_id = t.id
+        JOIN projects p ON t.project_id = p.id
+        WHERE p.deleted_at IS NULL
+        ORDER BY ta.created_at DESC
+    "#;
+
+    #[derive(sqlx::FromRow)]
+    struct WorktreeRow {
+        id: Vec<u8>,
+        task_id: Vec<u8>,
+        branch: String,
+        worktree_path: String,
+        worktree_deleted: bool,
+        pr_url: Option<String>,
+        pr_status: Option<String>,
+        pr_merged_at: Option<DateTime<Utc>>,
+        merge_commit: Option<String>,
+        created_at: DateTime<Utc>,
+        task_title: String,
+        task_status: Option<String>,
+    }
+
+    let rows = match sqlx::query_as::<_, WorktreeRow>(query)
+        .fetch_all(&app_state.db_pool)
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            tracing::error!("Failed to fetch worktrees from database: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+    
+    // Create a map of worktree paths to database records
+    let mut db_worktrees: HashMap<String, WorktreeRow> = HashMap::new();
+    for row in rows {
+        db_worktrees.insert(row.worktree_path.clone(), row);
+    }
+    
+    let mut worktree_infos = Vec::new();
+    
+    // Scan each project directory for worktrees
+    for project in projects {
+        let repo_path = Path::new(&project.git_repo_path);
+        if !repo_path.exists() {
+            continue;
+        }
+        
+        // Get git worktrees for this project
+        let worktrees = match scan_git_worktrees(&project.git_repo_path).await {
+            Ok(worktrees) => worktrees,
+            Err(e) => {
+                tracing::warn!("Failed to scan worktrees for project {}: {}", project.id, e);
+                continue;
+            }
+        };
+        
+        // Process each discovered worktree
+        for (worktree_path, branch_name) in worktrees {
+            let worktree_path_str = worktree_path.to_string_lossy().to_string();
+            
+            // Check if this worktree is in the database
+            if let Some(row) = db_worktrees.remove(&worktree_path_str) {
+                // Worktree is in database
+                let attempt_id = Uuid::from_slice(&row.id).unwrap_or_default();
+                let task_id = Uuid::from_slice(&row.task_id).unwrap_or_default();
+                
+                let task_status = row.task_status
+                    .and_then(|s| match s.as_str() {
+                        "todo" => Some(TaskStatus::Todo),
+                        "inprogress" => Some(TaskStatus::InProgress),
+                        "inreview" => Some(TaskStatus::InReview),
+                        "done" => Some(TaskStatus::Done),
+                        "cancelled" => Some(TaskStatus::Cancelled),
+                        _ => None,
+                    })
+                    .unwrap_or(TaskStatus::Todo);
+                
+                worktree_infos.push(WorktreeInfo {
+                    attempt_id,
+                    task_id,
+                    task_title: row.task_title,
+                    task_status,
+                    branch: row.branch,
+                    worktree_path: worktree_path_str,
+                    worktree_exists: true,
+                    worktree_deleted: row.worktree_deleted,
+                    pr_url: row.pr_url,
+                    pr_status: row.pr_status,
+                    pr_merged_at: row.pr_merged_at,
+                    merge_commit: row.merge_commit,
+                    created_at: row.created_at,
+                });
+            } else {
+                // Worktree is NOT in database - orphaned worktree
+                worktree_infos.push(WorktreeInfo {
+                    attempt_id: Uuid::nil(),
+                    task_id: Uuid::nil(),
+                    task_title: format!("[Orphaned] {}", branch_name),
+                    task_status: TaskStatus::Todo,
+                    branch: branch_name,
+                    worktree_path: worktree_path_str,
+                    worktree_exists: true,
+                    worktree_deleted: false,
+                    pr_url: None,
+                    pr_status: None,
+                    pr_merged_at: None,
+                    merge_commit: None,
+                    created_at: Utc::now(), // Use current time for orphaned worktrees
+                });
+            }
+        }
+    }
+    
+    // Add any database records that don't have corresponding filesystem worktrees
+    for (_, row) in db_worktrees {
+        let attempt_id = Uuid::from_slice(&row.id).unwrap_or_default();
+        let task_id = Uuid::from_slice(&row.task_id).unwrap_or_default();
+        
+        let task_status = row.task_status
+            .and_then(|s| match s.as_str() {
+                "todo" => Some(TaskStatus::Todo),
+                "inprogress" => Some(TaskStatus::InProgress),
+                "inreview" => Some(TaskStatus::InReview),
+                "done" => Some(TaskStatus::Done),
+                "cancelled" => Some(TaskStatus::Cancelled),
+                _ => None,
+            })
+            .unwrap_or(TaskStatus::Todo);
+        
+        worktree_infos.push(WorktreeInfo {
+            attempt_id,
+            task_id,
+            task_title: row.task_title,
+            task_status,
+            branch: row.branch,
+            worktree_path: row.worktree_path.clone(),
+            worktree_exists: false, // Doesn't exist on filesystem
+            worktree_deleted: row.worktree_deleted,
+            pr_url: row.pr_url,
+            pr_status: row.pr_status,
+            pr_merged_at: row.pr_merged_at,
+            merge_commit: row.merge_commit,
+            created_at: row.created_at,
+        });
+    }
+    
+    // Sort by creation date, newest first
+    worktree_infos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    
+    Ok(ResponseJson(ApiResponse::success(worktree_infos)))
+}
+
+/// Scan a git repository for all worktrees
+async fn scan_git_worktrees(repo_path: &str) -> Result<Vec<(std::path::PathBuf, String)>, Box<dyn std::error::Error + Send + Sync>> {
+    use git2::Repository;
+    
+    let repo_path = repo_path.to_string();
+    
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&repo_path)?;
+        let mut worktrees = Vec::new();
+        
+        // Get list of worktree names
+        let worktree_names = repo.worktrees()?;
+        
+        for name in worktree_names.iter().flatten() {
+            match repo.find_worktree(&name) {
+                Ok(worktree) => {
+                    let path = worktree.path();
+                    
+                    // Get the branch name for this worktree
+                    // Try to open the worktree as a repository to get its HEAD
+                    let branch_name = if let Ok(wt_repo) = Repository::open(&path) {
+                        if let Ok(head) = wt_repo.head() {
+                            head.shorthand().unwrap_or(&name).to_string()
+                        } else {
+                            name.to_string()
+                        }
+                    } else {
+                        name.to_string()
+                    };
+                    
+                    worktrees.push((path.to_path_buf(), branch_name));
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to find worktree {}: {}", name, e);
+                }
+            }
+        }
+        
+        Ok(worktrees)
+    })
+    .await?
 }
