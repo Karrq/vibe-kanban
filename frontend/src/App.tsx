@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Navbar } from '@/components/layout/navbar';
 import { Projects } from '@/pages/projects';
 import { ProjectTasks } from '@/pages/project-tasks';
+import { registerServiceWorker } from '@/lib/register-sw';
 
 import { Settings } from '@/pages/Settings';
 import { McpServers } from '@/pages/McpServers';
@@ -32,6 +33,11 @@ function AppContent() {
   const [showPrivacyOptIn, setShowPrivacyOptIn] = useState(false);
   const [showGitHubLogin, setShowGitHubLogin] = useState(false);
   const showNavbar = true;
+  
+  // Register service worker on mount
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {

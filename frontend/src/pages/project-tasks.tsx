@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useMemo } from 'react';
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2, Terminal } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { projectsApi, tasksApi, templatesApi } from '@/lib/api';
+import { offlineApi } from '@/lib/offline-api';
+import { OfflineIndicator, DataSyncIndicator } from '@/components/OfflineIndicator';
+import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
 import { ProjectForm } from '@/components/projects/project-form';
 import { ProcessesDialog } from '@/components/projects/ProcessesDialog';
@@ -54,6 +57,7 @@ export function ProjectTasks() {
     taskId?: string;
   }>();
   const navigate = useNavigate();
+  const { isOnline } = useNetworkStatus();
   const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount } = useArchive();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
@@ -69,6 +73,12 @@ export function ProjectTasks() {
   );
   const [showProcessesDialog, setShowProcessesDialog] = useState(false);
   const [taskDetailsRefreshTrigger, setTaskDetailsRefreshTrigger] = useState(0);
+  
+  // Offline support state
+  const [dataFromCache, setDataFromCache] = useState(false);
+  const [dataAge, setDataAge] = useState<number | null>(null);
+  const [lastSyncTime, setLastSyncTime] = useState<number | null>(null);
+  const pollingIntervalRef = useRef<number | null>(null);
   
   // Calculate project-specific archived count efficiently
   const projectArchivedCount = useMemo(() => {
@@ -115,12 +125,23 @@ export function ProjectTasks() {
 
   const fetchProject = useCallback(async () => {
     try {
-      const result = await projectsApi.getWithBranch(projectId!);
-      setProject(result);
+      const { project, fromCache, error: fetchError } = await offlineApi.getProject(
+        projectId!,
+        () => projectsApi.getWithBranch(projectId!)
+      );
+      
+      if (project) {
+        setProject(project);
+        if (fromCache && fetchError) {
+          console.log('Using cached project data due to network error');
+        }
+      } else if (fetchError) {
+        setError('Failed to load project');
+      }
     } catch (err) {
       setError('Failed to load project');
     }
-  }, [projectId, navigate]);
+  }, [projectId]);
 
   const fetchTemplates = useCallback(async () => {
     if (!projectId) return;
@@ -149,15 +170,40 @@ export function ProjectTasks() {
   }, [fetchTemplates]);
 
   const fetchTasks = useCallback(
-    async (skipLoading = false) => {
+    async (skipLoading = false, forceNetwork = false) => {
       try {
         if (!skipLoading) {
           setLoading(true);
         }
-        const result = await tasksApi.getAll(projectId!);
+        
+        const { tasks: fetchedTasks, fromCache, error: fetchError } = await offlineApi.getTasks(
+          projectId!,
+          () => tasksApi.getAll(projectId!),
+          { skipCache: forceNetwork }
+        );
+        
+        // Update cache status
+        setDataFromCache(fromCache);
+        if (fromCache) {
+          const age = await offlineApi.getDataAge(projectId!);
+          setDataAge(age);
+        } else {
+          setDataAge(null);
+          setLastSyncTime(Date.now());
+          
+          // Preload tasks in review for offline viewing
+          const tasksInReview = fetchedTasks.filter(
+            task => task.status.toLowerCase() === 'inreview'
+          );
+          if (tasksInReview.length > 0) {
+            // Cache these specifically for offline priority access
+            console.log(`Cached ${tasksInReview.length} tasks in review for offline access`);
+          }
+        }
+        
         // Only update if data has actually changed
         setTasks((prevTasks) => {
-          const newTasks = result;
+          const newTasks = fetchedTasks;
           if (JSON.stringify(prevTasks) === JSON.stringify(newTasks)) {
             return prevTasks; // Return same reference to prevent re-render
           }
@@ -176,8 +222,22 @@ export function ProjectTasks() {
 
           return newTasks;
         });
+        
+        // Clear error if successful
+        if (fetchedTasks.length > 0 || !fromCache) {
+          setError(null);
+        }
+        
+        // Show message if using cached data due to network error
+        if (fromCache && fetchError && !skipLoading) {
+          console.log('Using cached task data due to network error');
+        }
       } catch (err) {
-        setError('Failed to load tasks');
+        // Only set error if we don't have cached data to fall back on
+        const cachedTasks = await offlineApi.getTasks(projectId!, () => Promise.reject(err));
+        if (!cachedTasks.tasks.length) {
+          setError('Failed to load tasks');
+        }
       } finally {
         if (!skipLoading) {
           setLoading(false);
@@ -351,22 +411,82 @@ export function ProjectTasks() {
     onC: handleCreateNewTask,
   });
 
-  // Initialize data when projectId changes
+  // Smart polling with visibility and online status awareness
   useEffect(() => {
     if (projectId) {
       fetchProject();
       fetchTasks();
       fetchTemplates();
 
-      // Set up polling to refresh tasks every 5 seconds
-      const interval = setInterval(() => {
-        fetchTasks(true); // Skip loading spinner for polling
-      }, 2000);
+      // Set up intelligent polling
+      const startPolling = () => {
+        // Only poll when online and document is visible
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+        }
+        
+        if (isOnline && document.visibilityState === 'visible') {
+          pollingIntervalRef.current = window.setInterval(() => {
+            fetchTasks(true); // Skip loading spinner for polling
+          }, 2000);
+        }
+      };
 
-      // Cleanup interval on unmount
-      return () => clearInterval(interval);
+      const stopPolling = () => {
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+      };
+
+      // Handle visibility change
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          // App resumed/tab became visible - refresh data immediately
+          fetchTasks(true);
+          startPolling();
+        } else {
+          // App hidden/tab not visible - stop polling
+          stopPolling();
+        }
+      };
+
+      // Handle online/offline status
+      const handleOnlineStatus = () => {
+        if (navigator.onLine) {
+          // Back online - refresh data
+          fetchTasks(true, true); // Force network fetch
+          startPolling();
+        } else {
+          stopPolling();
+        }
+      };
+
+      // Set up event listeners
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      window.addEventListener('online', handleOnlineStatus);
+      window.addEventListener('offline', handleOnlineStatus);
+      
+      // Handle app resume on mobile (when app is brought to foreground)
+      window.addEventListener('focus', () => {
+        fetchTasks(true);
+      });
+
+      // Initial polling setup
+      startPolling();
+
+      // Cleanup
+      return () => {
+        stopPolling();
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        window.removeEventListener('online', handleOnlineStatus);
+        window.removeEventListener('offline', handleOnlineStatus);
+        window.removeEventListener('focus', () => {
+          fetchTasks(true);
+        });
+      };
     }
-  }, [projectId]);
+  }, [projectId, isOnline, fetchProject, fetchTasks, fetchTemplates]);
 
   // Handle direct navigation to task URLs
   useEffect(() => {
@@ -402,6 +522,12 @@ export function ProjectTasks() {
 
   return (
     <div className={getMainContainerClasses(isPanelOpen)}>
+      {/* Offline indicator */}
+      <OfflineIndicator 
+        dataAge={dataAge}
+        onRetry={() => fetchTasks(false, true)}
+      />
+      
       {/* Left Column - Kanban Section */}
       <div className={getKanbanSectionClasses(isPanelOpen)}>
         {/* Header */}
@@ -414,6 +540,10 @@ export function ProjectTasks() {
                 {project.current_branch}
               </span>
             )}
+            <DataSyncIndicator 
+              lastSync={lastSyncTime}
+              isStale={dataFromCache}
+            />
             <Button
               variant="ghost"
               size="sm"
