@@ -18,6 +18,12 @@ import * as Sentry from '@sentry/react';
 import { Loader } from '@/components/ui/loader';
 import { GitHubLoginDialog } from '@/components/GitHubLoginDialog';
 import { GlitterTrail } from '@/components/GlitterTrail';
+import { OfflineIndicator } from '@/components/OfflineIndicator';
+import { usePageVisibility } from '@/hooks/usePageVisibility';
+import { useOfflineStatus } from '@/hooks/useOfflineStatus';
+import { offlineStorage } from '@/lib/offline-storage';
+import { cachedApi } from '@/lib/cached-api';
+import { registerSW } from 'virtual:pwa-register';
 
 const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
 
@@ -32,6 +38,53 @@ function AppContent() {
   const [showPrivacyOptIn, setShowPrivacyOptIn] = useState(false);
   const [showGitHubLogin, setShowGitHubLogin] = useState(false);
   const showNavbar = true;
+  const { isOnline } = useOfflineStatus();
+
+  // Initialize offline storage
+  useEffect(() => {
+    offlineStorage.initialize().catch(console.error);
+  }, []);
+
+  // Register service worker
+  useEffect(() => {
+    const updateSW = registerSW({
+      onNeedRefresh() {
+        // Optionally show a prompt to reload
+        console.log('New content available, please refresh');
+      },
+      onOfflineReady() {
+        console.log('App ready for offline use');
+      },
+    });
+
+    return () => {
+      updateSW();
+    };
+  }, []);
+
+  // Handle page visibility changes and sync data
+  usePageVisibility(
+    async () => {
+      // Page became visible - sync offline changes
+      if (isOnline) {
+        try {
+          await cachedApi.syncOfflineChanges();
+        } catch (error) {
+          console.error('Failed to sync offline changes:', error);
+        }
+      }
+    },
+    () => {
+      // Page is being hidden - could save state here if needed
+    }
+  );
+
+  // Sync offline changes when coming back online
+  useEffect(() => {
+    if (isOnline) {
+      cachedApi.syncOfflineChanges().catch(console.error);
+    }
+  }, [isOnline]);
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -160,6 +213,7 @@ function AppContent() {
   return (
     <ThemeProvider initialTheme={config?.theme || 'system'}>
       <div className="h-screen flex flex-col bg-background">
+        <OfflineIndicator />
         {localPixieMode && <GlitterTrail />}
         <GitHubLoginDialog
           open={showGitHubLogin}

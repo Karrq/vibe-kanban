@@ -5,7 +5,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2, Terminal } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
-import { projectsApi, tasksApi, templatesApi } from '@/lib/api';
+import { projectsApi, tasksApi } from '@/lib/api';
+import { cachedApi } from '@/lib/cached-api';
+import { StaleDataBadge } from '@/components/OfflineIndicator';
+import { usePageVisibility } from '@/hooks/usePageVisibility';
+import { useOfflineStatus } from '@/hooks/useOfflineStatus';
 import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
 import { ProjectForm } from '@/components/projects/project-form';
 import { ProcessesDialog } from '@/components/projects/ProcessesDialog';
@@ -83,10 +87,30 @@ export function ProjectTasks() {
   // Panel state
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  
+  // Offline state
+  const [dataLastSynced, setDataLastSynced] = useState<number | undefined>();
+  const [isDataStale, setIsDataStale] = useState(false);
+  const { isOnline } = useOfflineStatus();
 
   // Plan context for task creation
   const { isPlanningMode, canCreateTask, latestProcessHasNoPlan } =
     useTaskPlan();
+    
+  // Handle page visibility changes to refresh data
+  usePageVisibility(
+    async () => {
+      // Page became visible - refresh data if stale or offline was detected
+      if (isOnline && (isDataStale || !dataLastSynced || Date.now() - (dataLastSynced || 0) > 60000)) {
+        await fetchTasks(false, true);
+        await fetchProject(true);
+        await fetchTemplates(true);
+      }
+    },
+    () => {
+      // Page is being hidden
+    }
+  );
 
   // Define task creation handler
   const handleCreateNewTask = useCallback(() => {
@@ -113,26 +137,34 @@ export function ProjectTasks() {
     }
   }, [projectId]);
 
-  const fetchProject = useCallback(async () => {
+  const fetchProject = useCallback(async (forceRefresh = false) => {
     try {
-      const result = await projectsApi.getWithBranch(projectId!);
-      setProject(result);
+      const cached = await cachedApi.getProject(projectId!, forceRefresh);
+      if (cached.data) {
+        setProject(cached.data);
+        setDataLastSynced(cached.lastSynced);
+        setIsDataStale(cached.isStale);
+      }
     } catch (err) {
       setError('Failed to load project');
     }
-  }, [projectId, navigate]);
+  }, [projectId]);
 
-  const fetchTemplates = useCallback(async () => {
+  const fetchTemplates = useCallback(async (forceRefresh = false) => {
     if (!projectId) return;
 
     try {
-      const [projectTemplates, globalTemplates] = await Promise.all([
-        templatesApi.listByProject(projectId),
-        templatesApi.listGlobal(),
+      const [projectCached, globalCached] = await Promise.all([
+        cachedApi.getTemplates(projectId, forceRefresh),
+        cachedApi.getTemplates(undefined, forceRefresh),
       ]);
 
       // Combine templates with project templates first
-      setTemplates([...projectTemplates, ...globalTemplates]);
+      setTemplates([...projectCached.data, ...globalCached.data]);
+      if (projectCached.lastSynced) {
+        setDataLastSynced(projectCached.lastSynced);
+        setIsDataStale(projectCached.isStale || globalCached.isStale);
+      }
     } catch (err) {
       console.error('Failed to fetch templates:', err);
     }
@@ -145,19 +177,19 @@ export function ProjectTasks() {
 
   const handleCloseTemplateManager = useCallback(() => {
     setIsTemplateManagerOpen(false);
-    fetchTemplates(); // Refresh templates list when closing
+    fetchTemplates(true); // Force refresh templates list when closing
   }, [fetchTemplates]);
 
   const fetchTasks = useCallback(
-    async (skipLoading = false) => {
+    async (skipLoading = false, forceRefresh = false) => {
       try {
         if (!skipLoading) {
           setLoading(true);
         }
-        const result = await tasksApi.getAll(projectId!);
+        const cached = await cachedApi.getTasksByProject(projectId!, forceRefresh);
         // Only update if data has actually changed
         setTasks((prevTasks) => {
-          const newTasks = result;
+          const newTasks = cached.data;
           if (JSON.stringify(prevTasks) === JSON.stringify(newTasks)) {
             return prevTasks; // Return same reference to prevent re-render
           }
@@ -176,6 +208,8 @@ export function ProjectTasks() {
 
           return newTasks;
         });
+        setDataLastSynced(cached.lastSynced);
+        setIsDataStale(cached.isStale);
       } catch (err) {
         setError('Failed to load tasks');
       } finally {
@@ -358,15 +392,17 @@ export function ProjectTasks() {
       fetchTasks();
       fetchTemplates();
 
-      // Set up polling to refresh tasks every 5 seconds
+      // Set up polling to refresh tasks every 5 seconds (only when online)
       const interval = setInterval(() => {
-        fetchTasks(true); // Skip loading spinner for polling
+        if (isOnline) {
+          fetchTasks(true); // Skip loading spinner for polling
+        }
       }, 2000);
 
       // Cleanup interval on unmount
       return () => clearInterval(interval);
     }
-  }, [projectId]);
+  }, [projectId, isOnline]);
 
   // Handle direct navigation to task URLs
   useEffect(() => {
@@ -414,6 +450,7 @@ export function ProjectTasks() {
                 {project.current_branch}
               </span>
             )}
+            {isDataStale && <StaleDataBadge lastSynced={dataLastSynced} />}
             <Button
               variant="ghost"
               size="sm"

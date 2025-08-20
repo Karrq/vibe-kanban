@@ -33,13 +33,16 @@
     "click-to-react-component": "^1.1.2",
     "clsx": "^2.0.0",
     "fast-json-patch": "^3.1.1",
+    "idb": "^8.0.3",
     "lucide-react": "^0.303.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.8.1",
     "tailwind-merge": "^2.2.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "vite-plugin-pwa": "^1.0.3",
+    "workbox-window": "^7.3.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
