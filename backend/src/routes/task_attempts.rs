@@ -1277,7 +1277,6 @@ pub async fn get_all_worktrees(
         FROM task_attempts ta
         JOIN tasks t ON ta.task_id = t.id
         JOIN projects p ON t.project_id = p.id
-        WHERE p.deleted_at IS NULL
         ORDER BY ta.created_at DESC
     "#;
 
