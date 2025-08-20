@@ -151,6 +151,9 @@ fn generate_types_content() -> String {
         vibe_kanban::executor::NormalizedEntry::decl(),
         vibe_kanban::executor::NormalizedEntryType::decl(),
         vibe_kanban::executor::ActionType::decl(),
+        vibe_kanban::routes::task_attempts::ForkTaskAttemptRequest::decl(),
+        vibe_kanban::routes::task_attempts::CheckpointResponse::decl(),
+        vibe_kanban::routes::task_attempts::ForkResponse::decl(),
     ];
 
     let body = decls
