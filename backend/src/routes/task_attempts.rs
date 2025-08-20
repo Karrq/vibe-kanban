@@ -1331,8 +1331,21 @@ pub async fn get_all_worktrees(
             }
         };
         
+        // Get all branches for this project
+        let all_branches = match scan_git_branches(&project.git_repo_path).await {
+            Ok(branches) => branches,
+            Err(e) => {
+                tracing::warn!("Failed to scan branches for project {}: {}", project.id, e);
+                Vec::new()
+            }
+        };
+        
+        // Track which branches have worktrees
+        let mut branches_with_worktrees = std::collections::HashSet::new();
+        
         // Process each discovered worktree
         for (worktree_path, branch_name) in worktrees {
+            branches_with_worktrees.insert(branch_name.clone());
             let worktree_path_str = worktree_path.to_string_lossy().to_string();
             
             // Check if this worktree is in the database
@@ -1386,6 +1399,28 @@ pub async fn get_all_worktrees(
                 });
             }
         }
+        
+        // Add orphaned branches (branches without worktrees)
+        for branch_name in all_branches {
+            if !branches_with_worktrees.contains(&branch_name) && branch_name != "main" && branch_name != "master" {
+                // This is an orphaned branch without a worktree
+                worktree_infos.push(WorktreeInfo {
+                    attempt_id: Uuid::nil(),
+                    task_id: Uuid::nil(),
+                    task_title: format!("[Orphaned] {}", branch_name),
+                    task_status: TaskStatus::Todo,
+                    branch: branch_name,
+                    worktree_path: String::new(), // No worktree path for orphaned branches
+                    worktree_exists: false,
+                    worktree_deleted: false,
+                    pr_url: None,
+                    pr_status: None,
+                    pr_merged_at: None,
+                    merge_commit: None,
+                    created_at: Utc::now(),
+                });
+            }
+        }
     }
     
     // Add any database records that don't have corresponding filesystem worktrees
@@ -1404,6 +1439,11 @@ pub async fn get_all_worktrees(
             })
             .unwrap_or(TaskStatus::Todo);
         
+        // Check if the worktree path actually exists on disk
+        // (it might exist but not be registered with git)
+        let worktree_path = std::path::Path::new(&row.worktree_path);
+        let worktree_exists = !row.worktree_deleted && worktree_path.exists() && worktree_path.is_dir();
+        
         worktree_infos.push(WorktreeInfo {
             attempt_id,
             task_id,
@@ -1411,7 +1451,7 @@ pub async fn get_all_worktrees(
             task_status,
             branch: row.branch,
             worktree_path: row.worktree_path.clone(),
-            worktree_exists: false, // Doesn't exist on filesystem
+            worktree_exists,
             worktree_deleted: row.worktree_deleted,
             pr_url: row.pr_url,
             pr_status: row.pr_status,
@@ -1468,4 +1508,163 @@ async fn scan_git_worktrees(repo_path: &str) -> Result<Vec<(std::path::PathBuf, 
         Ok(worktrees)
     })
     .await?
+}
+
+/// Scan a git repository for all branches (including those without worktrees)
+async fn scan_git_branches(repo_path: &str) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    use git2::{Repository, BranchType};
+    
+    let repo_path = repo_path.to_string();
+    
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&repo_path)?;
+        let mut branch_names = Vec::new();
+        
+        // Get all local branches
+        let branches = repo.branches(Some(BranchType::Local))?;
+        
+        for branch_result in branches {
+            if let Ok((branch, _)) = branch_result {
+                if let Some(name) = branch.name()? {
+                    branch_names.push(name.to_string());
+                }
+            }
+        }
+        
+        Ok(branch_names)
+    })
+    .await?
+}
+
+/// Delete an orphaned worktree
+#[derive(serde::Deserialize)]
+pub struct DeleteOrphanedWorktreeRequest {
+    worktree_path: String,
+    #[allow(dead_code)]
+    branch: String,  // Included for potential future use
+    project_id: Option<String>,
+}
+
+pub async fn delete_orphaned_worktree(
+    State(app_state): State<AppState>,
+    Json(request): Json<DeleteOrphanedWorktreeRequest>,
+) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
+    let worktree_path = std::path::Path::new(&request.worktree_path);
+    
+    // Get the git repo path if project_id is provided
+    let git_repo_path = if let Some(project_id) = request.project_id {
+        match Uuid::parse_str(&project_id) {
+            Ok(pid) => {
+                match Project::find_by_id(&app_state.db_pool, pid).await {
+                    Ok(Some(project)) => Some(project.git_repo_path),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+    
+    // Use WorktreeManager to clean up the worktree
+    if let Err(e) = WorktreeManager::cleanup_worktree(
+        worktree_path,
+        git_repo_path.as_deref(),
+    )
+    .await
+    {
+        tracing::error!("Failed to cleanup orphaned worktree: {}", e);
+        return Ok(ResponseJson(ApiResponse::error(&format!(
+            "Failed to cleanup orphaned worktree: {}",
+            e
+        ))));
+    }
+
+    Ok(ResponseJson(ApiResponse::success(())))
+}
+
+/// Delete an orphaned branch
+#[derive(serde::Deserialize)]
+pub struct DeleteOrphanedBranchRequest {
+    branch: String,
+    project_id: Option<String>,
+}
+
+pub async fn delete_orphaned_branch(
+    State(app_state): State<AppState>,
+    Json(request): Json<DeleteOrphanedBranchRequest>,
+) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
+    // Get the git repo path if project_id is provided
+    let git_repo_path = if let Some(project_id) = request.project_id {
+        match Uuid::parse_str(&project_id) {
+            Ok(pid) => {
+                match Project::find_by_id(&app_state.db_pool, pid).await {
+                    Ok(Some(project)) => project.git_repo_path,
+                    _ => {
+                        return Ok(ResponseJson(ApiResponse::error(
+                            "Project not found"
+                        )));
+                    }
+                }
+            }
+            _ => {
+                return Ok(ResponseJson(ApiResponse::error(
+                    "Invalid project ID"
+                )));
+            }
+        }
+    } else {
+        return Ok(ResponseJson(ApiResponse::error(
+            "Project ID is required for branch deletion"
+        )));
+    };
+    
+    // Clean up the branch name (remove [Orphaned] prefix if present)
+    let branch_name = request.branch.replace("[Orphaned] ", "");
+    
+    tracing::info!("Attempting to delete branch '{}' in repo '{}'", branch_name, git_repo_path);
+    
+    // Delete the branch using git
+    let repo_path = git_repo_path.clone();
+    
+    let result = tokio::task::spawn_blocking(move || {
+        use git2::Repository;
+        
+        let repo = Repository::open(&repo_path)
+            .map_err(|e| format!("Failed to open repository at '{}': {}", repo_path, e))?;
+        
+        // Check if branch is checked out in main worktree
+        if let Ok(head) = repo.head() {
+            if let Some(current_branch) = head.shorthand() {
+                if current_branch == branch_name {
+                    return Err(format!("Cannot delete branch '{}' as it is currently checked out", branch_name));
+                }
+            }
+        }
+        
+        // Find and delete the branch
+        let mut branch = repo.find_branch(&branch_name, git2::BranchType::Local)
+            .map_err(|e| format!("Failed to find branch '{}': {}", branch_name, e))?;
+        
+        // Force delete to handle unmerged branches
+        branch.delete()
+            .map_err(|e| format!("Failed to delete branch '{}': {}. The branch may be checked out in a worktree or have unmerged changes.", branch_name, e))?;
+        
+        tracing::info!("Successfully deleted branch '{}'", branch_name);
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to delete orphaned branch (task error): {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    
+    // Handle the result from the blocking task
+    match result {
+        Ok(()) => Ok(ResponseJson(ApiResponse::success(()))),
+        Err(e) => {
+            tracing::error!("Failed to delete orphaned branch: {}", e);
+            Ok(ResponseJson(ApiResponse::error(&e)))
+        }
+    }
 }

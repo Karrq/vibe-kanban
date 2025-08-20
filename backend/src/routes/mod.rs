@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod branches;
 pub mod config;
 pub mod filesystem;
 pub mod github;

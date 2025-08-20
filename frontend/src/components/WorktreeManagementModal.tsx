@@ -19,20 +19,27 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-interface WorktreeInfo {
-  attempt_id: string;
-  task_id: string;
-  task_title: string;
-  task_status: TaskStatus;
-  branch: string;
-  worktree_path: string;
+interface BranchInfo {
+  branch_name: string;
+  project_id: string;
+  project_name: string;
+  
+  // Worktree information (if exists)
+  worktree_path?: string;
   worktree_exists: boolean;
-  worktree_deleted: boolean;
+  
+  // Task/attempt information (if branch is associated with a task)
+  task_id?: string;
+  task_title?: string;
+  task_status?: TaskStatus;
+  attempt_id?: string;
+  attempt_deleted: boolean;
+  
+  // PR information
   pr_url?: string;
   pr_status?: string;
   pr_merged_at?: string;
   merge_commit?: string;
-  created_at: string;
 }
 
 interface WorktreeManagementModalProps {
@@ -46,187 +53,136 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
   onClose,
   projectId,
 }) => {
-  const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
+  const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{
-    worktree?: WorktreeInfo;
+    branch?: BranchInfo;
     action: 'worktree' | 'branch' | 'both';
   } | null>(null);
+  const [commitModalData, setCommitModalData] = useState<{ branch: BranchInfo } | null>(null);
   const navigate = useNavigate();
 
-  // Group worktrees by task
-  const groupedWorktrees = worktrees.reduce((acc, worktree) => {
-    if (!acc[worktree.task_id]) {
-      acc[worktree.task_id] = {
-        task_title: worktree.task_title,
-        task_status: worktree.task_status,
-        attempts: [],
+  // Group branches by task, but put orphaned ones in a separate group
+  const groupedBranches = branches.reduce((acc, branch) => {
+    const isOrphaned = !branch.task_id;
+    const groupKey = isOrphaned ? 'orphaned' : branch.task_id!;
+    
+    if (!acc[groupKey]) {
+      acc[groupKey] = {
+        task_title: isOrphaned ? 'Orphaned Branches' : branch.task_title || 'Unknown Task',
+        task_status: isOrphaned ? 'todo' as TaskStatus : branch.task_status || 'todo' as TaskStatus,
+        task_id: isOrphaned ? undefined : branch.task_id,
+        branches: [],
       };
     }
-    acc[worktree.task_id].attempts.push(worktree);
+    acc[groupKey].branches.push(branch);
     return acc;
-  }, {} as Record<string, { task_title: string; task_status: TaskStatus; attempts: WorktreeInfo[] }>);
+  }, {} as Record<string, { task_title: string; task_status: TaskStatus; task_id?: string; branches: BranchInfo[] }>);
+
+  // Sort groups to put orphaned at the end
+  const sortedGroups = Object.entries(groupedBranches).sort(([a], [b]) => {
+    if (a === 'orphaned') return 1;
+    if (b === 'orphaned') return -1;
+    return 0;
+  });
 
   useEffect(() => {
     if (isOpen) {
-      fetchWorktrees();
+      fetchBranches();
     }
   }, [isOpen]);
 
-  const fetchWorktrees = async () => {
+  const fetchBranches = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/worktrees');
-      if (!response.ok) throw new Error('Failed to fetch worktrees');
+      const response = await fetch('/api/branches');
+      if (!response.ok) throw new Error('Failed to fetch branches');
       const data = await response.json();
-      setWorktrees(data.data || []);
+      // Filter branches to only show those for the current project if projectId is provided
+      const allBranches = data.data || [];
+      const filteredBranches = projectId 
+        ? allBranches.filter((b: BranchInfo) => b.project_id === projectId)
+        : allBranches;
+      setBranches(filteredBranches);
     } catch (error) {
-      console.error('Error fetching worktrees:', error);
+      console.error('Error fetching branches:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAttemptClick = async (worktree: WorktreeInfo) => {
-    // Check if this is an orphaned worktree (no task_id)
-    if (!worktree.task_id || worktree.task_id === '00000000-0000-0000-0000-000000000000') {
-      console.log('Cannot navigate to orphaned worktree');
-      return;
-    }
-    
+
+  const handleTaskNavigation = async (taskId: string) => {
     try {
       // Fetch task details to get project ID
-      const response = await fetch(`/api/tasks/${worktree.task_id}`);
+      const response = await fetch(`/api/tasks/${taskId}`);
       if (!response.ok) throw new Error('Failed to fetch task details');
       const data = await response.json();
       const task = data.data;
       
-      // Navigate to the task with the attempt loaded
-      navigate(`/projects/${task.project_id}/tasks/${worktree.task_id}`);
+      // Navigate to the task
+      navigate(`/projects/${task.project_id}/tasks/${taskId}`);
       onClose();
     } catch (error) {
       console.error('Error navigating to task:', error);
     }
   };
 
-  const openCommitInGitHub = (worktree: WorktreeInfo) => {
-    if (worktree.merge_commit && worktree.pr_url) {
-      // Extract GitHub URL parts from PR URL
-      const prUrlMatch = worktree.pr_url.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull/);
-      if (prUrlMatch) {
-        const [, owner, repo] = prUrlMatch;
-        const commitUrl = `https://github.com/${owner}/${repo}/commit/${worktree.merge_commit}`;
-        window.open(commitUrl, '_blank', 'noopener,noreferrer');
-      }
+  const openCommitModal = (branch: BranchInfo) => {
+    if (branch.merge_commit) {
+      setCommitModalData({ branch });
     }
   };
 
-  const handleDeleteWorktree = async (worktree: WorktreeInfo) => {
-    try {
-      const response = await fetch(
-        `/api/projects/${projectId}/tasks/${worktree.task_id}/attempts/${worktree.attempt_id}/delete-worktree`,
-        { method: 'POST' }
-      );
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to delete worktree');
-      }
-      
-      // Update local state
-      setWorktrees(prev => 
-        prev.map(w => 
-          w.attempt_id === worktree.attempt_id 
-            ? { ...w, worktree_exists: false, worktree_deleted: true }
-            : w
-        )
-      );
-    } catch (error) {
-      console.error('Error deleting worktree:', error);
-    }
-  };
+  // Removed handleDeleteWorktree and handleDeleteBranch - now using unified handleDelete
 
-  const handleDeleteBranch = async (worktree: WorktreeInfo) => {
-    try {
-      const response = await fetch(
-        `/api/projects/${projectId}/tasks/${worktree.task_id}/attempts/${worktree.attempt_id}/delete-branch`,
-        { method: 'POST' }
-      );
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to delete branch');
-      }
-      
-      // Remove from local state
-      setWorktrees(prev => prev.filter(w => w.attempt_id !== worktree.attempt_id));
-    } catch (error) {
-      console.error('Error deleting branch:', error);
-    }
-  };
-
-  const handleDelete = async (worktree: WorktreeInfo, action: 'worktree' | 'branch' | 'both') => {
+  const handleDelete = async (branch: BranchInfo, action: 'worktree' | 'branch' | 'both') => {
     setDeleteConfirm(null);
     
-    if (action === 'worktree' || action === 'both') {
-      await handleDeleteWorktree(worktree);
-    }
-    
-    if (action === 'branch' || action === 'both') {
-      // For 'both', wait a bit for worktree deletion to complete
-      if (action === 'both') {
-        await new Promise(resolve => setTimeout(resolve, 500));
+    try {
+      const response = await fetch('/api/branches/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branch_name: branch.branch_name,
+          project_id: branch.project_id,
+          delete_worktree: action === 'worktree' || action === 'both',
+          delete_branch: action === 'branch' || action === 'both',
+          force: true, // Always use force deletion to handle unmerged branches
+        }),
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('Delete operation failed:', error);
+        alert(`Failed to delete: ${error.error || 'Unknown error'}`);
+        return;
       }
-      await handleDeleteBranch(worktree);
+      
+      // Refresh the list after successful deletion
+      await fetchBranches();
+    } catch (error) {
+      console.error('Error during delete operation:', error);
+      alert(`Error during delete: ${error}`);
     }
   };
 
-  const getTaskStatusColor = (status: TaskStatus) => {
-    switch (status) {
-      case 'todo': return 'bg-gray-500';
-      case 'inprogress': return 'bg-blue-500';
-      case 'inreview': return 'bg-yellow-500';
-      case 'done': return 'bg-green-500';
-      case 'cancelled': return 'bg-red-500';
-      default: return 'bg-gray-500';
-    }
-  };
 
-  const getPRStatusBadge = (worktree: WorktreeInfo) => {
-    if (worktree.pr_merged_at) {
+  const getPRStatusBadge = (branch: BranchInfo) => {
+    if (branch.pr_merged_at) {
       return <Badge className="bg-purple-500">Merged</Badge>;
     }
-    if (worktree.pr_status === 'open') {
+    if (branch.pr_status === 'open') {
       return <Badge className="bg-blue-500">PR Open</Badge>;
     }
-    if (worktree.pr_status === 'closed') {
+    if (branch.pr_status === 'closed') {
       return <Badge className="bg-gray-500">PR Closed</Badge>;
     }
     return null;
   };
 
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    const intervals = [
-      { label: 'year', seconds: 31536000 },
-      { label: 'month', seconds: 2592000 },
-      { label: 'day', seconds: 86400 },
-      { label: 'hour', seconds: 3600 },
-      { label: 'minute', seconds: 60 },
-    ];
-    
-    for (const interval of intervals) {
-      const count = Math.floor(seconds / interval.seconds);
-      if (count >= 1) {
-        return `${count} ${interval.label}${count > 1 ? 's' : ''} ago`;
-      }
-    }
-    
-    return 'just now';
-  };
+  // Removing formatTimeAgo since we don't have created_at in BranchInfo
+  // and orphaned branches shouldn't show timestamps anyway
 
   return (
     <>
@@ -237,53 +193,53 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
           </DialogHeader>
 
           {loading ? (
-            <div className="text-center py-8">Loading worktrees...</div>
+            <div className="text-center py-8">Loading branches...</div>
           ) : (
             <div className="space-y-6">
-              {Object.entries(groupedWorktrees).map(([taskId, taskData]) => (
-                <div key={taskId} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-3 h-3 rounded-full ${getTaskStatusColor(taskData.task_status)}`} />
-                      <h3 className="font-semibold">{taskData.task_title}</h3>
-                      <Badge variant="outline">{taskData.task_status}</Badge>
+              {sortedGroups.map(([taskId, taskData]) => {
+                const isOrphanedGroup = taskId === 'orphaned';
+                return (
+                  <div key={taskId} className={`border rounded-lg p-4 flex flex-col ${isOrphanedGroup ? 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-300 dark:border-yellow-700' : ''}`}>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className={`font-semibold ${isOrphanedGroup ? 'text-yellow-900 dark:text-yellow-200' : ''}`}>
+                        {taskData.task_title}
+                      </h3>
+                      {!isOrphanedGroup && taskData.task_id && (
+                        <button
+                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1"
+                          onClick={() => handleTaskNavigation(taskData.task_id!)}
+                          title="View Task"
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
+                      )}
                     </div>
-                  </div>
                   
-                  <div className="space-y-2">
-                    {taskData.attempts.map((worktree) => {
-                      const isGhost = worktree.worktree_deleted && !worktree.worktree_exists;
-                      const isOrphaned = worktree.task_title.startsWith('[Orphaned]');
-                      const canDelete = !worktree.pr_merged_at;
-                      const canNavigate = !isGhost && !isOrphaned;
+                  <div className="space-y-2 overflow-y-auto max-h-48">
+                    {taskData.branches.map((branch) => {
+                      const isOrphaned = !branch.task_id;
+                      const isGhost = !branch.worktree_exists || !branch.worktree_path;
+                      const canDelete = !branch.pr_merged_at;
                       
                       return (
                         <div
-                          key={worktree.attempt_id}
+                          key={branch.attempt_id || branch.branch_name}
                           className={`group relative flex items-center justify-between p-3 rounded-lg border transition-all ${
                             isGhost 
-                              ? 'bg-gray-50/50 border-dashed border-gray-300' 
+                              ? 'bg-gray-50/50 dark:bg-gray-800/50 border-dashed border-gray-300 dark:border-gray-600' 
                               : isOrphaned
-                              ? 'bg-yellow-50 border-yellow-300'
-                              : 'hover:bg-gray-50 cursor-pointer'
+                              ? 'bg-transparent border-yellow-400 dark:border-yellow-600'
+                              : 'hover:bg-gray-50 dark:hover:bg-gray-800'
                           }`}
-                          onClick={(e) => {
-                            // Don't navigate if clicking on action buttons or links
-                            if ((e.target as HTMLElement).closest('button, a')) return;
-                            if (canNavigate) handleAttemptClick(worktree);
-                          }}
                         >
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center gap-2">
-                              <GitBranch className={`w-4 h-4 ${isGhost ? 'text-gray-400' : ''}`} />
-                              <code className={`text-sm ${isGhost ? 'text-gray-500' : ''}`}>
-                                {worktree.branch}
+                              <GitBranch className={`w-4 h-4 ${isGhost ? 'text-gray-400 dark:text-gray-500' : isOrphaned ? 'text-yellow-600 dark:text-yellow-400' : ''}`} />
+                              <code className={`text-sm ${isGhost ? 'text-gray-500 dark:text-gray-400' : isOrphaned ? 'text-yellow-900 dark:text-yellow-200' : ''}`}>
+                                {branch.branch_name}
                               </code>
-                              {isOrphaned && (
-                                <Badge className="bg-yellow-500">Orphaned</Badge>
-                              )}
-                              {getPRStatusBadge(worktree)}
-                              {worktree.merge_commit && (
+                              {getPRStatusBadge(branch)}
+                              {branch.merge_commit && (
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
@@ -291,11 +247,11 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                         className="bg-purple-500 hover:bg-purple-600 cursor-pointer"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          openCommitInGitHub(worktree);
+                                          openCommitModal(branch);
                                         }}
                                       >
                                         <GitCommit className="w-3 h-3 mr-1" />
-                                        {worktree.merge_commit.substring(0, 7)}
+                                        {branch.merge_commit.substring(0, 7)}
                                       </Badge>
                                     </TooltipTrigger>
                                     <TooltipContent>
@@ -304,28 +260,28 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                   </Tooltip>
                                 </TooltipProvider>
                               )}
-                              {canNavigate && (
-                                <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                              )}
                             </div>
                             
-                            <div className="flex items-center gap-4 text-xs text-gray-600">
-                              <span className="flex items-center gap-1">
-                                <FolderOpen className={`w-3 h-3 ${isGhost ? 'text-gray-400' : ''}`} />
-                                {worktree.worktree_exists ? (
-                                  <span className="text-green-600">Worktree exists</span>
-                                ) : worktree.worktree_deleted ? (
-                                  <span className="text-gray-500">Worktree deleted</span>
-                                ) : (
-                                  <span className="text-orange-500">Worktree missing</span>
-                                )}
-                              </span>
-                              <span className={isGhost ? 'text-gray-400' : ''}>
-                                Created {formatTimeAgo(worktree.created_at)}
-                              </span>
-                              {worktree.pr_url && (
+                            <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
+                              {branch.worktree_path && (
+                                <span className="flex items-center gap-1">
+                                  <FolderOpen className={`w-3 h-3 ${isGhost ? 'text-gray-400 dark:text-gray-500' : isOrphaned ? 'text-yellow-600 dark:text-yellow-400' : ''}`} />
+                                  {branch.worktree_exists ? (
+                                    <span className="text-green-600 dark:text-green-400">Worktree exists</span>
+                                  ) : (
+                                    <span className="text-orange-500 dark:text-orange-400">Worktree missing</span>
+                                  )}
+                                </span>
+                              )}
+                              {!branch.worktree_path && (
+                                <span className="flex items-center gap-1">
+                                  <GitBranch className="w-3 h-3 text-gray-400 dark:text-gray-500" />
+                                  <span className="text-gray-500 dark:text-gray-400">Branch only</span>
+                                </span>
+                              )}
+                              {branch.pr_url && (
                                 <a
-                                  href={worktree.pr_url}
+                                  href={branch.pr_url}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="flex items-center gap-1 text-blue-600 hover:underline"
@@ -341,7 +297,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                           <div className="flex items-center gap-1">
                             {canDelete && (
                               <>
-                                {worktree.worktree_exists && (
+                                {branch.worktree_exists && branch.worktree_path && (
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
@@ -352,9 +308,9 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             if (e.shiftKey) {
-                                              setDeleteConfirm({ worktree, action: 'both' });
+                                              setDeleteConfirm({ branch, action: 'both' });
                                             } else {
-                                              setDeleteConfirm({ worktree, action: 'worktree' });
+                                              setDeleteConfirm({ branch, action: 'worktree' });
                                             }
                                           }}
                                           onMouseEnter={(e) => {
@@ -377,20 +333,20 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                   </TooltipProvider>
                                 )}
                                 
-                                {isGhost && (
+                                {(isGhost || !branch.worktree_path) && (
                                   <TooltipProvider>
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <Button
                                           size="sm"
                                           variant="ghost"
-                                          className="h-8 w-8 p-0"
+                                          className="h-8 w-8 p-0 text-gray-500"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            setDeleteConfirm({ worktree, action: 'branch' });
+                                            setDeleteConfirm({ branch, action: 'branch' });
                                           }}
                                         >
-                                          <GitBranch className="w-4 h-4 text-gray-500" />
+                                          <Trash2 className="w-4 h-4" />
                                         </Button>
                                       </TooltipTrigger>
                                       <TooltipContent>
@@ -405,19 +361,87 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                         </div>
                       );
                     })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               
-              {Object.keys(groupedWorktrees).length === 0 && (
+              {Object.keys(groupedBranches).length === 0 && (
                 <div className="text-center py-8 text-gray-500">
-                  No worktrees found
+                  No branches found
                 </div>
               )}
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Commit Details Modal */}
+      {commitModalData && (
+        <Dialog open={!!commitModalData} onOpenChange={() => setCommitModalData(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Commit Details</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Commit SHA</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-800 rounded">
+                    {commitModalData.branch.merge_commit}
+                  </code>
+                  {commitModalData.branch.pr_url && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        const prUrlMatch = commitModalData.branch.pr_url?.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull/);
+                        if (prUrlMatch) {
+                          const [, owner, repo] = prUrlMatch;
+                          const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitModalData.branch.merge_commit}`;
+                          window.open(commitUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                    >
+                      <ExternalLink className="w-4 h-4 mr-1" />
+                      View on GitHub
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Branch</label>
+                <div className="mt-1">
+                  <code className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
+                    {commitModalData.branch.branch_name}
+                  </code>
+                </div>
+              </div>
+              {commitModalData.branch.pr_url && (
+                <div>
+                  <label className="text-sm font-medium">Pull Request</label>
+                  <div className="mt-1">
+                    <a
+                      href={commitModalData.branch.pr_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline flex items-center gap-1"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      View PR
+                    </a>
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCommitModalData(null)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
         <DialogContent>
@@ -432,7 +456,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                 <>
                   This will delete the worktree directory at:
                   <br />
-                  <code className="text-xs">{deleteConfirm.worktree?.worktree_path}</code>
+                  <code className="text-xs">{deleteConfirm.branch?.worktree_path}</code>
                   <br />
                   The branch will be preserved for future use.
                 </>
@@ -441,7 +465,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                 <>
                   This will permanently delete the branch:
                   <br />
-                  <code className="text-xs">{deleteConfirm.worktree?.branch}</code>
+                  <code className="text-xs">{deleteConfirm.branch?.branch_name}</code>
                   <br />
                   This action cannot be undone.
                 </>
@@ -450,7 +474,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                 <>
                   This will delete both the worktree and the branch:
                   <br />
-                  <code className="text-xs">{deleteConfirm.worktree?.branch}</code>
+                  <code className="text-xs">{deleteConfirm.branch?.branch_name}</code>
                   <br />
                   This action cannot be undone.
                 </>
@@ -463,7 +487,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
             </Button>
             <Button
               variant="destructive"
-              onClick={() => deleteConfirm && handleDelete(deleteConfirm.worktree!, deleteConfirm.action)}
+              onClick={() => deleteConfirm && handleDelete(deleteConfirm.branch!, deleteConfirm.action)}
             >
               Delete
             </Button>

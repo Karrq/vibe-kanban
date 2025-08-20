@@ -209,6 +209,10 @@ fn main() -> anyhow::Result<()> {
                 .route("/sounds/:filename", get(serve_sound_file))
                 .route("/processes/:process_id/kill", post(routes::processes::kill_process))
                 .route("/worktrees", get(task_attempts::get_all_worktrees))
+                .route("/worktrees/orphaned/delete", post(task_attempts::delete_orphaned_worktree))
+                .route("/worktrees/orphaned/delete-branch", post(task_attempts::delete_orphaned_branch))
+                .route("/branches", get(routes::branches::get_all_branches))
+                .route("/branches/delete", post(routes::branches::delete_branch))
                 .route("/tasks/:task_id", get(tasks::get_task_by_id))
                 .merge(
                     Router::new()
