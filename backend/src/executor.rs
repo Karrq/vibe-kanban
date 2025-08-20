@@ -295,6 +295,36 @@ pub trait Executor: Send + Sync {
             summary: None,
         })
     }
+    
+    /// Truncate executor output to include only entries up to the specified message index.
+    /// Returns a tuple of:
+    /// - The truncated output in the executor's native format
+    /// - The number of normalized messages actually included in the output
+    /// This is similar to how Rust's read() returns bytes read.
+    fn truncate_output(
+        &self,
+        logs: &str,
+        message_index: usize,
+        _worktree_path: &str,
+    ) -> Result<(String, usize), String> {
+        // Default implementation: parse logs, truncate, and reconstruct
+        // Executors should override this to preserve their specific format
+        let normalized = self.normalize_logs(logs, _worktree_path)?;
+        
+        // Take only entries up to and including the message_index
+        let actual_count = std::cmp::min(message_index + 1, normalized.entries.len());
+        let truncated_entries: Vec<_> = normalized.entries
+            .into_iter()
+            .take(actual_count)
+            .collect();
+        
+        // For executors that don't override, return JSON representation
+        // This is a fallback - most executors should implement their own truncation
+        let output = serde_json::to_string(&truncated_entries)
+            .map_err(|e| format!("Failed to serialize truncated entries: {}", e))?;
+        
+        Ok((output, truncated_entries.len()))
+    }
 
     #[allow(clippy::result_large_err)]
     async fn setup_streaming(

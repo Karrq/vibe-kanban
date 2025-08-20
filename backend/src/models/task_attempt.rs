@@ -1257,10 +1257,6 @@ impl TaskAttempt {
         // Create fork service to handle git operations
         let fork_service = crate::services::ForkService::new(&ctx.task_attempt.worktree_path, source_attempt_id)?;
         
-        // Extract conversation entries up to the fork point
-        let conversation_entries = fork_service.extract_conversation_up_to(pool, message_index).await
-            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to extract conversation: {}", e)))?;
-        
         // Generate new attempt ID and branch name - same as regular attempt creation
         let new_attempt_id = Uuid::new_v4();
         let task_title_id = crate::utils::text::git_branch_id(&ctx.task.title);
@@ -1323,35 +1319,21 @@ impl TaskAttempt {
         .fetch_one(pool)
         .await?;
         
-        // Store the conversation context if it exists
-        if !conversation_entries.is_empty() {
-            // TODO: This approach of serializing normalized entries is insufficient!
-            // The database actually stores RAW executor output in stdout, not normalized entries.
-            // We should leverage this to properly preserve executor-specific formatting.
-            //
-            // Proper implementation should:
-            // 1. Get the raw stdout from the source ExecutionProcess records
-            // 2. Add a `truncate_session` method to the Executor trait that takes:
-            //    - The raw (non-normalized) executor output from stdout
-            //    - The message index to truncate at
-            // 3. Each executor implementation would:
-            //    - Parse its own raw format
-            //    - Truncate at the specified message
-            //    - Return properly formatted raw output for that executor
-            // 4. Store this executor-specific truncated raw output directly as stdout
-            //
-            // This ensures the forked attempt can properly resume with the exact
-            // conversation format the executor expects, since we're preserving the
-            // raw format that executors actually produce and consume.
-            //
-            // For now, we store normalized entries as JSON, but this will
-            // cause issues when trying to continue the conversation.
-            
-            // Serialize conversation entries to a format that can be stored
-            let conversation_json = serde_json::to_string(&conversation_entries)
-                .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to serialize conversation: {}", e)))?;
-            
+        // Extract truncated output in the executor's native format
+        let executor_type = ctx.task_attempt.executor.as_deref()
+            .ok_or_else(|| TaskAttemptError::ValidationError("Source attempt has no executor type".to_string()))?;
+        
+        let truncated_output = fork_service.extract_truncated_output(
+            pool, 
+            message_index, 
+            executor_type
+        ).await
+            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to extract truncated output: {}", e)))?;
+        
+        // Store the truncated output if we have any
+        if !truncated_output.is_empty() {
             // Create an initial execution process to store the conversation context
+            // This preserves the executor's native format for proper continuation
             let process_id = Uuid::new_v4();
             let process_id_str = process_id.to_string();
             let new_attempt_id_str = new_attempt_id.to_string();
@@ -1367,14 +1349,13 @@ impl TaskAttempt {
                 new_attempt_id_str,
                 ctx.task_attempt.executor.clone(),
                 new_worktree_path_str.clone(),
-                conversation_json
+                truncated_output
             )
             .execute(pool)
             .await?;
             
             tracing::info!(
-                "Stored {} conversation entries for forked attempt {} (using normalized format - see TODO)",
-                conversation_entries.len(),
+                "Stored truncated output for forked attempt {} (preserving executor native format)",
                 new_attempt_id
             );
         }

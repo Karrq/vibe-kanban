@@ -203,6 +203,86 @@ impl ForkService {
         Ok(all_entries)
     }
     
+    /// Extract truncated raw output up to and including the specified message index
+    /// This preserves the executor's native format for proper conversation continuation
+    pub async fn extract_truncated_output(
+        &self,
+        db_pool: &SqlitePool,
+        message_index: usize,
+        executor_type: &str,
+    ) -> Result<String, ForkServiceError> {
+        use crate::executor::ExecutorConfig;
+        
+        // Get all execution processes for this attempt
+        let processes = ExecutionProcess::find_by_task_attempt_id(db_pool, self.attempt_id).await?;
+        
+        // Sort processes by created_at to ensure correct order
+        let mut sorted_processes = processes;
+        sorted_processes.sort_by_key(|p| p.created_at);
+        
+        // Parse executor type and create executor
+        let executor_config = match executor_type.to_string().parse::<ExecutorConfig>() {
+            Ok(config) => config,
+            Err(_) => {
+                error!("Failed to parse executor type: {}", executor_type);
+                return Err(ForkServiceError::ConversationExtractionFailed(format!("Invalid executor type: {}", executor_type)));
+            }
+        };
+        
+        let executor = executor_config.create_executor();
+        
+        // Collect all raw outputs from coding agent processes
+        let mut combined_output = Vec::new();
+        let mut messages_remaining = message_index + 1; // +1 because we want to include the message at message_index
+        
+        for process in sorted_processes {
+            // Skip non-executor processes
+            if process.process_type != ExecutionProcessType::CodingAgent {
+                continue;
+            }
+            
+            if let Some(stdout) = &process.stdout {
+                if !stdout.trim().is_empty() {
+                    if messages_remaining == 0 {
+                        break; // We've already collected enough messages
+                    }
+                    
+                    // Truncate this process's output to include only the messages we need
+                    // truncate_output will return the actual number of messages included
+                    let (truncated, messages_included) = executor.truncate_output(
+                        stdout, 
+                        messages_remaining.saturating_sub(1), // -1 because truncate_output is 0-indexed
+                        &self.worktree_path
+                    ).map_err(|e| ForkServiceError::ConversationExtractionFailed(
+                        format!("Failed to truncate output: {}", e)
+                    ))?;
+                    
+                    if messages_included > 0 {
+                        combined_output.push(truncated);
+                        messages_remaining = messages_remaining.saturating_sub(messages_included);
+                    }
+                    
+                    if messages_remaining == 0 {
+                        break; // We've collected all needed messages
+                    }
+                }
+            }
+        }
+        
+        // Combine all outputs with newlines between them
+        let final_output = combined_output.join("\n");
+        
+        info!(
+            "Extracted truncated output up to message index {} for executor {} (combined {} processes, {} messages remaining)",
+            message_index,
+            executor_type,
+            combined_output.len(),
+            messages_remaining
+        );
+        
+        Ok(final_output)
+    }
+    
     /// Create a new worktree from a checkpoint commit
     pub fn create_forked_worktree(
         &self,
