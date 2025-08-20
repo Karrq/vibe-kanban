@@ -122,39 +122,82 @@ export function TaskDetailsPanel({
               </div>
             )}
             
-            <div className="flex flex-col h-full">
-              <TaskDetailsHeader
-                onClose={onClose}
-                onEditTask={onEditTask}
-                onDeleteTask={onDeleteTask}
-              />
+            {/* On mobile, make panel scrollable with fixed footer. On desktop, keep flex layout */}
+            {isSideBySide ? (
+              // Desktop: Original flex layout
+              <div className="flex flex-col h-full">
+                <TaskDetailsHeader
+                  onClose={onClose}
+                  onEditTask={onEditTask}
+                  onDeleteTask={onDeleteTask}
+                />
 
-              <CollapsibleToolbar />
+                <CollapsibleToolbar />
 
-              <TabNavigation
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-              />
+                <TabNavigation
+                  activeTab={activeTab}
+                  setActiveTab={setActiveTab}
+                />
 
-              {/* Tab Content */}
-              <div
-                className={`flex-1 flex flex-col min-h-0 ${activeTab === 'logs' ? 'p-4' : 'pt-4'}`}
-              >
-                {activeTab === 'diffs' ? (
-                  <DiffTab />
-                ) : activeTab === 'related' ? (
-                  <RelatedTasksTab />
-                ) : activeTab === 'processes' ? (
-                  <ProcessesTab />
-                ) : activeTab === 'plan' ? (
-                  <PlanTab />
-                ) : (
-                  <LogsTab />
-                )}
+                {/* Tab Content */}
+                <div
+                  className={`flex-1 flex flex-col min-h-0 ${activeTab === 'logs' ? 'p-4' : 'pt-4'}`}
+                >
+                  {activeTab === 'diffs' ? (
+                    <DiffTab />
+                  ) : activeTab === 'related' ? (
+                    <RelatedTasksTab />
+                  ) : activeTab === 'processes' ? (
+                    <ProcessesTab />
+                  ) : activeTab === 'plan' ? (
+                    <PlanTab />
+                  ) : (
+                    <LogsTab />
+                  )}
+                </div>
+
+                <TaskFollowUpSection />
               </div>
+            ) : (
+              // Mobile: Scrollable content with fixed footer
+              <div className="h-full flex flex-col">
+                {/* Scrollable content area */}
+                <div className="flex-1 overflow-y-auto overscroll-contain">
+                  <TaskDetailsHeader
+                    onClose={onClose}
+                    onEditTask={onEditTask}
+                    onDeleteTask={onDeleteTask}
+                  />
 
-              <TaskFollowUpSection />
-            </div>
+                  <CollapsibleToolbar />
+
+                  <TabNavigation
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                  />
+
+                  {/* Tab Content */}
+                  <div className={activeTab === 'logs' ? 'p-4' : 'pt-4'}>
+                    {activeTab === 'diffs' ? (
+                      <DiffTab />
+                    ) : activeTab === 'related' ? (
+                      <RelatedTasksTab />
+                    ) : activeTab === 'processes' ? (
+                      <ProcessesTab />
+                    ) : activeTab === 'plan' ? (
+                      <PlanTab />
+                    ) : (
+                      <LogsTab />
+                    )}
+                  </div>
+                </div>
+
+                {/* Fixed footer */}
+                <div className="flex-shrink-0">
+                  <TaskFollowUpSection />
+                </div>
+              </div>
+            )}
           </div>
 
           <EditorSelectionDialog

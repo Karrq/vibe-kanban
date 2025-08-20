@@ -24,6 +24,22 @@ function Conversation() {
   const [visibleCount, setVisibleCount] = useState(100);
   const [visibleRunningEntriesCount, setVisibleRunningEntriesCount] =
     useState(0);
+  
+  // Check if we're in side-by-side mode (desktop)
+  const [isSideBySide, setIsSideBySide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280; // xl breakpoint
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const checkMode = () => {
+      setIsSideBySide(window.innerWidth >= 1280);
+    };
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -236,7 +252,7 @@ function Conversation() {
     <div
       ref={scrollContainerRef}
       onScroll={handleLogsScroll}
-      className="h-full overflow-y-auto"
+      className={isSideBySide ? "h-full overflow-y-auto overscroll-contain" : ""}
     >
       {visibleCount - visibleRunningEntriesCount < allEntries.length && (
         <div className="flex justify-center mb-4">

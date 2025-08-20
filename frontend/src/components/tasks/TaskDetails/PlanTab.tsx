@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState } from 'react';
+import { useContext, useMemo, useState, useEffect } from 'react';
 import {
   FileText,
   Copy,
@@ -30,6 +30,22 @@ function PlanTab() {
   const { isPlanningMode, hasPlans, latestProcessHasNoPlan } = useTaskPlan();
   const [copiedPlan, setCopiedPlan] = useState<string | null>(null);
   const [expandedPlans, setExpandedPlans] = useState<Set<string>>(new Set());
+  
+  // Check if we're in side-by-side mode (desktop)
+  const [isSideBySide, setIsSideBySide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280; // xl breakpoint
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const checkMode = () => {
+      setIsSideBySide(window.innerWidth >= 1280);
+    };
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
 
   // Extract all plans from all processes
   const plans = useMemo(() => {
@@ -143,7 +159,7 @@ function PlanTab() {
   }
 
   return (
-    <div className="p-4 space-y-6 h-full flex flex-col">
+    <div className={isSideBySide ? "p-4 space-y-6 h-full flex flex-col" : "p-4 space-y-6"}>
       <div className="flex items-center justify-between flex-shrink-0">
         <h3 className="text-lg font-semibold">Plans ({plans.length})</h3>
         {latestProcessHasNoPlan && (
@@ -154,7 +170,7 @@ function PlanTab() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+      <div className={isSideBySide ? "flex-1 overflow-y-auto overscroll-contain space-y-4 min-h-0" : "space-y-4"}>
         {plans.map((planEntry, index) => {
           const planId = `${planEntry.processId}-${planEntry.planIndex}`;
           const planContent =

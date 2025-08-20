@@ -1,15 +1,13 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import { Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useConfig } from '@/components/config-provider';
 import { attemptsApi, projectsApi } from '@/lib/api';
-import type { GitBranch, TaskAttempt } from 'shared/types';
+import type { GitBranch } from 'shared/types';
 import { EXECUTOR_LABELS, EXECUTOR_TYPES } from 'shared/types';
 import { getProjectExecutorDefault } from '@/lib/project-executor-defaults';
 import {
   TaskAttemptDataContext,
-  TaskAttemptLoadingContext,
   TaskAttemptStoppingContext,
   TaskDetailsContext,
   TaskSelectedAttemptContext,
@@ -25,8 +23,7 @@ const availableExecutors = EXECUTOR_TYPES.map((id) => ({
 
 function TaskDetailsToolbar() {
   const { task, projectId } = useContext(TaskDetailsContext);
-  const { setLoading } = useContext(TaskAttemptLoadingContext);
-  const { selectedAttempt, setSelectedAttempt } = useContext(
+  const { selectedAttempt, taskAttempts, setTaskAttempts } = useContext(
     TaskSelectedAttemptContext
   );
 
@@ -34,9 +31,6 @@ function TaskDetailsToolbar() {
   const { setAttemptData, isAttemptRunning } = useContext(
     TaskAttemptDataContext
   );
-
-  const [taskAttempts, setTaskAttempts] = useState<TaskAttempt[]>([]);
-  const location = useLocation();
 
   const { config } = useConfig();
 
@@ -145,7 +139,6 @@ function TaskDetailsToolbar() {
     if (!task) return;
 
     try {
-      setLoading(true);
       const result = await attemptsApi.getAll(projectId, task.id);
 
       setTaskAttempts((prev) => {
@@ -153,44 +146,8 @@ function TaskDetailsToolbar() {
         return result || prev;
       });
 
-      if (result.length > 0) {
-        // Check if there's an attempt query parameter
-        const urlParams = new URLSearchParams(location.search);
-        const attemptParam = urlParams.get('attempt');
-
-        let selectedAttemptToUse: TaskAttempt;
-
-        if (attemptParam) {
-          // Try to find the specific attempt
-          const specificAttempt = result.find(
-            (attempt) => attempt.id === attemptParam
-          );
-          if (specificAttempt) {
-            selectedAttemptToUse = specificAttempt;
-          } else {
-            // Fall back to latest if specific attempt not found
-            selectedAttemptToUse = result.reduce((latest, current) =>
-              new Date(current.created_at) > new Date(latest.created_at)
-                ? current
-                : latest
-            );
-          }
-        } else {
-          // Use latest attempt if no specific attempt requested
-          selectedAttemptToUse = result.reduce((latest, current) =>
-            new Date(current.created_at) > new Date(latest.created_at)
-              ? current
-              : latest
-          );
-        }
-
-        setSelectedAttempt((prev) => {
-          if (JSON.stringify(prev) === JSON.stringify(selectedAttemptToUse))
-            return prev;
-          return selectedAttemptToUse;
-        });
-      } else {
-        setSelectedAttempt(null);
+      // Don't auto-select here anymore - it's handled by TaskDetailsContextProvider
+      if (result && result.length === 0) {
         setAttemptData({
           processes: [],
           runningProcessDetails: {},
@@ -199,10 +156,8 @@ function TaskDetailsToolbar() {
       }
     } catch (error) {
       // we already logged error
-    } finally {
-      setLoading(false);
     }
-  }, [task, projectId, location.search]);
+  }, [task, projectId, setTaskAttempts, setAttemptData]);
 
   useEffect(() => {
     fetchTaskAttempts();

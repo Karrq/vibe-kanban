@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useLocation } from 'react-router-dom';
 import type {
   EditorType,
   ExecutionProcess,
@@ -56,6 +57,7 @@ const TaskDetailsProvider: FC<{
   const [selectedAttempt, setSelectedAttempt] = useState<TaskAttempt | null>(
     null
   );
+  const [taskAttempts, setTaskAttempts] = useState<TaskAttempt[]>([]);
   const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
 
@@ -83,6 +85,62 @@ const TaskDetailsProvider: FC<{
   });
 
   const relatedTasksLoadingRef = useRef(false);
+  const location = useLocation();
+
+  // Auto-select the latest attempt when the task loads
+  useEffect(() => {
+    const fetchAndSelectAttempt = async () => {
+      if (!task) return;
+
+      try {
+        setLoading(true);
+        const attempts = await attemptsApi.getAll(projectId, task.id);
+        
+        // Always update the task attempts list
+        setTaskAttempts(attempts || []);
+        
+        if (attempts && attempts.length > 0) {
+          // Check if there's an attempt query parameter
+          const urlParams = new URLSearchParams(location.search);
+          const attemptParam = urlParams.get('attempt');
+          
+          let attemptToSelect: TaskAttempt;
+          
+          if (attemptParam) {
+            // Try to find the specific attempt
+            const specificAttempt = attempts.find(
+              (attempt) => attempt.id === attemptParam
+            );
+            if (specificAttempt) {
+              attemptToSelect = specificAttempt;
+            } else {
+              // Fallback to latest attempt if specific one not found
+              attemptToSelect = attempts.reduce((latest, current) =>
+                new Date(current.created_at) > new Date(latest.created_at)
+                  ? current
+                  : latest
+              );
+            }
+          } else {
+            // Select the latest attempt
+            attemptToSelect = attempts.reduce((latest, current) =>
+              new Date(current.created_at) > new Date(latest.created_at)
+                ? current
+                : latest
+            );
+          }
+          
+          setSelectedAttempt(attemptToSelect);
+        }
+      } catch (error) {
+        console.error('Failed to fetch task attempts:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAndSelectAttempt();
+  }, [task?.id, projectId, location.search]);
 
   const fetchRelatedTasks = useCallback(async () => {
     if (!projectId || !task?.id || !selectedAttempt?.id) {
@@ -370,8 +428,8 @@ const TaskDetailsProvider: FC<{
   );
 
   const selectedAttemptValue = useMemo(
-    () => ({ selectedAttempt, setSelectedAttempt }),
-    [selectedAttempt]
+    () => ({ selectedAttempt, setSelectedAttempt, taskAttempts, setTaskAttempts }),
+    [selectedAttempt, taskAttempts]
   );
 
   const attemptStoppingValue = useMemo(

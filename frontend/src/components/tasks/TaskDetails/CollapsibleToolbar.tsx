@@ -1,10 +1,31 @@
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button.tsx';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import TaskDetailsToolbar from '@/components/tasks/TaskDetailsToolbar.tsx';
 
 function CollapsibleToolbar() {
-  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  // Check if we're on mobile and set initial collapsed state accordingly
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      // Collapsed by default on mobile (< 1280px)
+      return window.innerWidth < 1280;
+    }
+    return false;
+  });
+
+  // Update collapsed state when window resizes across the breakpoint
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 1280;
+      // Only auto-collapse when going from desktop to mobile
+      if (isMobile && window.innerWidth >= 1280) {
+        setIsHeaderCollapsed(true);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <div className="border-b">

@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react';
+import { useContext, useState, useEffect } from 'react';
 import {
   Play,
   Square,
@@ -17,6 +17,23 @@ import type {
 
 function ProcessesTab() {
   const { attemptData, setAttemptData } = useContext(TaskAttemptDataContext);
+  
+  // Check if we're in side-by-side mode (desktop)
+  const [isSideBySide, setIsSideBySide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280; // xl breakpoint
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const checkMode = () => {
+      setIsSideBySide(window.innerWidth >= 1280);
+    };
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
+  
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(
     null
   );
@@ -103,9 +120,9 @@ function ProcessesTab() {
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className={isSideBySide ? "flex-1 flex flex-col min-h-0" : ""}>
       {!selectedProcessId ? (
-        <div className="flex-1 overflow-auto px-4 pb-20">
+        <div className={isSideBySide ? "flex-1 overflow-auto overscroll-contain px-4 pb-20" : "px-4 pb-20"}>
           <div className="space-y-3">
             {attemptData.processes.map((process) => (
               <div
@@ -182,7 +199,7 @@ function ProcessesTab() {
               Back to list
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 pb-20">
+          <div className={isSideBySide ? "flex-1 overflow-y-auto overscroll-contain p-4 pb-20" : "p-4 pb-20"}>
             {selectedProcess ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -250,7 +267,7 @@ function ProcessesTab() {
                 {selectedProcess.stdout && (
                   <div>
                     <h3 className="font-medium text-sm mb-2">Stdout</h3>
-                    <div className="bg-black text-green-400 p-3 rounded-md font-mono text-sm h-64 overflow-auto">
+                    <div className={`bg-black text-green-400 p-3 rounded-md font-mono text-sm h-64 ${isSideBySide ? "overflow-auto overscroll-contain" : "overflow-auto"}`}>
                       <pre className="whitespace-pre-wrap">
                         {selectedProcess.stdout}
                       </pre>
@@ -261,7 +278,7 @@ function ProcessesTab() {
                 {selectedProcess.stderr && (
                   <div>
                     <h3 className="font-medium text-sm mb-2">Stderr</h3>
-                    <div className="bg-black text-red-400 p-3 rounded-md font-mono text-sm h-64 overflow-auto">
+                    <div className={`bg-black text-red-400 p-3 rounded-md font-mono text-sm h-64 ${isSideBySide ? "overflow-auto overscroll-contain" : "overflow-auto"}`}>
                       <pre className="whitespace-pre-wrap">
                         {selectedProcess.stderr}
                       </pre>

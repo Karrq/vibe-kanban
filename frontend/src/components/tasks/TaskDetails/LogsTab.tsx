@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { NormalizedConversationViewer } from '@/components/tasks/TaskDetails/LogsTab/NormalizedConversationViewer.tsx';
 import {
@@ -16,6 +16,22 @@ function LogsTab() {
   const { executionState } = useContext(TaskExecutionStateContext);
   const { selectedAttempt } = useContext(TaskSelectedAttemptContext);
   const { attemptData } = useContext(TaskAttemptDataContext);
+  
+  // Check if we're in side-by-side mode (desktop)
+  const [isSideBySide, setIsSideBySide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280; // xl breakpoint
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const checkMode = () => {
+      setIsSideBySide(window.innerWidth >= 1280);
+    };
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
 
   if (loading) {
     return (
@@ -106,7 +122,7 @@ function LogsTab() {
     }
 
     return (
-      <div className="h-full overflow-y-auto">
+      <div className={isSideBySide ? "h-full overflow-y-auto overscroll-contain" : ""}>
         <div className="mb-4">
           <p
             className={`text-lg font-semibold mb-2 ${isSetupFailed ? 'text-destructive' : ''}`}

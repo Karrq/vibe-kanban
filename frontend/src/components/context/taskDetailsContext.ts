@@ -43,6 +43,8 @@ export const TaskAttemptDataContext =
 interface TaskSelectedAttemptContextValue {
   selectedAttempt: TaskAttempt | null;
   setSelectedAttempt: Dispatch<SetStateAction<TaskAttempt | null>>;
+  taskAttempts: TaskAttempt[];
+  setTaskAttempts: Dispatch<SetStateAction<TaskAttempt[]>>;
 }
 
 export const TaskSelectedAttemptContext =

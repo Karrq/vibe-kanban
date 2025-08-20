@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionProcess } from 'shared/types.ts';
 
 type Props = {
@@ -8,6 +8,22 @@ type Props = {
 
 function SetupScriptRunning({ setupProcessId, runningProcessDetails }: Props) {
   const setupScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Check if we're in side-by-side mode (desktop)
+  const [isSideBySide, setIsSideBySide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1280; // xl breakpoint
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const checkMode = () => {
+      setIsSideBySide(window.innerWidth >= 1280);
+    };
+    window.addEventListener('resize', checkMode);
+    return () => window.removeEventListener('resize', checkMode);
+  }, []);
 
   // Auto-scroll setup script logs to bottom
   useEffect(() => {
@@ -27,7 +43,7 @@ function SetupScriptRunning({ setupProcessId, runningProcessDetails }: Props) {
   );
 
   return (
-    <div ref={setupScrollRef} className="h-full overflow-y-auto">
+    <div ref={setupScrollRef} className={isSideBySide ? "h-full overflow-y-auto overscroll-contain" : ""}>
       <div className="mb-4">
         <p className="text-lg font-semibold mb-2">Setup Script Running</p>
         <p className="text-muted-foreground mb-4">
