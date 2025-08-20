@@ -379,45 +379,22 @@ Task title: {}"#,
         worktree_path: &str,
     ) -> Result<(String, usize), String> {
         let target_count = message_index + 1;
-        
-        // Use scan to accumulate lines and count until we reach target
-        let result: Result<Vec<(String, usize)>, String> = logs
-            .lines()
-            .scan(0usize, |accumulated_count, line| {
-                // Only process if we haven't reached target yet
-                if *accumulated_count >= target_count {
-                    return None; // Stop processing
-                }
-                
-                // Normalize just this line to count its entries
-                let normalized = self.normalize_logs(line, worktree_path);
-                
-                match normalized {
-                    Ok(conv) => {
-                        let count = conv.entries.len();
-                        *accumulated_count += count;
-                        Some(Ok((line.to_string(), count)))
-                    }
-                    Err(e) => Some(Err(e))
-                }
-            })
-            .collect();
-        
-        // Handle the Result from collect
-        let lines_with_counts = result?;
-        
-        // Reconstruct the output and calculate total count
         let mut accumulated_lines = Vec::new();
         let mut total_count = 0;
         
-        for (line, count) in lines_with_counts {
-            accumulated_lines.push(line);
-            total_count += count;
-            
+        for line in logs.lines() {
+            // Stop if we've reached our target
             if total_count >= target_count {
-                // We've reached our target
                 break;
             }
+            
+            // Normalize just this line to count its entries
+            let normalized = self.normalize_logs(line, worktree_path)?;
+            let entry_count = normalized.entries.len();
+            
+            // Add the line and update count
+            accumulated_lines.push(line);
+            total_count += entry_count;
         }
         
         let accumulated_logs = accumulated_lines.join("\n");
