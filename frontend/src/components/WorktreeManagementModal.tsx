@@ -18,6 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { CommitDetailsModal } from '@/components/tasks/CommitDetailsModal';
 
 interface BranchInfo {
   branch_name: string;
@@ -59,7 +60,8 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
     branch?: BranchInfo;
     action: 'worktree' | 'branch' | 'both';
   } | null>(null);
-  const [commitModalData, setCommitModalData] = useState<{ branch: BranchInfo } | null>(null);
+  const [showCommitDetailsModal, setShowCommitDetailsModal] = useState(false);
+  const [selectedCommitBranch, setSelectedCommitBranch] = useState<BranchInfo | null>(null);
   const navigate = useNavigate();
 
   // Group branches by task, but put orphaned ones in a separate group
@@ -129,8 +131,9 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
   };
 
   const openCommitModal = (branch: BranchInfo) => {
-    if (branch.merge_commit) {
-      setCommitModalData({ branch });
+    if (branch.merge_commit && branch.task_id && branch.attempt_id) {
+      setSelectedCommitBranch(branch);
+      setShowCommitDetailsModal(true);
     }
   };
 
@@ -377,70 +380,15 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
       </Dialog>
 
       {/* Commit Details Modal */}
-      {commitModalData && (
-        <Dialog open={!!commitModalData} onOpenChange={() => setCommitModalData(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Commit Details</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Commit SHA</label>
-                <div className="flex items-center gap-2 mt-1">
-                  <code className="flex-1 p-2 bg-gray-100 dark:bg-gray-800 rounded">
-                    {commitModalData.branch.merge_commit}
-                  </code>
-                  {commitModalData.branch.pr_url && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        const prUrlMatch = commitModalData.branch.pr_url?.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull/);
-                        if (prUrlMatch) {
-                          const [, owner, repo] = prUrlMatch;
-                          const commitUrl = `https://github.com/${owner}/${repo}/commit/${commitModalData.branch.merge_commit}`;
-                          window.open(commitUrl, '_blank', 'noopener,noreferrer');
-                        }
-                      }}
-                    >
-                      <ExternalLink className="w-4 h-4 mr-1" />
-                      View on GitHub
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-medium">Branch</label>
-                <div className="mt-1">
-                  <code className="p-2 bg-gray-100 dark:bg-gray-800 rounded">
-                    {commitModalData.branch.branch_name}
-                  </code>
-                </div>
-              </div>
-              {commitModalData.branch.pr_url && (
-                <div>
-                  <label className="text-sm font-medium">Pull Request</label>
-                  <div className="mt-1">
-                    <a
-                      href={commitModalData.branch.pr_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline flex items-center gap-1"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                      View PR
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setCommitModalData(null)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      {selectedCommitBranch && selectedCommitBranch.merge_commit && selectedCommitBranch.task_id && selectedCommitBranch.attempt_id && (
+        <CommitDetailsModal
+          isOpen={showCommitDetailsModal}
+          onOpenChange={setShowCommitDetailsModal}
+          commitSha={selectedCommitBranch.merge_commit}
+          projectId={selectedCommitBranch.project_id}
+          taskId={selectedCommitBranch.task_id}
+          attemptId={selectedCommitBranch.attempt_id}
+        />
       )}
 
       <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
