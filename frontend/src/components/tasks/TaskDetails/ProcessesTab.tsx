@@ -7,6 +7,7 @@ import {
   Clock,
   Cog,
   ArrowLeft,
+  RefreshCw,
 } from 'lucide-react';
 import { TaskAttemptDataContext } from '@/components/context/taskDetailsContext.ts';
 import { executionProcessesApi } from '@/lib/api.ts';
@@ -38,6 +39,7 @@ function ProcessesTab() {
     null
   );
   const [loadingProcessId, setLoadingProcessId] = useState<string | null>(null);
+  const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
 
   const getStatusIcon = (status: ExecutionProcessStatus) => {
     switch (status) {
@@ -87,6 +89,7 @@ function ProcessesTab() {
             [processId]: result,
           },
         }));
+        setLastFetchTime(new Date());
       }
     } catch (err) {
       console.error('Failed to fetch process details:', err);
@@ -98,15 +101,27 @@ function ProcessesTab() {
   const handleProcessClick = async (process: ExecutionProcessSummary) => {
     setSelectedProcessId(process.id);
 
-    // If we don't have details for this process, fetch them
-    if (!attemptData.runningProcessDetails[process.id]) {
-      await fetchProcessDetails(process.id);
-    }
+    // Always fetch fresh details when clicking on a process
+    await fetchProcessDetails(process.id);
   };
 
   const selectedProcess = selectedProcessId
     ? attemptData.runningProcessDetails[selectedProcessId]
     : null;
+
+  // Auto-refresh for running processes
+  useEffect(() => {
+    if (!selectedProcessId || !selectedProcess) return;
+    
+    // Only auto-refresh if the process is running
+    if (selectedProcess.status !== 'running') return;
+    
+    const intervalId = setInterval(() => {
+      fetchProcessDetails(selectedProcessId);
+    }, 3000); // Refresh every 3 seconds
+    
+    return () => clearInterval(intervalId);
+  }, [selectedProcessId, selectedProcess?.status]);
 
   if (!attemptData.processes || attemptData.processes.length === 0) {
     return (
@@ -190,14 +205,31 @@ function ProcessesTab() {
       ) : (
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
-            <h2 className="text-lg font-semibold">Process Details</h2>
-            <button
-              onClick={() => setSelectedProcessId(null)}
-              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md border border-border transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back to list
-            </button>
+            <div>
+              <h2 className="text-lg font-semibold">Process Details</h2>
+              {lastFetchTime && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Last updated: {lastFetchTime.toLocaleTimeString()}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchProcessDetails(selectedProcessId)}
+                disabled={loadingProcessId === selectedProcessId}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md border border-border transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingProcessId === selectedProcessId ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <button
+                onClick={() => setSelectedProcessId(null)}
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-md border border-border transition-colors"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back to list
+              </button>
+            </div>
           </div>
           <div className={isSideBySide ? "flex-1 overflow-y-auto overscroll-contain p-4 pb-20" : "p-4 pb-20"}>
             {selectedProcess ? (
