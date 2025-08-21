@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TaskWithAttemptStatus } from 'shared/types';
+import { useArchive } from '@/contexts/ArchiveContext';
 
 type TaskOrder = {
   [projectId: string]: string[]; // Array of task IDs in order
@@ -7,6 +8,7 @@ type TaskOrder = {
 
 export function useTaskOrder(projectId: string | undefined) {
   const [taskOrder, setTaskOrder] = useState<string[]>([]);
+  const { isTaskArchived } = useArchive();
 
   // Load task order from localStorage
   useEffect(() => {
@@ -43,33 +45,40 @@ export function useTaskOrder(projectId: string | undefined) {
     setTaskOrder(newOrder);
   }, [projectId]);
 
-  // Sort tasks based on stored order
+  // Sort tasks based on stored order, always placing archived items last
   const sortTasks = useCallback((tasks: TaskWithAttemptStatus[]): TaskWithAttemptStatus[] => {
-    if (taskOrder.length === 0) return tasks;
+    // Separate active and archived tasks
+    const activeTasks = tasks.filter(t => !isTaskArchived(t.id));
+    const archivedTasks = tasks.filter(t => isTaskArchived(t.id));
     
-    // Create a map for quick lookup
-    const taskMap = new Map(tasks.map(task => [task.id, task]));
-    const sortedTasks: TaskWithAttemptStatus[] = [];
-    const seenIds = new Set<string>();
-    
-    // First, add tasks in the stored order
-    for (const taskId of taskOrder) {
-      const task = taskMap.get(taskId);
-      if (task) {
-        sortedTasks.push(task);
-        seenIds.add(taskId);
+    // Sort active tasks based on stored order
+    const sortedActive = taskOrder.length === 0 ? activeTasks : (() => {
+      const taskMap = new Map(activeTasks.map(task => [task.id, task]));
+      const sorted: TaskWithAttemptStatus[] = [];
+      const seenIds = new Set<string>();
+      
+      // First, add active tasks in the stored order
+      for (const taskId of taskOrder) {
+        const task = taskMap.get(taskId);
+        if (task) {
+          sorted.push(task);
+          seenIds.add(taskId);
+        }
       }
-    }
-    
-    // Then, add any tasks that aren't in the stored order (new tasks)
-    for (const task of tasks) {
-      if (!seenIds.has(task.id)) {
-        sortedTasks.push(task);
+      
+      // Then, add any active tasks that aren't in the stored order
+      for (const task of activeTasks) {
+        if (!seenIds.has(task.id)) {
+          sorted.push(task);
+        }
       }
-    }
+      
+      return sorted;
+    })();
     
-    return sortedTasks;
-  }, [taskOrder]);
+    // Archived tasks always come after active ones (in their original order)
+    return [...sortedActive, ...archivedTasks];
+  }, [taskOrder, isTaskArchived]);
 
   // Update order when tasks are reordered
   const updateTaskOrder = useCallback((

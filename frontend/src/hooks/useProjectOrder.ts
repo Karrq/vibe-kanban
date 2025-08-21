@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Project } from 'shared/types';
+import { useArchive } from '@/contexts/ArchiveContext';
 
 export function useProjectOrder() {
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
+  const { isProjectArchived } = useArchive();
 
   // Load project order from localStorage
   useEffect(() => {
@@ -23,33 +25,40 @@ export function useProjectOrder() {
     setProjectOrder(newOrder);
   }, []);
 
-  // Sort projects based on stored order
+  // Sort projects based on stored order, always placing archived items last
   const sortProjects = useCallback((projects: Project[]): Project[] => {
-    if (projectOrder.length === 0) return projects;
+    // Separate active and archived projects
+    const activeProjects = projects.filter(p => !isProjectArchived(p.id));
+    const archivedProjects = projects.filter(p => isProjectArchived(p.id));
     
-    // Create a map for quick lookup
-    const projectMap = new Map(projects.map(project => [project.id, project]));
-    const sortedProjects: Project[] = [];
-    const seenIds = new Set<string>();
-    
-    // First, add projects in the stored order
-    for (const projectId of projectOrder) {
-      const project = projectMap.get(projectId);
-      if (project) {
-        sortedProjects.push(project);
-        seenIds.add(projectId);
+    // Sort active projects based on stored order
+    const sortedActive = projectOrder.length === 0 ? activeProjects : (() => {
+      const projectMap = new Map(activeProjects.map(project => [project.id, project]));
+      const sorted: Project[] = [];
+      const seenIds = new Set<string>();
+      
+      // First, add active projects in the stored order
+      for (const projectId of projectOrder) {
+        const project = projectMap.get(projectId);
+        if (project) {
+          sorted.push(project);
+          seenIds.add(projectId);
+        }
       }
-    }
-    
-    // Then, add any projects that aren't in the stored order (new projects)
-    for (const project of projects) {
-      if (!seenIds.has(project.id)) {
-        sortedProjects.push(project);
+      
+      // Then, add any active projects that aren't in the stored order
+      for (const project of activeProjects) {
+        if (!seenIds.has(project.id)) {
+          sorted.push(project);
+        }
       }
-    }
+      
+      return sorted;
+    })();
     
-    return sortedProjects;
-  }, [projectOrder]);
+    // Archived projects always come after active ones (in their original order)
+    return [...sortedActive, ...archivedProjects];
+  }, [projectOrder, isProjectArchived]);
 
   // Update order when projects are reordered
   const updateProjectOrder = useCallback((
