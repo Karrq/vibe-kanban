@@ -54,7 +54,7 @@ export function ProjectTasks() {
     taskId?: string;
   }>();
   const navigate = useNavigate();
-  const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount, toggleTaskArchive, isTaskArchived } = useArchive();
+  const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount, toggleTaskArchive } = useArchive();
   const { sortTasks, updateTaskOrder, removeFromOrder } = useTaskOrder(projectId);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
@@ -290,12 +290,10 @@ export function ProjectTasks() {
   }, [fetchProject]);
 
   const handleArchiveTask = useCallback((taskId: string) => {
-    // If archiving (not unarchiving), remove from order
-    if (!isTaskArchived(taskId)) {
-      removeFromOrder(taskId);
-    }
+    // Remove from order whenever archive status changes to prevent ordering conflicts
+    removeFromOrder(taskId);
     toggleTaskArchive(taskId);
-  }, [isTaskArchived, removeFromOrder, toggleTaskArchive]);
+  }, [removeFromOrder, toggleTaskArchive]);
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {

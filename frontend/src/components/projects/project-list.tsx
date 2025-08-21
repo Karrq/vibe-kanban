@@ -81,12 +81,10 @@ export function ProjectList() {
   };
 
   const handleArchiveProject = useCallback((projectId: string) => {
-    // If archiving (not unarchiving), remove from order
-    if (!isProjectArchived(projectId)) {
-      removeFromOrder(projectId);
-    }
+    // Remove from order whenever archive status changes to prevent ordering conflicts
+    removeFromOrder(projectId);
     toggleProjectArchive(projectId);
-  }, [isProjectArchived, removeFromOrder, toggleProjectArchive]);
+  }, [removeFromOrder, toggleProjectArchive]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
