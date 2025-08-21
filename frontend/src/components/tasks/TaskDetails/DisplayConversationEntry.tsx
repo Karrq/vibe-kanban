@@ -280,8 +280,6 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
         entryType.tool_name.toLowerCase() === 'todo_write' ||
         entryType.tool_name.toLowerCase() === 'todo_read' ||
         entryType.tool_name.toLowerCase() === 'glob' ||
-        entryType.tool_name.toLowerCase() === 'ls' ||
-        entryType.tool_name.toLowerCase() === 'list_directory' ||
         entryType.tool_name.toLowerCase() === 'read' ||
         entryType.tool_name.toLowerCase() === 'read_file' ||
         entryType.tool_name.toLowerCase() === 'write' ||
@@ -394,54 +392,13 @@ function DisplayConversationEntry({
     [entry.entry_type]
   );
 
-  // Check if this is a tool with TodoWrite/TodoRead
-  const isTodoTool =
-    entry.entry_type.type === 'tool_use' &&
-    entry.entry_type.tool_name &&
-    (entry.entry_type.tool_name.toLowerCase() === 'todowrite' ||
-      entry.entry_type.tool_name.toLowerCase() === 'todoread' ||
-      entry.entry_type.tool_name.toLowerCase() === 'todo_write' ||
-      entry.entry_type.tool_name.toLowerCase() === 'todo_read');
 
-  // Check if this is a search-related tool
-  const isSearchTool =
-    entry.entry_type.type === 'tool_use' &&
-    entry.entry_type.tool_name &&
-    (entry.entry_type.tool_name.toLowerCase() === 'grep' ||
-      entry.entry_type.tool_name.toLowerCase() === 'search' ||
-      entry.entry_type.tool_name.toLowerCase() === 'websearch' ||
-      entry.entry_type.tool_name.toLowerCase() === 'web_search' ||
-      entry.entry_type.tool_name.toLowerCase() === 'glob');
-
-  // Check if this is a BashOutput or KillBash tool
-  const isBashOutputTool =
-    entry.entry_type.type === 'tool_use' &&
-    entry.entry_type.tool_name &&
-    entry.entry_type.tool_name.toLowerCase() === 'bashoutput';
-  const isKillBashTool =
-    entry.entry_type.type === 'tool_use' &&
-    entry.entry_type.tool_name &&
-    entry.entry_type.tool_name.toLowerCase() === 'killbash';
-
-  // Check if this is a Task tool (subagent invocation)
-  const isTaskTool =
-    entry.entry_type.type === 'tool_use' &&
-    entry.entry_type.tool_name &&
-    entry.entry_type.tool_name.toLowerCase() === 'task';
-
-  // Check if this is a command run (Bash), file read (Read), search, TodoWrite, BashOutput, KillBash, or Task tool call with results
+  // Check if this is a tool call that should have collapsible results
+  // Now includes ALL tool_use entries that have either tool_result or tool_args
   const hasCollapsibleToolResult =
-    entry.tool_result !== null &&
-    entry.tool_result !== undefined &&
     entry.entry_type.type === 'tool_use' &&
-    (entry.entry_type.action_type.action === 'command_run' ||
-      entry.entry_type.action_type.action === 'file_read' ||
-      entry.entry_type.action_type.action === 'search' ||
-      isTodoTool ||
-      isSearchTool ||
-      isBashOutputTool ||
-      isKillBashTool ||
-      isTaskTool);
+    (entry.tool_result !== null && entry.tool_result !== undefined ||
+      entry.tool_args !== null && entry.tool_args !== undefined);
   const isToolResultExpanded = expandedToolResults.has(index);
   const isDiffExpanded = expandedDiffs.has(index);
 
@@ -568,9 +525,9 @@ function DisplayConversationEntry({
             <div className={getContentClassName(entry.entry_type)}>
               {hasCollapsibleToolResult &&
               entry.entry_type.type === 'tool_use' ? (
-                // For Bash/Read/TodoWrite/Edit tools with results, use the special component
+                // For tools with results/args, use the special component
                 <ToolResultDisplay
-                  toolResult={entry.tool_result!}
+                  toolResult={entry.tool_result}
                   actionType={entry.entry_type.action_type}
                   expanded={isToolResultExpanded}
                   toolName={entry.entry_type.tool_name}

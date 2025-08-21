@@ -334,10 +334,36 @@ impl Executor for ClaudeExecutor {
                                                     .get("tool_use_id")
                                                     .and_then(|id| id.as_str())
                                                 {
-                                                    let content = content_item
+                                                    // Handle content as either a string or an array with text items
+                                                    let content = if let Some(content_str) = content_item
                                                         .get("content")
                                                         .and_then(|c| c.as_str())
-                                                        .map(|s| s.to_string());
+                                                    {
+                                                        Some(content_str.to_string())
+                                                    } else if let Some(content_array) = content_item
+                                                        .get("content")
+                                                        .and_then(|c| c.as_array())
+                                                    {
+                                                        // Extract text from array of content items
+                                                        let texts: Vec<String> = content_array
+                                                            .iter()
+                                                            .filter_map(|item| {
+                                                                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                                                    item.get("text").and_then(|t| t.as_str()).map(|s| s.to_string())
+                                                                } else {
+                                                                    None
+                                                                }
+                                                            })
+                                                            .collect();
+                                                        if !texts.is_empty() {
+                                                            Some(texts.join("\n"))
+                                                        } else {
+                                                            None
+                                                        }
+                                                    } else {
+                                                        None
+                                                    };
+                                                    
                                                     let is_error = content_item
                                                         .get("is_error")
                                                         .and_then(|e| e.as_bool())

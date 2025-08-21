@@ -3,7 +3,7 @@ import React from 'react';
 import MarkdownRenderer from '@/components/ui/markdown-renderer.tsx';
 
 interface ToolResultDisplayProps {
-  toolResult: ToolResult;
+  toolResult: ToolResult | null;
   actionType: ActionType;
   expanded: boolean;
   toolName?: string;
@@ -21,10 +21,6 @@ export function ToolResultDisplay({
   toolArgs,
   sessionIdToCommand,
 }: ToolResultDisplayProps) {
-  if (!toolResult) {
-    return null;
-  }
-
   // Check if this is a TodoWrite tool
   const isTodoTool =
     toolName &&
@@ -51,18 +47,119 @@ export function ToolResultDisplay({
   // Check if this is a Task tool (subagent invocation)
   const isTaskTool = toolName && toolName.toLowerCase() === 'task';
 
-  // Only show special formatting for command_run (Bash), file_read (Read), TodoWrite, BashOutput, KillBash, and Task tools
-  // For other tools, return null to let the parent component handle display
-  if (
-    actionType.action !== 'command_run' &&
-    actionType.action !== 'file_read' &&
-    actionType.action !== 'search' &&
-    !isTodoTool &&
-    !isBashOutputTool &&
-    !isKillBashTool &&
-    !isSearchTool &&
-    !isTaskTool
-  ) {
+  // Check if this is a file editing tool (Edit, Write, MultiEdit, etc.)
+  const isFileEditingTool = 
+    toolName &&
+    (toolName.toLowerCase() === 'edit' ||
+      toolName.toLowerCase() === 'write' ||
+      toolName.toLowerCase() === 'multiedit' ||
+      toolName.toLowerCase() === 'edit_file' ||
+      toolName.toLowerCase() === 'create_file' ||
+      toolName.toLowerCase() === 'notebookedit');
+
+  // Check if this is a file/directory reading tool (Read, etc.)
+  // Note: LS is intentionally not included here as it should be handled as an unknown tool
+  // to show its args and results properly
+  const isFileReadingTool =
+    toolName &&
+    (toolName.toLowerCase() === 'read' ||
+      toolName.toLowerCase() === 'read_file');
+
+  // Check if this is a known tool with special formatting
+  const isKnownTool = 
+    actionType.action === 'command_run' ||
+    actionType.action === 'file_read' ||
+    actionType.action === 'file_write' ||
+    actionType.action === 'search' ||
+    actionType.action === 'web_fetch' ||
+    actionType.action === 'task_create' ||
+    actionType.action === 'plan_presentation' ||
+    isTodoTool ||
+    isBashOutputTool ||
+    isKillBashTool ||
+    isSearchTool ||
+    isTaskTool ||
+    isFileEditingTool ||
+    isFileReadingTool;
+
+  // For unknown tools, show tool name and expandable args/result
+  if (!isKnownTool) {
+    return (
+      <>
+        {/* Tool name display */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm">
+            {toolName || 'Unknown Tool'}
+          </span>
+        </div>
+
+        {/* Expandable args and result when expanded */}
+        {expanded && (
+          <div className="mt-2 space-y-2">
+            {/* Tool Arguments Card */}
+            {toolArgs && (
+              <div className="border rounded-md bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700">
+                <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                    Tool Arguments
+                  </span>
+                </div>
+                <pre className="text-xs font-mono whitespace-pre-wrap break-words p-3 text-gray-700 dark:text-gray-300">
+                  {(() => {
+                    // Handle Claude executor's wrapper format
+                    if (typeof toolArgs === 'object' && toolArgs._tool_input) {
+                      // Extract the actual tool input from the wrapper
+                      return JSON.stringify(toolArgs._tool_input, null, 2);
+                    }
+                    // Otherwise display as-is
+                    return typeof toolArgs === 'string' 
+                      ? toolArgs 
+                      : JSON.stringify(toolArgs, null, 2);
+                  })()}
+                </pre>
+              </div>
+            )}
+
+            {/* Tool Result Card */}
+            {toolResult && (
+              <div className="border rounded-md bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700">
+                <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                    Tool Result
+                  </span>
+                  {toolResult.exit_code !== null && toolResult.exit_code !== 0 && (
+                    <span className="ml-2 text-xs text-red-600 dark:text-red-400">
+                      (exit code: {toolResult.exit_code})
+                    </span>
+                  )}
+                </div>
+                <pre className={`text-xs font-mono whitespace-pre-wrap break-words p-3 ${
+                  toolResult.is_error
+                    ? 'text-red-700 dark:text-red-300'
+                    : 'text-gray-700 dark:text-gray-300'
+                }`}>
+                  {(() => {
+                    if (!toolResult.content) return '(empty result)';
+                    
+                    // Try to parse as JSON for pretty printing
+                    try {
+                      const parsed = JSON.parse(toolResult.content);
+                      return JSON.stringify(parsed, null, 2);
+                    } catch {
+                      // If not JSON, return as-is
+                      return toolResult.content;
+                    }
+                  })()}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  if (!toolResult) {
     return null;
   }
 
