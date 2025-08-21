@@ -199,3 +199,21 @@ export const SOUND_LABELS: Record<string, string> = {
     "phone-vibration": "Phone Vibration",
     "rooster": "Rooster Call"
 };
+
+// Fork-related types
+export interface ForkTaskAttemptRequest {
+    message_index: number;
+}
+
+export interface CheckpointResponse {
+    message_index: number;
+    commit_sha: string;
+    timestamp: number;
+}
+
+export interface ForkResponse {
+    new_attempt_id: string;
+    worktree_path: string;
+    branch: string;
+    checkpoint_used: CheckpointResponse;
+}

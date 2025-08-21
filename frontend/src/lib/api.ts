@@ -29,6 +29,8 @@ import {
   UpdateTask,
   UpdateTaskTemplate,
   WorktreeDiff,
+  CheckpointResponse,
+  ForkResponse,
 } from 'shared/types';
 
 export const makeRequest = async (url: string, options: RequestInit = {}) => {
@@ -648,6 +650,36 @@ export const templatesApi = {
       method: 'DELETE',
     });
     return handleApiResponse<void>(response);
+  },
+};
+
+// Fork and Checkpoint APIs
+export const checkpointApi = {
+  list: async (
+    projectId: string,
+    taskId: string,
+    attemptId: string
+  ): Promise<CheckpointResponse[]> => {
+    const response = await makeRequest(
+      `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/checkpoints`
+    );
+    return handleApiResponse<CheckpointResponse[]>(response);
+  },
+
+  fork: async (
+    projectId: string,
+    taskId: string,
+    attemptId: string,
+    messageIndex: number
+  ): Promise<ForkResponse> => {
+    const response = await makeRequest(
+      `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/fork`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ message_index: messageIndex }),
+      }
+    );
+    return handleApiResponse<ForkResponse>(response);
   },
 };
 

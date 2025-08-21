@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Edit,
   Eye,
+  GitBranch,
   Globe,
   Plus,
   Search,
@@ -23,12 +24,16 @@ import {
   type WorktreeDiff,
 } from 'shared/types.ts';
 import { TaskDiffContext } from '@/components/context/taskDetailsContext.ts';
+import { Button } from '@/components/ui/button';
 
 type Props = {
   entry: NormalizedEntry;
   index: number;
   diffDeletable?: boolean;
   isLast?: boolean;
+  globalMessageIndex?: number;
+  onFork?: (messageIndex: number) => void;
+  hasCheckpoint?: boolean;
 };
 
 const getEntryIcon = (entryType: NormalizedEntryType) => {
@@ -267,9 +272,18 @@ const shouldRenderMarkdown = (entryType: NormalizedEntryType) => {
   );
 };
 
-function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false }: Props) {
+function DisplayConversationEntry({ 
+  entry, 
+  index, 
+  diffDeletable, 
+  isLast = false,
+  globalMessageIndex,
+  onFork,
+  hasCheckpoint = false,
+}: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
+  const [showForkButton, setShowForkButton] = useState(false);
 
   const toggleErrorExpansion = (index: number) => {
     setExpandedErrors((prev) => {
@@ -311,7 +325,12 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
     isFileModification && incrementalDiff && incrementalDiff.files.length > 0;
 
   return (
-    <div key={index}>
+    <div 
+      key={index}
+      className="group relative"
+      onMouseEnter={() => setShowForkButton(true)}
+      onMouseLeave={() => setShowForkButton(false)}
+    >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
           {isErrorMessage && hasMultipleLines ? (
@@ -374,6 +393,22 @@ function DisplayConversationEntry({ entry, index, diffDeletable, isLast = false 
             </div>
           )}
         </div>
+        
+        {/* Fork button - shown on hover when checkpoint exists */}
+        {onFork && hasCheckpoint && showForkButton && globalMessageIndex !== undefined && (
+          <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onFork(globalMessageIndex)}
+              title={`Fork from this point (message ${globalMessageIndex})`}
+              className="h-8 px-2"
+            >
+              <GitBranch className="h-4 w-4 mr-1" />
+              Fork
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Render incremental diff card inline after file modification entries */}
