@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Project } from 'shared/types';
 import { useArchive } from '@/contexts/ArchiveContext';
+import { arrayMove } from '@dnd-kit/sortable';
 
 export function useProjectOrder() {
   const [projectOrder, setProjectOrder] = useState<string[]>([]);
@@ -66,20 +67,24 @@ export function useProjectOrder() {
     activeId: string,
     overId: string
   ) => {
-    const activeIndex = projects.findIndex(p => p.id === activeId);
-    const overIndex = projects.findIndex(p => p.id === overId);
+    // Only work with active (non-archived) projects for reordering
+    const activeProjects = projects.filter(p => !isProjectArchived(p.id));
+    const archivedProjects = projects.filter(p => isProjectArchived(p.id));
+    
+    const activeIndex = activeProjects.findIndex(p => p.id === activeId);
+    const overIndex = activeProjects.findIndex(p => p.id === overId);
     
     if (activeIndex === -1 || overIndex === -1) return projects;
     
-    const reorderedProjects = [...projects];
-    const [movedProject] = reorderedProjects.splice(activeIndex, 1);
-    reorderedProjects.splice(overIndex, 0, movedProject);
+    // Use arrayMove to maintain stable ordering
+    const reorderedActive = arrayMove(activeProjects, activeIndex, overIndex);
     
-    // Save the new order
-    saveProjectOrder(reorderedProjects.map(p => p.id));
+    // Save only the IDs of active projects (archived projects are not in the order)
+    saveProjectOrder(reorderedActive.map(p => p.id));
     
-    return reorderedProjects;
-  }, [saveProjectOrder]);
+    // Return combined array with archived projects always at the end
+    return [...reorderedActive, ...archivedProjects];
+  }, [saveProjectOrder, isProjectArchived]);
 
   // Remove a project from the stored order (e.g., when archived)
   const removeFromOrder = useCallback((projectId: string) => {

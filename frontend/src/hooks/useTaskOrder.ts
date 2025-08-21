@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import { useArchive } from '@/contexts/ArchiveContext';
+import { arrayMove } from '@dnd-kit/sortable';
 
 type TaskOrder = {
   [projectId: string]: string[]; // Array of task IDs in order
@@ -86,20 +87,24 @@ export function useTaskOrder(projectId: string | undefined) {
     activeId: string,
     overId: string
   ) => {
-    const activeIndex = tasks.findIndex(t => t.id === activeId);
-    const overIndex = tasks.findIndex(t => t.id === overId);
+    // Only work with active (non-archived) tasks for reordering
+    const activeTasks = tasks.filter(t => !isTaskArchived(t.id));
+    const archivedTasks = tasks.filter(t => isTaskArchived(t.id));
+    
+    const activeIndex = activeTasks.findIndex(t => t.id === activeId);
+    const overIndex = activeTasks.findIndex(t => t.id === overId);
     
     if (activeIndex === -1 || overIndex === -1) return tasks;
     
-    const reorderedTasks = [...tasks];
-    const [movedTask] = reorderedTasks.splice(activeIndex, 1);
-    reorderedTasks.splice(overIndex, 0, movedTask);
+    // Use arrayMove to maintain stable ordering
+    const reorderedActive = arrayMove(activeTasks, activeIndex, overIndex);
     
-    // Save the new order
-    saveTaskOrder(reorderedTasks.map(t => t.id));
+    // Save only the IDs of active tasks (archived tasks are not in the order)
+    saveTaskOrder(reorderedActive.map(t => t.id));
     
-    return reorderedTasks;
-  }, [saveTaskOrder]);
+    // Return combined array with archived tasks always at the end
+    return [...reorderedActive, ...archivedTasks];
+  }, [saveTaskOrder, isTaskArchived]);
 
   // Remove a task from the stored order (e.g., when archived)
   const removeFromOrder = useCallback((taskId: string) => {
