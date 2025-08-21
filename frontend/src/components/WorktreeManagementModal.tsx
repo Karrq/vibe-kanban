@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, GitBranch, FolderOpen, ExternalLink, GitCommit, ChevronRight } from 'lucide-react';
+import { Trash2, GitBranch, FolderOpen, ExternalLink, GitCommit, ChevronRight, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
@@ -24,18 +24,18 @@ interface BranchInfo {
   branch_name: string;
   project_id: string;
   project_name: string;
-  
+
   // Worktree information (if exists)
   worktree_path?: string;
   worktree_exists: boolean;
-  
+
   // Task/attempt information (if branch is associated with a task)
   task_id?: string;
   task_title?: string;
   task_status?: TaskStatus;
   attempt_id?: string;
   attempt_deleted: boolean;
-  
+
   // PR information
   pr_url?: string;
   pr_status?: string;
@@ -62,13 +62,18 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
   } | null>(null);
   const [showCommitDetailsModal, setShowCommitDetailsModal] = useState(false);
   const [selectedCommitBranch, setSelectedCommitBranch] = useState<BranchInfo | null>(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState<{
+    branches: BranchInfo[];
+    action: 'worktree' | 'branch' | 'both';
+  } | null>(null);
+  const [isShiftHovering, setIsShiftHovering] = useState(false);
   const navigate = useNavigate();
 
   // Group branches by task, but put orphaned ones in a separate group
   const groupedBranches = branches.reduce((acc, branch) => {
     const isOrphaned = !branch.task_id;
     const groupKey = isOrphaned ? 'orphaned' : branch.task_id!;
-    
+
     if (!acc[groupKey]) {
       acc[groupKey] = {
         task_title: isOrphaned ? 'Orphaned Branches' : branch.task_title || 'Unknown Task',
@@ -102,7 +107,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
       const data = await response.json();
       // Filter branches to only show those for the current project if projectId is provided
       const allBranches = data.data || [];
-      const filteredBranches = projectId 
+      const filteredBranches = projectId
         ? allBranches.filter((b: BranchInfo) => b.project_id === projectId)
         : allBranches;
       setBranches(filteredBranches);
@@ -121,7 +126,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
       if (!response.ok) throw new Error('Failed to fetch task details');
       const data = await response.json();
       const task = data.data;
-      
+
       // Navigate to the task
       navigate(`/projects/${task.project_id}/tasks/${taskId}`);
       onClose();
@@ -141,7 +146,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
 
   const handleDelete = async (branch: BranchInfo, action: 'worktree' | 'branch' | 'both') => {
     setDeleteConfirm(null);
-    
+
     try {
       const response = await fetch('/api/branches/delete', {
         method: 'POST',
@@ -154,20 +159,62 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
           force: true, // Always use force deletion to handle unmerged branches
         }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
         console.error('Delete operation failed:', error);
         alert(`Failed to delete: ${error.error || 'Unknown error'}`);
         return;
       }
-      
+
       // Refresh the list after successful deletion
       await fetchBranches();
     } catch (error) {
       console.error('Error during delete operation:', error);
       alert(`Error during delete: ${error}`);
     }
+  };
+
+  const handleBulkDelete = async (branchesToDelete: BranchInfo[], action: 'worktree' | 'branch' | 'both') => {
+    setBulkDeleteConfirm(null);
+
+    const errors: string[] = [];
+    let successCount = 0;
+
+    for (const branch of branchesToDelete) {
+      try {
+        const response = await fetch('/api/branches/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            branch_name: branch.branch_name,
+            project_id: branch.project_id,
+            delete_worktree: action === 'worktree' || action === 'both',
+            delete_branch: action === 'branch' || action === 'both',
+            force: true,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          errors.push(`${branch.branch_name}: ${error.error || 'Unknown error'}`);
+        } else {
+          successCount++;
+        }
+      } catch (error) {
+        errors.push(`${branch.branch_name}: ${error}`);
+      }
+    }
+
+    // Show summary
+    if (errors.length > 0) {
+      alert(`Deleted ${successCount} of ${branchesToDelete.length} items.\n\nErrors:\n${errors.join('\n')}`);
+    } else {
+      console.log(`Successfully deleted ${successCount} items`);
+    }
+
+    // Refresh the list after operations
+    await fetchBranches();
   };
 
 
@@ -204,32 +251,113 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                 return (
                   <div key={taskId} className={`border rounded-lg p-4 flex flex-col ${isOrphanedGroup ? 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-300 dark:border-yellow-700' : ''}`}>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className={`font-semibold ${isOrphanedGroup ? 'text-yellow-900 dark:text-yellow-200' : ''}`}>
-                        {taskData.task_title}
-                      </h3>
-                      {!isOrphanedGroup && taskData.task_id && (
-                        <button
-                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1"
-                          onClick={() => handleTaskNavigation(taskData.task_id!)}
-                          title="View Task"
-                        >
-                          <ChevronRight className="w-5 h-5" />
-                        </button>
+                      {isOrphanedGroup ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <h3 className="font-semibold text-yellow-900 dark:text-yellow-200 cursor-help underline decoration-dotted">
+                                {taskData.task_title}
+                              </h3>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-xs">
+                              <p>Orphaned branches are git branches that don't match any task in the database.</p>
+                              <p className="mt-1 text-xs text-gray-400">They may be from deleted tasks, manually created branches, or branches created outside of Vibe Kanban.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        <h3 className="font-semibold">
+                          {taskData.task_title}
+                        </h3>
+                      )}
+                      {isOrphanedGroup ? (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant={isShiftHovering ? "destructive" : "outline"}
+                                className={isShiftHovering 
+                                  ? "h-8 px-2" 
+                                  : "h-8 px-2 text-yellow-700 dark:text-yellow-300 border-yellow-400 dark:border-yellow-600 hover:bg-yellow-100 dark:hover:bg-yellow-900/30"
+                                }
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // Filter branches that can be deleted (not merged)
+                                  const deletableBranches = taskData.branches.filter(b => !b.pr_merged_at);
+                                  if (deletableBranches.length === 0) {
+                                    alert('No orphaned branches to delete (all are merged)');
+                                    return;
+                                  }
+
+                                  if (e.shiftKey) {
+                                    setBulkDeleteConfirm({ branches: deletableBranches, action: 'both' });
+                                  } else {
+                                    // Determine default action based on what exists
+                                    const hasWorktrees = deletableBranches.some(b => b.worktree_exists && b.worktree_path);
+                                    const hasBranchOnly = deletableBranches.some(b => !b.worktree_path || !b.worktree_exists);
+
+                                    if (hasWorktrees && !hasBranchOnly) {
+                                      setBulkDeleteConfirm({ branches: deletableBranches, action: 'worktree' });
+                                    } else if (!hasWorktrees && hasBranchOnly) {
+                                      setBulkDeleteConfirm({ branches: deletableBranches, action: 'branch' });
+                                    } else {
+                                      // Mixed - default to worktree only for safety
+                                      setBulkDeleteConfirm({ branches: deletableBranches, action: 'worktree' });
+                                    }
+                                  }
+                                }}
+                                onMouseEnter={(e) => {
+                                  if (e.shiftKey) {
+                                    setIsShiftHovering(true);
+                                  }
+                                }}
+                                onMouseLeave={() => {
+                                  setIsShiftHovering(false);
+                                }}
+                                onMouseMove={(e) => {
+                                  setIsShiftHovering(e.shiftKey);
+                                }}
+                              >
+                                {isShiftHovering ? (
+                                  <AlertTriangle className="w-4 h-4 mr-1" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                )}
+                                Delete All
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Delete all orphaned worktrees</p>
+                              <p className="text-xs text-gray-400">Shift+Click to delete both worktrees and branches</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      ) : (
+                        taskData.task_id && (
+                          <button
+                            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1"
+                            onClick={() => handleTaskNavigation(taskData.task_id!)}
+                            title="View Task"
+                          >
+                            <ChevronRight className="w-5 h-5" />
+                          </button>
+                        )
                       )}
                     </div>
-                  
+
                   <div className="space-y-2 overflow-y-auto max-h-48">
                     {taskData.branches.map((branch) => {
                       const isOrphaned = !branch.task_id;
                       const isGhost = !branch.worktree_exists || !branch.worktree_path;
                       const canDelete = !branch.pr_merged_at;
-                      
+
                       return (
                         <div
                           key={branch.attempt_id || branch.branch_name}
                           className={`group relative flex items-center justify-between p-3 rounded-lg border transition-all ${
-                            isGhost 
-                              ? 'bg-gray-50/50 dark:bg-gray-800/50 border-dashed border-gray-300 dark:border-gray-600' 
+                            isGhost
+                              ? 'bg-gray-50/50 dark:bg-gray-800/50 border-dashed border-gray-300 dark:border-gray-600'
                               : isOrphaned
                               ? 'bg-transparent border-yellow-400 dark:border-yellow-600'
                               : 'hover:bg-gray-50 dark:hover:bg-gray-800'
@@ -246,7 +374,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                 <TooltipProvider>
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <Badge 
+                                      <Badge
                                         className="bg-purple-500 hover:bg-purple-600 cursor-pointer"
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -264,7 +392,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                 </TooltipProvider>
                               )}
                             </div>
-                            
+
                             <div className="flex items-center gap-4 text-xs text-gray-600 dark:text-gray-400">
                               {branch.worktree_path && (
                                 <span className="flex items-center gap-1">
@@ -296,7 +424,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                               )}
                             </div>
                           </div>
-                        
+
                           <div className="flex items-center gap-1">
                             {canDelete && (
                               <>
@@ -335,7 +463,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                     </Tooltip>
                                   </TooltipProvider>
                                 )}
-                                
+
                                 {(isGhost || !branch.worktree_path) && (
                                   <TooltipProvider>
                                     <Tooltip>
@@ -368,7 +496,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                   </div>
                 );
               })}
-              
+
               {Object.keys(groupedBranches).length === 0 && (
                 <div className="text-center py-8 text-gray-500">
                   No branches found
@@ -438,6 +566,57 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
               onClick={() => deleteConfirm && handleDelete(deleteConfirm.branch!, deleteConfirm.action)}
             >
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <Dialog open={!!bulkDeleteConfirm} onOpenChange={() => setBulkDeleteConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              {bulkDeleteConfirm?.action === 'worktree' && 'Delete All Orphaned Worktrees'}
+              {bulkDeleteConfirm?.action === 'branch' && 'Delete All Orphaned Branches'}
+              {bulkDeleteConfirm?.action === 'both' && 'Delete All Orphaned Worktrees and Branches'}
+            </DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>
+                This will delete {bulkDeleteConfirm?.branches.length} orphaned {
+                  bulkDeleteConfirm?.action === 'worktree' ? 'worktree(s)' :
+                  bulkDeleteConfirm?.action === 'branch' ? 'branch(es)' :
+                  'worktree(s) and branch(es)'
+                }:
+              </p>
+              <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50 dark:bg-gray-900">
+                {bulkDeleteConfirm?.branches.map((branch) => (
+                  <div key={branch.branch_name} className="text-xs font-mono py-0.5">
+                    {branch.branch_name}
+                  </div>
+                ))}
+              </div>
+              {bulkDeleteConfirm?.action === 'worktree' && (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  The branches will be preserved for future use.
+                </p>
+              )}
+              {(bulkDeleteConfirm?.action === 'branch' || bulkDeleteConfirm?.action === 'both') && (
+                <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                  ⚠️ This action cannot be undone. The branches will be permanently deleted.
+                </p>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDeleteConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => bulkDeleteConfirm && handleBulkDelete(bulkDeleteConfirm.branches, bulkDeleteConfirm.action)}
+            >
+              Delete All ({bulkDeleteConfirm?.branches.length})
             </Button>
           </DialogFooter>
         </DialogContent>
