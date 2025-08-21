@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::StatusCode,
     response::Json as ResponseJson,
     Json,
@@ -17,6 +17,12 @@ use crate::{
         ApiResponse,
     },
 };
+
+/// Query parameters for branch endpoints
+#[derive(Debug, Deserialize)]
+pub struct BranchesQuery {
+    pub project_id: Option<Uuid>,
+}
 
 /// Information about a git branch and its associated worktree (if any)
 #[derive(Debug, Serialize, TS)]
@@ -47,160 +53,49 @@ pub struct BranchInfo {
 /// Get all branches across all projects with their worktree and task information
 pub async fn get_all_branches(
     State(app_state): State<AppState>,
+    Query(query): Query<BranchesQuery>,
 ) -> Result<ResponseJson<ApiResponse<Vec<BranchInfo>>>, StatusCode> {
-    use std::collections::HashMap;
     
-    // Get all projects
-    let projects = match Project::find_all(&app_state.db_pool).await {
-        Ok(projects) => projects,
-        Err(e) => {
-            tracing::error!("Failed to fetch projects: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    // Get projects based on query
+    let projects = if let Some(project_id) = query.project_id {
+        // Fetch specific project
+        match Project::find_by_id(&app_state.db_pool, project_id).await {
+            Ok(Some(project)) => vec![project],
+            Ok(None) => {
+                return Ok(ResponseJson(ApiResponse::success(Vec::new())));
+            },
+            Err(e) => {
+                tracing::error!("Failed to fetch project: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    } else {
+        // Fetch all projects
+        match Project::find_all(&app_state.db_pool).await {
+            Ok(projects) => projects,
+            Err(e) => {
+                tracing::error!("Failed to fetch projects: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
         }
     };
     
-    let mut all_branches = Vec::new();
+    // Process projects in parallel - the pool itself handles connection limits
+    // and provides backpressure when exhausted
+    let project_futures = projects.into_iter().map(|project| {
+        let pool = app_state.db_pool.clone();
+        async move {
+            process_project_branches(project, pool).await
+        }
+    });
     
-    for project in projects {
-        // Skip if project directory doesn't exist
-        if !std::path::Path::new(&project.git_repo_path).exists() {
-            continue;
-        }
-        
-        // Get all branches for this project
-        let branches = match scan_git_branches(&project.git_repo_path).await {
-            Ok(branches) => branches,
-            Err(e) => {
-                tracing::warn!("Failed to scan branches for project {}: {}", project.id, e);
-                continue;
-            }
-        };
-        
-        // Get all worktrees for this project
-        let worktrees = match scan_git_worktrees(&project.git_repo_path).await {
-            Ok(worktrees) => worktrees,
-            Err(e) => {
-                tracing::warn!("Failed to scan worktrees for project {}: {}", project.id, e);
-                continue;
-            }
-        };
-        
-        // Create a map of branch names to worktree paths
-        let mut branch_worktrees: HashMap<String, String> = HashMap::new();
-        for (worktree_path, branch_name) in worktrees {
-            branch_worktrees.insert(branch_name, worktree_path.to_string_lossy().to_string());
-        }
-        
-        // Get all task attempts for this project to match with branches
-        let attempts_query = r#"
-            SELECT 
-                ta.id as attempt_id,
-                ta.task_id,
-                ta.branch,
-                ta.worktree_path,
-                ta.worktree_deleted,
-                ta.pr_url,
-                ta.pr_status,
-                ta.pr_merged_at,
-                ta.merge_commit,
-                t.title as task_title,
-                t.status as task_status
-            FROM task_attempts ta
-            JOIN tasks t ON ta.task_id = t.id
-            WHERE t.project_id = ?
-        "#;
-        
-        #[derive(sqlx::FromRow)]
-        struct AttemptRow {
-            attempt_id: Vec<u8>,
-            task_id: Vec<u8>,
-            branch: String,
-            worktree_path: String,
-            worktree_deleted: bool,
-            pr_url: Option<String>,
-            pr_status: Option<String>,
-            pr_merged_at: Option<DateTime<Utc>>,
-            merge_commit: Option<String>,
-            task_title: String,
-            task_status: Option<String>,
-        }
-        
-        let attempts = match sqlx::query_as::<_, AttemptRow>(attempts_query)
-            .bind(project.id.as_bytes().as_slice())
-            .fetch_all(&app_state.db_pool)
-            .await
-        {
-            Ok(rows) => rows,
-            Err(e) => {
-                tracing::warn!("Failed to fetch attempts for project {}: {}", project.id, e);
-                Vec::new()
-            }
-        };
-        
-        // Create a map of branch names to attempt info
-        let mut branch_attempts: HashMap<String, AttemptRow> = HashMap::new();
-        for attempt in attempts {
-            branch_attempts.insert(attempt.branch.clone(), attempt);
-        }
-        
-        // Process each branch
-        for branch_name in branches {
-            // Skip main/master branches
-            if branch_name == "main" || branch_name == "master" {
-                continue;
-            }
-            
-            let worktree_path = branch_worktrees.get(&branch_name).cloned();
-            let worktree_exists = worktree_path.as_ref()
-                .map(|path| std::path::Path::new(path).exists())
-                .unwrap_or(false);
-            
-            // Check if this branch has an associated task attempt
-            let branch_info = if let Some(attempt) = branch_attempts.get(&branch_name) {
-                BranchInfo {
-                    branch_name: branch_name.clone(),
-                    project_id: project.id,
-                    project_name: project.name.clone(),
-                    worktree_path: worktree_path.or_else(|| Some(attempt.worktree_path.clone())),
-                    worktree_exists,
-                    task_id: Some(Uuid::from_slice(&attempt.task_id).unwrap_or_default()),
-                    task_title: Some(attempt.task_title.clone()),
-                    task_status: attempt.task_status.as_ref().and_then(|s| match s.as_str() {
-                        "todo" => Some(TaskStatus::Todo),
-                        "inprogress" => Some(TaskStatus::InProgress),
-                        "inreview" => Some(TaskStatus::InReview),
-                        "done" => Some(TaskStatus::Done),
-                        "cancelled" => Some(TaskStatus::Cancelled),
-                        _ => None,
-                    }),
-                    attempt_id: Some(Uuid::from_slice(&attempt.attempt_id).unwrap_or_default()),
-                    attempt_deleted: attempt.worktree_deleted,
-                    pr_url: attempt.pr_url.clone(),
-                    pr_status: attempt.pr_status.clone(),
-                    pr_merged_at: attempt.pr_merged_at,
-                    merge_commit: attempt.merge_commit.clone(),
-                }
-            } else {
-                // Orphaned branch - no associated task
-                BranchInfo {
-                    branch_name: branch_name.clone(),
-                    project_id: project.id,
-                    project_name: project.name.clone(),
-                    worktree_path,
-                    worktree_exists,
-                    task_id: None,
-                    task_title: None,
-                    task_status: None,
-                    attempt_id: None,
-                    attempt_deleted: false,
-                    pr_url: None,
-                    pr_status: None,
-                    pr_merged_at: None,
-                    merge_commit: None,
-                }
-            };
-            
-            all_branches.push(branch_info);
+    let results = futures_util::future::join_all(project_futures).await;
+    
+    // Flatten results and filter out errors
+    let mut all_branches = Vec::new();
+    for result in results {
+        if let Ok(branches) = result {
+            all_branches.extend(branches);
         }
     }
     
@@ -211,6 +106,154 @@ pub async fn get_all_branches(
     });
     
     Ok(ResponseJson(ApiResponse::success(all_branches)))
+}
+
+/// Process branches for a single project
+async fn process_project_branches(
+    project: Project,
+    pool: sqlx::SqlitePool,
+) -> Result<Vec<BranchInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    use std::collections::HashMap;
+    
+    let mut branches_info = Vec::new();
+    
+    // Skip if project directory doesn't exist
+    if !std::path::Path::new(&project.git_repo_path).exists() {
+        return Ok(branches_info);
+    }
+    
+    // Concurrently get branches and worktrees
+    let branches_future = scan_git_branches(&project.git_repo_path);
+    let worktrees_future = scan_git_worktrees(&project.git_repo_path);
+    
+    let (branches_result, worktrees_result) = tokio::join!(branches_future, worktrees_future);
+    
+    let branches = branches_result.unwrap_or_else(|e| {
+        tracing::warn!("Failed to scan branches for project {}: {}", project.id, e);
+        Vec::new()
+    });
+    
+    let worktrees = worktrees_result.unwrap_or_else(|e| {
+        tracing::warn!("Failed to scan worktrees for project {}: {}", project.id, e);
+        Vec::new()
+    });
+    
+    // Create a map of branch names to worktree paths
+    let mut branch_worktrees: HashMap<String, String> = HashMap::new();
+    for (worktree_path, branch_name) in worktrees {
+        branch_worktrees.insert(branch_name, worktree_path.to_string_lossy().to_string());
+    }
+    
+    // Get all task attempts for this project to match with branches
+    let attempts_query = r#"
+        SELECT 
+            ta.id as attempt_id,
+            ta.task_id,
+            ta.branch,
+            ta.worktree_path,
+            ta.worktree_deleted,
+            ta.pr_url,
+            ta.pr_status,
+            ta.pr_merged_at,
+            ta.merge_commit,
+            t.title as task_title,
+            t.status as task_status
+        FROM task_attempts ta
+        JOIN tasks t ON ta.task_id = t.id
+        WHERE t.project_id = ?
+    "#;
+    
+    #[derive(sqlx::FromRow)]
+    struct AttemptRow {
+        attempt_id: Vec<u8>,
+        task_id: Vec<u8>,
+        branch: String,
+        worktree_path: String,
+        worktree_deleted: bool,
+        pr_url: Option<String>,
+        pr_status: Option<String>,
+        pr_merged_at: Option<DateTime<Utc>>,
+        merge_commit: Option<String>,
+        task_title: String,
+        task_status: Option<String>,
+    }
+    
+    let attempts = sqlx::query_as::<_, AttemptRow>(attempts_query)
+        .bind(project.id.as_bytes().as_slice())
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to fetch attempts for project {}: {}", project.id, e);
+            Vec::new()
+        });
+    
+    // Create a map of branch names to attempt info
+    let mut branch_attempts: HashMap<String, AttemptRow> = HashMap::new();
+    for attempt in attempts {
+        branch_attempts.insert(attempt.branch.clone(), attempt);
+    }
+    
+    // Process each branch
+    for branch_name in branches {
+        // Skip main/master branches
+        if branch_name == "main" || branch_name == "master" {
+            continue;
+        }
+        
+        let worktree_path = branch_worktrees.get(&branch_name).cloned();
+        let worktree_exists = worktree_path.as_ref()
+            .map(|path| std::path::Path::new(path).exists())
+            .unwrap_or(false);
+        
+        // Check if this branch has an associated task attempt
+        let branch_info = if let Some(attempt) = branch_attempts.get(&branch_name) {
+            BranchInfo {
+                branch_name: branch_name.clone(),
+                project_id: project.id,
+                project_name: project.name.clone(),
+                worktree_path: worktree_path.or_else(|| Some(attempt.worktree_path.clone())),
+                worktree_exists,
+                task_id: Some(Uuid::from_slice(&attempt.task_id).unwrap_or_default()),
+                task_title: Some(attempt.task_title.clone()),
+                task_status: attempt.task_status.as_ref().and_then(|s| match s.as_str() {
+                    "todo" => Some(TaskStatus::Todo),
+                    "inprogress" => Some(TaskStatus::InProgress),
+                    "inreview" => Some(TaskStatus::InReview),
+                    "done" => Some(TaskStatus::Done),
+                    "cancelled" => Some(TaskStatus::Cancelled),
+                    _ => None,
+                }),
+                attempt_id: Some(Uuid::from_slice(&attempt.attempt_id).unwrap_or_default()),
+                attempt_deleted: attempt.worktree_deleted,
+                pr_url: attempt.pr_url.clone(),
+                pr_status: attempt.pr_status.clone(),
+                pr_merged_at: attempt.pr_merged_at,
+                merge_commit: attempt.merge_commit.clone(),
+            }
+        } else {
+            // Orphaned branch - no associated task
+            BranchInfo {
+                branch_name: branch_name.clone(),
+                project_id: project.id,
+                project_name: project.name.clone(),
+                worktree_path,
+                worktree_exists,
+                task_id: None,
+                task_title: None,
+                task_status: None,
+                attempt_id: None,
+                attempt_deleted: false,
+                pr_url: None,
+                pr_status: None,
+                pr_merged_at: None,
+                merge_commit: None,
+            }
+        };
+        
+        branches_info.push(branch_info);
+    }
+    
+    Ok(branches_info)
 }
 
 /// Delete a branch and optionally its worktree

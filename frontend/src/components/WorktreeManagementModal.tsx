@@ -102,15 +102,14 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
   const fetchBranches = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/branches');
+      // Use project-specific endpoint when projectId is available
+      const url = projectId 
+        ? `/api/branches?project_id=${projectId}`
+        : '/api/branches';
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch branches');
       const data = await response.json();
-      // Filter branches to only show those for the current project if projectId is provided
-      const allBranches = data.data || [];
-      const filteredBranches = projectId
-        ? allBranches.filter((b: BranchInfo) => b.project_id === projectId)
-        : allBranches;
-      setBranches(filteredBranches);
+      setBranches(data.data || []);
     } catch (error) {
       console.error('Error fetching branches:', error);
     } finally {
