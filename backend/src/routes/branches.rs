@@ -195,11 +195,6 @@ async fn process_project_branches(
     
     // Process each branch
     for branch_name in branches {
-        // Skip main/master branches
-        if branch_name == "main" || branch_name == "master" {
-            continue;
-        }
-        
         let worktree_path = branch_worktrees.get(&branch_name).cloned();
         let worktree_exists = worktree_path.as_ref()
             .map(|path| std::path::Path::new(path).exists())

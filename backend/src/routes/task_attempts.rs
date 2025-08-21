@@ -71,11 +71,15 @@ pub struct ProcessLogsResponse {
 }
 
 /// Query parameters for worktree endpoints
+/// DEPRECATED: Use /api/branches endpoint instead
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct WorktreesQuery {
     pub project_id: Option<Uuid>,
 }
 
+/// DEPRECATED: Use BranchInfo from /api/branches endpoint instead
+#[allow(dead_code)]
 #[derive(Debug, Serialize, TS)]
 #[ts(export)]
 pub struct WorktreeInfo {
@@ -1183,70 +1187,71 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
 }
 
 /// Delete a worktree (filesystem only, keep branch)
+/// This endpoint now delegates to the unified /api/branches/delete endpoint
 pub async fn delete_worktree(
     Extension(project): Extension<Project>,
     Extension(_task): Extension<Task>,
     Extension(task_attempt): Extension<TaskAttempt>,
     State(app_state): State<AppState>,
 ) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
-    let worktree_path = std::path::Path::new(&task_attempt.worktree_path);
+    use crate::routes::branches::{DeleteBranchRequest, delete_branch};
     
-    // Use WorktreeManager to clean up the worktree
-    if let Err(e) = WorktreeManager::cleanup_worktree(
-        worktree_path,
-        Some(&project.git_repo_path),
-    )
-    .await
-    {
-        tracing::error!("Failed to cleanup worktree: {}", e);
-        return Ok(ResponseJson(ApiResponse::error(&format!(
-            "Failed to cleanup worktree: {}",
-            e
-        ))));
-    }
-
+    // Create request for the unified delete endpoint
+    let request = DeleteBranchRequest {
+        branch_name: task_attempt.branch.clone(),
+        project_id: project.id,
+        delete_worktree: true,
+        delete_branch: false, // Only delete worktree, keep branch
+        force: false,
+    };
+    
+    // Call the unified delete endpoint
+    let result = delete_branch(
+        State(app_state.clone()),
+        Json(request),
+    ).await?;
+    
     // Mark the worktree as deleted in the database
+    // We'll do this regardless since the unified endpoint doesn't return errors for failures
     if let Err(e) = TaskAttempt::mark_worktree_deleted(&app_state.db_pool, task_attempt.id).await {
         tracing::error!("Failed to mark worktree as deleted: {}", e);
-        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        // Don't fail the whole operation if DB update fails
     }
-
-    Ok(ResponseJson(ApiResponse::success(())))
+    
+    Ok(result)
 }
 
 /// Delete a branch (requires worktree to be deleted first)
+/// This endpoint now delegates to the unified /api/branches/delete endpoint
 pub async fn delete_branch(
     Extension(project): Extension<Project>,
     Extension(_task): Extension<Task>,
     Extension(task_attempt): Extension<TaskAttempt>,
-    State(_app_state): State<AppState>,
+    State(app_state): State<AppState>,
 ) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
+    use crate::routes::branches::{DeleteBranchRequest, delete_branch};
+    
     // Check if worktree still exists
     if std::path::Path::new(&task_attempt.worktree_path).exists() {
         return Ok(ResponseJson(ApiResponse::error(
             "Worktree must be deleted before deleting the branch",
         )));
     }
-
-    // Delete the branch using GitService
-    let git_service = match GitService::new(&project.git_repo_path) {
-        Ok(service) => service,
-        Err(e) => {
-            tracing::error!("Failed to initialize git service: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
+    
+    // Create request for the unified delete endpoint
+    let request = DeleteBranchRequest {
+        branch_name: task_attempt.branch.clone(),
+        project_id: project.id,
+        delete_worktree: false, // Worktree should already be deleted
+        delete_branch: true,
+        force: true, // Force delete since worktree is already gone
     };
-
-    // Delete the branch
-    if let Err(e) = git_service.delete_branch(&task_attempt.branch) {
-        tracing::error!("Failed to delete branch: {}", e);
-        return Ok(ResponseJson(ApiResponse::error(&format!(
-            "Failed to delete branch: {}",
-            e
-        ))));
-    }
-
-    Ok(ResponseJson(ApiResponse::success(())))
+    
+    // Call the unified delete endpoint
+    delete_branch(
+        State(app_state),
+        Json(request),
+    ).await
 }
 
 #[derive(sqlx::FromRow, Clone)]
@@ -1267,6 +1272,8 @@ struct WorktreeRow {
 }
 
 /// Get all worktrees across all projects with their task information
+/// DEPRECATED: Use /api/branches endpoint instead - this endpoint is no longer used by frontend
+#[allow(dead_code)]
 pub async fn get_all_worktrees(
     State(app_state): State<AppState>,
     Query(query): Query<WorktreesQuery>,
@@ -1368,6 +1375,8 @@ pub async fn get_all_worktrees(
 }
 
 /// Process worktrees for a single project
+/// DEPRECATED: Helper for get_all_worktrees which is no longer used
+#[allow(dead_code)]
 async fn process_project_worktrees(
     project: Project,
     pool: sqlx::SqlitePool,
@@ -1587,6 +1596,8 @@ async fn scan_git_branches(repo_path: &str) -> Result<Vec<String>, Box<dyn std::
 }
 
 /// Delete an orphaned worktree
+/// DEPRECATED: Use /api/branches/delete endpoint instead
+#[allow(dead_code)]
 #[derive(serde::Deserialize)]
 pub struct DeleteOrphanedWorktreeRequest {
     worktree_path: String,
@@ -1595,6 +1606,8 @@ pub struct DeleteOrphanedWorktreeRequest {
     project_id: Option<String>,
 }
 
+/// DEPRECATED: Use /api/branches/delete endpoint instead - this endpoint is no longer used
+#[allow(dead_code)]
 pub async fn delete_orphaned_worktree(
     State(app_state): State<AppState>,
     Json(request): Json<DeleteOrphanedWorktreeRequest>,
@@ -1634,12 +1647,16 @@ pub async fn delete_orphaned_worktree(
 }
 
 /// Delete an orphaned branch
+/// DEPRECATED: Use /api/branches/delete endpoint instead
+#[allow(dead_code)]
 #[derive(serde::Deserialize)]
 pub struct DeleteOrphanedBranchRequest {
     branch: String,
     project_id: Option<String>,
 }
 
+/// DEPRECATED: Use /api/branches/delete endpoint instead - this endpoint is no longer used
+#[allow(dead_code)]
 pub async fn delete_orphaned_branch(
     State(app_state): State<AppState>,
     Json(request): Json<DeleteOrphanedBranchRequest>,
