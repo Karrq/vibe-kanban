@@ -22,7 +22,10 @@ const ConversationEntry = ({
   runningProcessDetails,
   sessionIdToCommand,
 }: Props) => {
-  const showPrompt = item.isFirstInProcess && item.processPrompt;
+  // For follow-up processes, always show the prompt (it's the user's follow-up message)
+  // For the main process, only show for the first entry
+  const isFollowUpProcess = item.process?.command === 'followup_executor';
+  const showPrompt = item.processPrompt && (isFollowUpProcess || item.isFirstInProcess);
   // For running processes, render the live viewer below the static entries
   if (item.processIsRunning && idx === visibleEntriesLength - 1) {
     // Only render the live viewer for the last entry of a running process
