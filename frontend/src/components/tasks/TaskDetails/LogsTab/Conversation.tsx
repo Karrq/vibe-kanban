@@ -152,10 +152,12 @@ function Conversation() {
     return runningProcessLogs.map((log, i) => {
       const runningProcess = attemptData.runningProcessDetails[String(log.id)];
       if (!runningProcess) return null;
-      // Show prompt only if this is the first entry in the process (i.e., no completed entries for this process)
+      // For follow-up processes, always show the prompt (it's the user's follow-up message)
+      // For the main process, only show if no completed entries exist
+      const isFollowUp = log.command === 'followup_executor';
       const showPrompt =
         log.normalized_conversation.prompt &&
-        !allEntries.some((e) => e.processId === String(log.id));
+        (isFollowUp || !allEntries.some((e) => e.processId === String(log.id)));
       return (
         <div key={String(log.id)} className={i > 0 ? 'mt-8' : ''}>
           {showPrompt && (
