@@ -89,17 +89,17 @@ function Conversation() {
       if (!log) return;
       if (log.status === 'running') return; // Skip static entries for running processes
       const processId = String(log.id); // Ensure string
-      const processPrompt = log.normalized_conversation.prompt || undefined; // Ensure undefined, not null
       const entriesArr = log.normalized_conversation.entries || [];
+      
       entriesArr.forEach((entry, entryIndex) => {
         entries.push({
           entry,
           processId,
-          processPrompt,
+          processPrompt: undefined, // Don't attach prompt to every entry
           processStatus: log.status,
           processIsRunning: false, // Only completed processes here
           process: log,
-          isFirstInProcess: entryIndex === 0,
+          isFirstInProcess: false, // Will be set correctly after sorting
           processIndex,
           entryIndex,
         });
@@ -114,6 +114,27 @@ function Conversation() {
       if (b.entry.timestamp) return 1;
       return 0;
     });
+    
+    // After sorting, mark the actual first entry of each process and attach prompt
+    const seenProcessIds = new Set<string>();
+    const processPrompts = new Map<string, string | undefined>();
+    
+    // First, collect prompts for each process
+    allProcessLogs.forEach(log => {
+      if (log && log.normalized_conversation.prompt) {
+        processPrompts.set(String(log.id), log.normalized_conversation.prompt);
+      }
+    });
+    
+    // Then mark first entries and attach prompts only to them
+    entries.forEach(entry => {
+      if (!seenProcessIds.has(entry.processId)) {
+        entry.isFirstInProcess = true;
+        entry.processPrompt = processPrompts.get(entry.processId);
+        seenProcessIds.add(entry.processId);
+      }
+    });
+    
     return entries;
   }, [allProcessLogs]);
 
