@@ -151,6 +151,7 @@ fn generate_types_content() -> String {
         vibe_kanban::executor::NormalizedEntry::decl(),
         vibe_kanban::executor::NormalizedEntryType::decl(),
         vibe_kanban::executor::ActionType::decl(),
+        vibe_kanban::executor::ForkMetadata::decl(),
     ];
 
     let body = decls

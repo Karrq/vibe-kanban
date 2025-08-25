@@ -71,6 +71,21 @@ pub enum ActionType {
     Other { description: String },
 }
 
+/// Metadata about a conversation fork for resumption
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ForkMetadata {
+    /// The session UUID that can be used to resume from this fork
+    pub session_id: String,
+    /// The checkpoint directory where the fork is stored
+    pub checkpoint_dir: String,
+    /// Number of messages included in the fork
+    pub message_count: usize,
+    /// Executor-specific metadata
+    #[ts(skip)]
+    pub metadata: Option<serde_json::Value>,
+}
+
 /// Context information for spawn failures to provide comprehensive error details
 #[derive(Debug, Clone)]
 pub struct SpawnContext {
@@ -324,6 +339,21 @@ pub trait Executor: Send + Sync {
             .map_err(|e| format!("Failed to serialize truncated entries: {}", e))?;
         
         Ok((output, truncated_entries.len()))
+    }
+
+    /// Prepare a fork of the conversation state for resumption at a checkpoint.
+    /// This allows branching off from any point in a conversation.
+    /// 
+    /// Returns metadata about the fork (e.g., session UUID) that can be used
+    /// to resume from the checkpoint.
+    fn prepare_fork(
+        &self,
+        _truncated_logs: &str,
+        _checkpoint_dir: &str,
+        _worktree_path: &str,
+    ) -> Result<ForkMetadata, String> {
+        // Default implementation returns unsupported
+        Err("Fork support not implemented for this executor".to_string())
     }
 
     #[allow(clippy::result_large_err)]

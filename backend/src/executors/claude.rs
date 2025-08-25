@@ -1,18 +1,41 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::fs;
+use std::io::Write;
 
 use async_trait::async_trait;
 use uuid::Uuid;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::build_agent_command;
 use crate::{
     command_runner::{CommandProcess, CommandRunner},
     executor::{
-        ActionType, Executor, ExecutorError, NormalizedConversation, NormalizedEntry,
+        ActionType, Executor, ExecutorError, ForkMetadata, NormalizedConversation, NormalizedEntry,
         NormalizedEntryType,
     },
     models::{project::Project, task::Task},
     utils::shell::get_shell_command,
 };
+
+/// Claude Code session JSONL message structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeSessionMessage {
+    parent_uuid: Option<String>,
+    is_sidechain: bool,
+    user_type: String,
+    cwd: String,
+    session_id: String,
+    version: String,
+    git_branch: String,
+    #[serde(rename = "type")]
+    message_type: String,
+    message: Option<Value>,
+    uuid: String,
+    timestamp: String,
+}
 
 fn create_watchkill_script(command: &str) -> String {
     let claude_plan_stop_indicator = "Exit plan mode?";
@@ -400,9 +423,196 @@ Task title: {}"#,
         let accumulated_logs = accumulated_lines.join("\n");
         Ok((accumulated_logs, total_count))
     }
+
+    fn prepare_fork(
+        &self,
+        truncated_logs: &str,
+        checkpoint_dir: &str,
+        _worktree_path: &str,
+    ) -> Result<ForkMetadata, String> {
+        // Parse the truncated logs to get session messages
+        let messages = Self::parse_session_logs(truncated_logs)?;
+        
+        if messages.is_empty() {
+            return Err("No messages found in truncated logs".to_string());
+        }
+        
+        // Get the session ID from the first message (they should all have the same session ID)
+        let original_session_id = messages.first()
+            .map(|m| m.session_id.clone())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "No session ID found in messages".to_string())?;
+        
+        // Generate a new session UUID for the fork
+        let fork_session_id = Uuid::new_v4().to_string();
+        
+        // Clone messages and update the last message's UUID
+        let mut fork_messages = messages.clone();
+        if let Some(last_msg) = fork_messages.last_mut() {
+            // Generate new UUID for the last message
+            last_msg.uuid = Uuid::new_v4().to_string();
+            // Keep session_id unchanged as per requirements
+            // parentUuid chain is already correct from parse_session_logs
+        }
+        
+        // Update cwd to checkpoint directory for all messages
+        for msg in &mut fork_messages {
+            msg.cwd = checkpoint_dir.to_string();
+        }
+        
+        // Normalize the checkpoint directory path for Claude's folder structure
+        let normalized_dir = Self::normalize_directory_for_claude(checkpoint_dir);
+        
+        // Get home directory
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| "Could not determine home directory".to_string())?;
+        
+        // Create the Claude projects directory for this checkpoint
+        let claude_project_dir = home_dir
+            .join(".claude")
+            .join("projects")
+            .join(&normalized_dir);
+        
+        // Create directory if it doesn't exist
+        fs::create_dir_all(&claude_project_dir)
+            .map_err(|e| format!("Failed to create Claude project directory: {}", e))?;
+        
+        // Write the JSONL file
+        let session_file_path = claude_project_dir.join(format!("{}.jsonl", fork_session_id));
+        let mut file = fs::File::create(&session_file_path)
+            .map_err(|e| format!("Failed to create session file: {}", e))?;
+        
+        // Write each message as a JSONL line
+        for msg in &fork_messages {
+            let json_line = serde_json::to_string(&msg)
+                .map_err(|e| format!("Failed to serialize message: {}", e))?;
+            writeln!(file, "{}", json_line)
+                .map_err(|e| format!("Failed to write message to file: {}", e))?;
+        }
+        
+        tracing::info!(
+            "Created fork session {} in directory {} (normalized: {})",
+            fork_session_id,
+            checkpoint_dir,
+            normalized_dir
+        );
+        
+        Ok(ForkMetadata {
+            session_id: fork_session_id,
+            checkpoint_dir: checkpoint_dir.to_string(),
+            message_count: fork_messages.len(),
+            metadata: Some(serde_json::json!({
+                "original_session_id": original_session_id,
+                "normalized_dir": normalized_dir,
+                "session_file": session_file_path.to_string_lossy(),
+            })),
+        })
+    }
 }
 
 impl ClaudeExecutor {
+    /// Normalize a directory path to Claude's kebab-case format
+    /// Examples:
+    /// - `/private/tmp/foo` → `-private-tmp-foo`
+    /// - `/tmp/foo bar` → `-tmp-foo-bar`
+    /// - `/Users/name/My Documents` → `-users-name-my-documents`
+    fn normalize_directory_for_claude(path: &str) -> String {
+        // First canonicalize the path to resolve symlinks
+        let canonical_path = match fs::canonicalize(path) {
+            Ok(p) => p,
+            Err(_) => PathBuf::from(path), // Fall back to original if canonicalization fails
+        };
+        
+        // Convert to string and replace path separators and spaces with dashes
+        let path_str = canonical_path.to_string_lossy();
+        
+        // Replace path separators and spaces with dashes, convert to lowercase
+        let normalized = path_str
+            .chars()
+            .map(|c| {
+                if c == '/' || c == '\\' || c.is_whitespace() {
+                    '-'
+                } else if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-' // Replace other special characters with dash
+                }
+            })
+            .collect::<String>();
+        
+        // Collapse multiple consecutive dashes into one
+        let mut result = String::new();
+        let mut prev_dash = false;
+        for c in normalized.chars() {
+            if c == '-' {
+                if !prev_dash {
+                    result.push(c);
+                }
+                prev_dash = true;
+            } else {
+                result.push(c);
+                prev_dash = false;
+            }
+        }
+        
+        // Remove trailing dashes
+        result.trim_end_matches('-').to_string()
+    }
+
+    /// Parse Claude Code's streaming JSON logs and extract session messages
+    fn parse_session_logs(logs: &str) -> Result<Vec<ClaudeSessionMessage>, String> {
+        let mut messages = Vec::new();
+        
+        for line in logs.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            
+            // Try to parse as JSON
+            if let Ok(json) = serde_json::from_str::<Value>(trimmed) {
+                // We need to reconstruct the JSONL format from the streaming format
+                // Extract relevant fields and create session messages
+                if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
+                    if msg_type == "user" || msg_type == "assistant" {
+                        // Try to extract session_id from the message
+                        let session_id = json.get("session_id")
+                            .and_then(|s| s.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        
+                        // Create a session message
+                        let session_msg = ClaudeSessionMessage {
+                            parent_uuid: None, // Will be set based on previous messages
+                            is_sidechain: false,
+                            user_type: "external".to_string(),
+                            cwd: json.get("cwd")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("/")
+                                .to_string(),
+                            session_id: session_id.clone(),
+                            version: "1.0.90".to_string(), // Default version
+                            git_branch: "".to_string(),
+                            message_type: msg_type.to_string(),
+                            message: json.get("message").cloned(),
+                            uuid: Uuid::new_v4().to_string(),
+                            timestamp: Utc::now().to_rfc3339(),
+                        };
+                        
+                        messages.push(session_msg);
+                    }
+                }
+            }
+        }
+        
+        // Set parent UUIDs based on message order
+        for i in 1..messages.len() {
+            messages[i].parent_uuid = Some(messages[i - 1].uuid.clone());
+        }
+        
+        Ok(messages)
+    }
+
     /// Convert absolute paths to relative paths based on worktree path
     fn make_path_relative(&self, path: &str, worktree_path: &str) -> String {
         let path_obj = Path::new(path);
@@ -868,5 +1078,117 @@ mod tests {
         );
 
         assert_eq!(result, "List directory: `components`");
+    }
+
+    #[test]
+    fn test_normalize_directory_for_claude() {
+        // Test basic path normalization
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/private/tmp/foo"),
+            "-private-tmp-foo"
+        );
+        
+        // Test path with spaces
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/tmp/foo bar"),
+            "-tmp-foo-bar"
+        );
+        
+        // Test path with mixed case
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/Users/Name/My Documents"),
+            "-users-name-my-documents"
+        );
+        
+        // Test path with special characters
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/path/with@special#chars"),
+            "-path-with-special-chars"
+        );
+        
+        // Test path with multiple consecutive slashes/spaces
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/path//with   spaces"),
+            "-path-with-spaces"
+        );
+        
+        // Test path with trailing slash
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/path/to/dir/"),
+            "-path-to-dir"
+        );
+    }
+
+    #[test]
+    fn test_parse_session_logs() {
+        let logs = r#"{"type":"system","subtype":"init","cwd":"/tmp/test","session_id":"test-session-123","tools":[],"model":"claude"}
+{"type":"user","message":{"id":"msg_1","type":"message","role":"user","content":[{"type":"text","text":"Hello"}]},"session_id":"test-session-123","cwd":"/tmp/test"}
+{"type":"assistant","message":{"id":"msg_2","type":"message","role":"assistant","content":[{"type":"text","text":"Hi there"}]},"session_id":"test-session-123","cwd":"/tmp/test"}"#;
+
+        let result = ClaudeExecutor::parse_session_logs(logs).unwrap();
+        
+        // Should have 2 messages (user and assistant, not system)
+        assert_eq!(result.len(), 2);
+        
+        // Check message types
+        assert_eq!(result[0].message_type, "user");
+        assert_eq!(result[1].message_type, "assistant");
+        
+        // Check session IDs are preserved
+        assert_eq!(result[0].session_id, "test-session-123");
+        assert_eq!(result[1].session_id, "test-session-123");
+        
+        // Check parent UUIDs are set correctly
+        assert!(result[0].parent_uuid.is_none());
+        assert_eq!(result[1].parent_uuid, Some(result[0].uuid.clone()));
+        
+        // Check cwd is preserved
+        assert_eq!(result[0].cwd, "/tmp/test");
+        assert_eq!(result[1].cwd, "/tmp/test");
+    }
+
+    #[test]
+    fn test_prepare_fork_metadata() {
+        let executor = ClaudeExecutor::new();
+        
+        // Create test logs with a session
+        let logs = r#"{"type":"user","message":{"id":"msg_1","type":"message","role":"user","content":[{"type":"text","text":"Test message"}]},"session_id":"original-session-123","cwd":"/original/path"}
+{"type":"assistant","message":{"id":"msg_2","type":"message","role":"assistant","content":[{"type":"text","text":"Response"}]},"session_id":"original-session-123","cwd":"/original/path"}"#;
+        
+        // Create a temp directory for testing
+        let temp_dir = std::env::temp_dir().join(format!("claude_fork_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+        
+        let result = executor.prepare_fork(
+            logs,
+            temp_dir.to_str().unwrap(),
+            "/original/path",
+        );
+        
+        // Clean up temp directory
+        let _ = fs::remove_dir_all(&temp_dir);
+        
+        assert!(result.is_ok());
+        let fork_metadata = result.unwrap();
+        
+        // Check that a new session ID was generated
+        assert!(!fork_metadata.session_id.is_empty());
+        assert_ne!(fork_metadata.session_id, "original-session-123");
+        
+        // Check message count
+        assert_eq!(fork_metadata.message_count, 2);
+        
+        // Check checkpoint directory
+        assert_eq!(fork_metadata.checkpoint_dir, temp_dir.to_str().unwrap());
+        
+        // Check metadata contains original session ID
+        if let Some(metadata) = fork_metadata.metadata {
+            assert_eq!(
+                metadata.get("original_session_id").and_then(|v| v.as_str()),
+                Some("original-session-123")
+            );
+        } else {
+            panic!("Expected metadata to be present");
+        }
     }
 }
