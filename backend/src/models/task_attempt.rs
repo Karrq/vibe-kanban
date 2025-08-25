@@ -1278,6 +1278,9 @@ impl TaskAttempt {
         )?;
         
         // Create database record for the forked attempt
+        let base_branch = ctx.task_attempt.base_branch.clone();
+        let executor = ctx.task_attempt.executor.clone();
+        
         let forked_attempt = sqlx::query_as!(
             TaskAttempt,
             r#"INSERT INTO task_attempts (
@@ -1306,9 +1309,9 @@ impl TaskAttempt {
             task_id,
             new_worktree_path_str,
             new_branch_name,
-            ctx.task_attempt.base_branch.clone(), // Use same base branch as source
+            base_branch, // Use same base branch as source
             Option::<String>::None, // merge_commit
-            ctx.task_attempt.executor.clone(), // Use same executor
+            executor, // Use same executor
             Option::<String>::None, // pr_url
             Option::<i64>::None, // pr_number
             Option::<String>::None, // pr_status
@@ -1337,6 +1340,8 @@ impl TaskAttempt {
             let process_id = Uuid::new_v4();
             let process_id_str = process_id.to_string();
             let new_attempt_id_str = new_attempt_id.to_string();
+            let executor_for_process = ctx.task_attempt.executor.clone();
+            let worktree_for_process = new_worktree_path_str.clone();
             
             sqlx::query!(
                 r#"INSERT INTO execution_processes (
@@ -1347,8 +1352,8 @@ impl TaskAttempt {
                 "#,
                 process_id_str,
                 new_attempt_id_str,
-                ctx.task_attempt.executor.clone(),
-                new_worktree_path_str.clone(),
+                executor_for_process,
+                worktree_for_process,
                 truncated_output
             )
             .execute(pool)
@@ -1358,6 +1363,30 @@ impl TaskAttempt {
                 "Stored truncated output for forked attempt {} (preserving executor native format)",
                 new_attempt_id
             );
+            
+            // Apply the fork for executors that support it (e.g., Claude Code)
+            // This creates necessary files for resuming the conversation
+            use crate::executor::ExecutorConfig;
+            if let Ok(executor_config) = executor_type.to_string().parse::<ExecutorConfig>() {
+                let executor = executor_config.create_executor();
+                match executor.apply_fork(&truncated_output, &new_worktree_path_str) {
+                    Ok(session_id) => {
+                        tracing::info!(
+                            "Applied fork for executor {} with session ID: {}",
+                            executor_type,
+                            session_id
+                        );
+                    }
+                    Err(e) => {
+                        // Log the error but don't fail - not all executors support forking
+                        tracing::debug!(
+                            "Executor {} does not support fork application: {}",
+                            executor_type,
+                            e
+                        );
+                    }
+                }
+            }
         }
         
         tracing::info!(
