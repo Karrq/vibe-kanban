@@ -50,9 +50,11 @@ function Conversation() {
   useEffect(() => {
     if (projectId && taskId && attemptId && !isAttemptRunning) {
       setCheckpointsLoading(true);
+      console.log('Loading checkpoints for attempt:', attemptId);
       checkpointApi
         .list(projectId, taskId, attemptId)
         .then((data) => {
+          console.log('Checkpoints loaded:', data);
           setCheckpoints(data);
         })
         .catch((error) => {
@@ -227,6 +229,17 @@ function Conversation() {
         const hasCheckpoint = checkpoints.some(
           (cp) => cp.message_index === globalIndex
         );
+        
+        // Debug logging
+        if (index === 0) {
+          console.log('Rendering entry:', {
+            index,
+            globalIndex,
+            hasCheckpoint,
+            checkpointsCount: checkpoints.length,
+            checkpoints: checkpoints.map(cp => cp.message_index)
+          });
+        }
         
         return (
           <ConversationEntry
