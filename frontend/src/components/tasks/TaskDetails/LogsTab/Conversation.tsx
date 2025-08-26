@@ -121,6 +121,7 @@ function Conversation() {
 
     setForkLoading(true);
     try {
+      console.log('Attempting to fork at message index:', selectedForkIndex);
       const result = await checkpointApi.fork(
         projectId,
         taskId,
@@ -128,13 +129,16 @@ function Conversation() {
         selectedForkIndex
       );
       
+      console.log('Fork created successfully:', result);
       toast.success('Fork created successfully');
       
       // Navigate to the new attempt
       navigate(`/projects/${projectId}/tasks/${taskId}/attempts/${result.new_attempt_id}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create fork:', error);
-      toast.error('Failed to create fork');
+      // More detailed error message
+      const errorMessage = error?.message || error?.response?.data?.message || 'Failed to create fork';
+      toast.error(errorMessage);
     } finally {
       setForkLoading(false);
       setForkDialogOpen(false);
@@ -225,8 +229,8 @@ function Conversation() {
           timestamp: Date.now() / 1000
         }));
       console.log('Fake checkpoints:', fakeCheckpoints);
-      // Uncomment to test with fake checkpoints:
-      // setCheckpoints(fakeCheckpoints);
+      // Enable fake checkpoints for testing:
+      setCheckpoints(fakeCheckpoints);
     }
   }, [checkpointsLoading, checkpoints.length, allEntries.length]);
 
