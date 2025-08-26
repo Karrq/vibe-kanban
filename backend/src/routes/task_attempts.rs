@@ -31,7 +31,6 @@ use crate::{
         ApiResponse,
     },
     services::git_service::{CommitDetails, GitService},
-    utils::worktree_manager::WorktreeManager,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1141,14 +1140,6 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
             "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/commit/:commit_sha",
             get(get_commit_details),
         )
-        .route(
-            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/delete-worktree",
-            post(delete_worktree),
-        )
-        .route(
-            "/projects/:project_id/tasks/:task_id/attempts/:attempt_id/delete-branch",
-            post(delete_branch),
-        )
         .merge(
             Router::new()
                 .route(
@@ -1159,70 +1150,3 @@ pub fn task_attempts_with_id_router(_state: AppState) -> Router<AppState> {
         )
 }
 
-/// Delete a worktree (filesystem only, keep branch)
-/// This endpoint now delegates to the unified /api/branches/delete endpoint
-pub async fn delete_worktree(
-    Extension(project): Extension<Project>,
-    Extension(_task): Extension<Task>,
-    Extension(task_attempt): Extension<TaskAttempt>,
-    State(app_state): State<AppState>,
-) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
-    use crate::routes::branches::{DeleteBranchRequest, delete_branch};
-    
-    // Create request for the unified delete endpoint
-    let request = DeleteBranchRequest {
-        branch_name: task_attempt.branch.clone(),
-        project_id: project.id,
-        delete_worktree: true,
-        delete_branch: false, // Only delete worktree, keep branch
-        force: false,
-    };
-    
-    // Call the unified delete endpoint
-    let result = delete_branch(
-        State(app_state.clone()),
-        Json(request),
-    ).await?;
-    
-    // Mark the worktree as deleted in the database
-    // We'll do this regardless since the unified endpoint doesn't return errors for failures
-    if let Err(e) = TaskAttempt::mark_worktree_deleted(&app_state.db_pool, task_attempt.id).await {
-        tracing::error!("Failed to mark worktree as deleted: {}", e);
-        // Don't fail the whole operation if DB update fails
-    }
-    
-    Ok(result)
-}
-
-/// Delete a branch (requires worktree to be deleted first)
-/// This endpoint now delegates to the unified /api/branches/delete endpoint
-pub async fn delete_branch(
-    Extension(project): Extension<Project>,
-    Extension(_task): Extension<Task>,
-    Extension(task_attempt): Extension<TaskAttempt>,
-    State(app_state): State<AppState>,
-) -> Result<ResponseJson<ApiResponse<()>>, StatusCode> {
-    use crate::routes::branches::{DeleteBranchRequest, delete_branch};
-    
-    // Check if worktree still exists
-    if std::path::Path::new(&task_attempt.worktree_path).exists() {
-        return Ok(ResponseJson(ApiResponse::error(
-            "Worktree must be deleted before deleting the branch",
-        )));
-    }
-    
-    // Create request for the unified delete endpoint
-    let request = DeleteBranchRequest {
-        branch_name: task_attempt.branch.clone(),
-        project_id: project.id,
-        delete_worktree: false, // Worktree should already be deleted
-        delete_branch: true,
-        force: true, // Force delete since worktree is already gone
-    };
-    
-    // Call the unified delete endpoint
-    delete_branch(
-        State(app_state),
-        Json(request),
-    ).await
-}
