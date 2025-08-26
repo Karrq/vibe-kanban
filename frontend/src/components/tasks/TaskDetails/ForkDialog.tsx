@@ -30,8 +30,11 @@ export function ForkDialog({
   isLoading = false,
 }: Props) {
   const handleConfirm = () => {
+    console.log('ForkDialog handleConfirm clicked', { messageIndex, checkpoint });
     onConfirm();
   };
+
+  console.log('ForkDialog rendered', { open, messageIndex, checkpoint, isLoading });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

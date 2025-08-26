@@ -89,6 +89,7 @@ function Conversation() {
 
   // Handle fork request
   const handleForkRequest = useCallback((messageIndex: number) => {
+    console.log('handleForkRequest called with messageIndex:', messageIndex);
     setSelectedForkIndex(messageIndex);
     setForkDialogOpen(true);
   }, []);
@@ -115,7 +116,10 @@ function Conversation() {
 
   // Handle fork confirmation
   const handleForkConfirm = useCallback(async () => {
+    console.log('handleForkConfirm called', { projectId, taskId, attemptId, selectedForkIndex });
+    
     if (!projectId || !taskId || !attemptId || selectedForkIndex === null) {
+      console.error('Missing required parameters for fork', { projectId, taskId, attemptId, selectedForkIndex });
       return;
     }
 
