@@ -121,6 +121,9 @@ impl ExecutorSession {
             id, data.task_attempt_id, data.execution_process_id, data.session_id
         );
 
+        let session_id = data.session_id.clone();
+        let prompt = data.prompt.clone();
+
         sqlx::query_as!(
             ExecutorSession,
             r#"INSERT INTO executor_sessions (
@@ -140,8 +143,8 @@ impl ExecutorSession {
             id,
             data.task_attempt_id,
             data.execution_process_id,
-            data.session_id.clone(), // Use the provided session_id if available
-            data.prompt.clone(),
+            session_id, // Use the provided session_id if available
+            prompt,
             None::<String>, // summary initially None
             now,            // created_at
             now             // updated_at
