@@ -216,21 +216,10 @@ function Conversation() {
     [allProcessLogs]
   );
   
-  // Create fake checkpoints for testing (after allEntries is defined)
+  // Don't use fake checkpoints - let backend handle missing checkpoints
   useEffect(() => {
     if (!checkpointsLoading && checkpoints.length === 0 && allEntries.length > 0) {
-      console.log('No checkpoints found, creating fake ones for testing');
-      const fakeCheckpoints = allEntries
-        .map((_, index) => index)
-        .filter(index => index % 3 === 0) // Every 3rd message
-        .map(index => ({
-          message_index: index,
-          commit_sha: `fake-${index}`,
-          timestamp: Date.now() / 1000
-        }));
-      console.log('Fake checkpoints:', fakeCheckpoints);
-      // Enable fake checkpoints for testing:
-      setCheckpoints(fakeCheckpoints);
+      console.log('No real checkpoints found, fork will preserve conversation only');
     }
   }, [checkpointsLoading, checkpoints.length, allEntries.length]);
 

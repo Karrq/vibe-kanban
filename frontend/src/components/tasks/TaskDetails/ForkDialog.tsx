@@ -83,8 +83,11 @@ export function ForkDialog({
             </p>
             <ul className="mt-2 space-y-1 text-blue-800 dark:text-blue-300 list-disc ml-4">
               <li>A new task attempt will be created with its own branch</li>
-              <li>The code will be restored to the exact state at message {checkpoint?.message_index ?? messageIndex}</li>
-              <li>The conversation history up to this point will be preserved</li>
+              {checkpoint ? (
+                <li>The code will be restored to the exact state at message {checkpoint.message_index}</li>
+              ) : (
+                <li>The conversation history up to message {messageIndex} will be preserved</li>
+              )}
               <li>You can continue with a different approach or prompt</li>
             </ul>
           </div>
@@ -92,8 +95,9 @@ export function ForkDialog({
           {!checkpoint && (
             <div className="rounded-lg bg-yellow-50 dark:bg-yellow-950/20 p-3 text-sm">
               <p className="text-yellow-900 dark:text-yellow-200">
-                <strong>Note:</strong> No checkpoint exists at exactly message {messageIndex}. 
-                The system will use the nearest earlier checkpoint.
+                <strong>Note:</strong> No checkpoint exists at message {messageIndex}. 
+                The fork will preserve the conversation history but won't restore file changes.
+                Start with your current code state and the truncated conversation.
               </p>
             </div>
           )}
@@ -109,7 +113,7 @@ export function ForkDialog({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={isLoading || !checkpoint}
+            disabled={isLoading}
             className="gap-2"
           >
             <GitBranch className="h-4 w-4" />
