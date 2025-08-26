@@ -65,24 +65,6 @@ function Conversation() {
         });
     }
   }, [projectId, taskId, attemptId]);
-  
-  // Create fake checkpoints for testing (separate effect to avoid circular dependency)
-  useEffect(() => {
-    if (!checkpointsLoading && checkpoints.length === 0 && allEntries.length > 0) {
-      console.log('No checkpoints found, creating fake ones for testing');
-      const fakeCheckpoints = allEntries
-        .map((_, index) => index)
-        .filter(index => index % 3 === 0) // Every 3rd message
-        .map(index => ({
-          message_index: index,
-          commit_sha: `fake-${index}`,
-          timestamp: Date.now() / 1000
-        }));
-      console.log('Fake checkpoints:', fakeCheckpoints);
-      // Uncomment to test with fake checkpoints:
-      // setCheckpoints(fakeCheckpoints);
-    }
-  }, [checkpointsLoading, checkpoints.length, allEntries.length]);
 
   useEffect(() => {
     if (shouldAutoScrollLogs && scrollContainerRef.current) {
@@ -229,6 +211,24 @@ function Conversation() {
     () => allProcessLogs.filter((log) => log.status === 'running'),
     [allProcessLogs]
   );
+  
+  // Create fake checkpoints for testing (after allEntries is defined)
+  useEffect(() => {
+    if (!checkpointsLoading && checkpoints.length === 0 && allEntries.length > 0) {
+      console.log('No checkpoints found, creating fake ones for testing');
+      const fakeCheckpoints = allEntries
+        .map((_, index) => index)
+        .filter(index => index % 3 === 0) // Every 3rd message
+        .map(index => ({
+          message_index: index,
+          commit_sha: `fake-${index}`,
+          timestamp: Date.now() / 1000
+        }));
+      console.log('Fake checkpoints:', fakeCheckpoints);
+      // Uncomment to test with fake checkpoints:
+      // setCheckpoints(fakeCheckpoints);
+    }
+  }, [checkpointsLoading, checkpoints.length, allEntries.length]);
 
   // Paginate: show only the last visibleCount entries
   const visibleEntries = useMemo(

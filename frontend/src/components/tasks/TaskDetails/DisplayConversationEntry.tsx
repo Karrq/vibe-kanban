@@ -283,7 +283,6 @@ function DisplayConversationEntry({
 }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
-  const [showForkButton, setShowForkButton] = useState(false);
 
   const toggleErrorExpansion = (index: number) => {
     setExpandedErrors((prev) => {
@@ -328,8 +327,6 @@ function DisplayConversationEntry({
     <div 
       key={index}
       className="group relative"
-      onMouseEnter={() => setShowForkButton(true)}
-      onMouseLeave={() => setShowForkButton(false)}
     >
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
