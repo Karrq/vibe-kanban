@@ -22,6 +22,7 @@ pub struct ExecutorSession {
 pub struct CreateExecutorSession {
     pub task_attempt_id: Uuid,
     pub execution_process_id: Uuid,
+    pub session_id: Option<String>,  // External session ID (e.g., Claude session UUID)
     pub prompt: Option<String>,
 }
 
@@ -111,14 +112,17 @@ impl ExecutorSession {
     pub async fn create(
         pool: &SqlitePool,
         data: &CreateExecutorSession,
-        session_id: Uuid,
+        id: Uuid,
     ) -> Result<Self, sqlx::Error> {
         let now = Utc::now();
 
         tracing::debug!(
-            "Creating executor session: id={}, task_attempt_id={}, execution_process_id={}, external_session_id=None (will be set later)",
-            session_id, data.task_attempt_id, data.execution_process_id
+            "Creating executor session: id={}, task_attempt_id={}, execution_process_id={}, external_session_id={:?}",
+            id, data.task_attempt_id, data.execution_process_id, data.session_id
         );
+
+        let session_id = data.session_id.clone();
+        let prompt = data.prompt.clone();
 
         sqlx::query_as!(
             ExecutorSession,
@@ -136,11 +140,11 @@ impl ExecutorSession {
                 summary,
                 created_at as "created_at!: DateTime<Utc>",
                 updated_at as "updated_at!: DateTime<Utc>""#,
-            session_id,
+            id,
             data.task_attempt_id,
             data.execution_process_id,
-            None::<String>, // session_id initially None until parsed from output
-            data.prompt,
+            session_id, // Use the provided session_id if available
+            prompt,
             None::<String>, // summary initially None
             now,            // created_at
             now             // updated_at

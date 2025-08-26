@@ -326,6 +326,22 @@ pub trait Executor: Send + Sync {
         Ok((output, truncated_entries.len()))
     }
 
+    /// Apply a fork by creating necessary files for resuming a conversation.
+    /// This is called after a fork has been created in the database.
+    /// 
+    /// For Claude, this creates the JSONL session file in ~/.claude/projects/<normalized-dir>/
+    /// Other executors may have different requirements.
+    /// 
+    /// Returns the session ID that can be used for resumption (executor-specific).
+    fn apply_fork(
+        &self,
+        _truncated_logs: &str,
+        _worktree_path: &str,
+    ) -> Result<String, String> {
+        // Default implementation returns unsupported
+        Err("Fork support not implemented for this executor".to_string())
+    }
+
     #[allow(clippy::result_large_err)]
     async fn setup_streaming(
         &self,

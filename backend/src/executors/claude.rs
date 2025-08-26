@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::fs;
+use std::io::Write;
 
 use async_trait::async_trait;
 use uuid::Uuid;
@@ -400,9 +402,112 @@ Task title: {}"#,
         let accumulated_logs = accumulated_lines.join("\n");
         Ok((accumulated_logs, total_count))
     }
+
+    fn apply_fork(
+        &self,
+        truncated_logs: &str,
+        worktree_path: &str,
+    ) -> Result<String, String> {
+        // Generate a new session UUID for the fork
+        let fork_session_id = Uuid::new_v4().to_string();
+        
+        // Normalize the worktree path for Claude's folder structure
+        let normalized_dir = Self::normalize_directory_for_claude(worktree_path);
+        
+        // Get home directory
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| "Could not determine home directory".to_string())?;
+        
+        // Create the Claude projects directory for this worktree
+        let claude_project_dir = home_dir
+            .join(".claude")
+            .join("projects")
+            .join(&normalized_dir);
+        
+        // Create directory if it doesn't exist
+        fs::create_dir_all(&claude_project_dir)
+            .map_err(|e| format!("Failed to create Claude project directory: {}", e))?;
+        
+        // Write the JSONL file with the truncated logs directly
+        // The logs are already in the correct streaming JSON format from the executor
+        let session_file_path = claude_project_dir.join(format!("{}.jsonl", fork_session_id));
+        let mut file = fs::File::create(&session_file_path)
+            .map_err(|e| format!("Failed to create session file: {}", e))?;
+        
+        // TODO: Update last message UUID for proper TUI rendering
+        // TODO: Update CWD in messages to the new worktree path
+        // For now, just write the truncated logs as-is
+        
+        // Convert the streaming JSON logs to JSONL format
+        // Each line should be a valid JSON object
+        for line in truncated_logs.lines() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                writeln!(file, "{}", trimmed)
+                    .map_err(|e| format!("Failed to write to session file: {}", e))?;
+            }
+        }
+        
+        tracing::info!(
+            "Created fork session {} in directory {} (normalized: {})",
+            fork_session_id,
+            worktree_path,
+            normalized_dir
+        );
+        
+        Ok(fork_session_id)
+    }
 }
 
 impl ClaudeExecutor {
+    /// Normalize a directory path to Claude's kebab-case format
+    /// Examples:
+    /// - `/private/tmp/foo` → `-private-tmp-foo`
+    /// - `/tmp/foo bar` → `-tmp-foo-bar`
+    /// - `/Users/name/My Documents` → `-users-name-my-documents`
+    fn normalize_directory_for_claude(path: &str) -> String {
+        // First canonicalize the path to resolve symlinks
+        let canonical_path = match fs::canonicalize(path) {
+            Ok(p) => p,
+            Err(_) => PathBuf::from(path), // Fall back to original if canonicalization fails
+        };
+        
+        // Convert to string and replace path separators and spaces with dashes
+        let path_str = canonical_path.to_string_lossy();
+        
+        // Replace path separators and spaces with dashes, convert to lowercase
+        let normalized = path_str
+            .chars()
+            .map(|c| {
+                if c == '/' || c == '\\' || c.is_whitespace() {
+                    '-'
+                } else if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-' // Replace other special characters with dash
+                }
+            })
+            .collect::<String>();
+        
+        // Collapse multiple consecutive dashes into one
+        let mut result = String::new();
+        let mut prev_dash = false;
+        for c in normalized.chars() {
+            if c == '-' {
+                if !prev_dash {
+                    result.push(c);
+                }
+                prev_dash = true;
+            } else {
+                result.push(c);
+                prev_dash = false;
+            }
+        }
+        
+        // Remove trailing dashes
+        result.trim_end_matches('-').to_string()
+    }
+
     /// Convert absolute paths to relative paths based on worktree path
     fn make_path_relative(&self, path: &str, worktree_path: &str) -> String {
         let path_obj = Path::new(path);
@@ -868,5 +973,72 @@ mod tests {
         );
 
         assert_eq!(result, "List directory: `components`");
+    }
+
+    #[test]
+    fn test_normalize_directory_for_claude() {
+        // Test basic path normalization
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/private/tmp/foo"),
+            "-private-tmp-foo"
+        );
+        
+        // Test path with spaces
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/tmp/foo bar"),
+            "-tmp-foo-bar"
+        );
+        
+        // Test path with mixed case
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/Users/Name/My Documents"),
+            "-users-name-my-documents"
+        );
+        
+        // Test path with special characters
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/path/with@special#chars"),
+            "-path-with-special-chars"
+        );
+        
+        // Test path with multiple consecutive slashes/spaces
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/path//with   spaces"),
+            "-path-with-spaces"
+        );
+        
+        // Test path with trailing slash
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/path/to/dir/"),
+            "-path-to-dir"
+        );
+    }
+
+    #[test]
+    fn test_apply_fork() {
+        let executor = ClaudeExecutor::new();
+        
+        // Create test logs with a session
+        let logs = r#"{"type":"user","message":{"id":"msg_1","type":"message","role":"user","content":[{"type":"text","text":"Test message"}]},"session_id":"original-session-123","cwd":"/original/path"}
+{"type":"assistant","message":{"id":"msg_2","type":"message","role":"assistant","content":[{"type":"text","text":"Response"}]},"session_id":"original-session-123","cwd":"/original/path"}"#;
+        
+        // Create a temp directory for testing
+        let temp_dir = std::env::temp_dir().join(format!("claude_fork_test_{}", Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir).unwrap();
+        
+        let result = executor.apply_fork(
+            logs,
+            temp_dir.to_str().unwrap(),
+        );
+        
+        // Clean up temp directory
+        let _ = fs::remove_dir_all(&temp_dir);
+        
+        assert!(result.is_ok());
+        let fork_session_id = result.unwrap();
+        
+        // Check that a new session ID was generated
+        assert!(!fork_session_id.is_empty());
+        assert_ne!(fork_session_id, "original-session-123");
     }
 }
