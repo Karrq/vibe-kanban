@@ -1384,32 +1384,18 @@ impl TaskAttempt {
                         let session_data = CreateExecutorSession {
                             task_attempt_id: new_attempt_id,
                             execution_process_id: process_id,
-                            prompt: Some(format!("Forked from attempt {} at message index {}", source_attempt_id, message_index)),
+                            session_id: Some(forked_session_id.clone()),
+                            prompt: None, // The forked session contains full conversation history
                         };
                         
                         let session_record_id = Uuid::new_v4();
                         match ExecutorSession::create(pool, &session_data, session_record_id).await {
-                            Ok(mut session) => {
-                                // Update the session with the external session ID
-                                let session_record_id_str = session_record_id.to_string();
-                                let update_result = sqlx::query!(
-                                    "UPDATE executor_sessions SET session_id = $1 WHERE id = $2",
-                                    forked_session_id,
-                                    session_record_id_str
-                                )
-                                .execute(pool)
-                                .await;
-                                
-                                if let Err(e) = update_result {
-                                    tracing::error!("Failed to update executor session with forked session ID: {}", e);
-                                } else {
-                                    session.session_id = Some(forked_session_id.clone());
-                                    tracing::info!(
-                                        "Created executor session {} with forked session ID: {}",
-                                        session_record_id,
-                                        forked_session_id
-                                    );
-                                }
+                            Ok(session) => {
+                                tracing::info!(
+                                    "Created executor session {} with forked session ID: {}",
+                                    session.id,
+                                    forked_session_id
+                                );
                             }
                             Err(e) => {
                                 tracing::error!("Failed to create executor session for fork: {}", e);

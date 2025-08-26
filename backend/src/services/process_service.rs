@@ -791,6 +791,7 @@ impl ProcessService {
         let create_session = CreateExecutorSession {
             task_attempt_id: attempt_id,
             execution_process_id: process_id,
+            session_id: None, // Will be parsed from executor output later
             prompt: Some(prompt),
         };
 
