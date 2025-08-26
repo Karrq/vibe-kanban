@@ -109,7 +109,13 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
       const response = await fetch(url);
       if (!response.ok) throw new Error('Failed to fetch branches');
       const data = await response.json();
-      setBranches(data.data || []);
+      
+      // Filter to only show Vibe Kanban branches (those starting with "vk-")
+      const vibeKanbanBranches = (data.data || []).filter((branch: BranchInfo) => 
+        branch.branch_name.startsWith('vk-')
+      );
+      
+      setBranches(vibeKanbanBranches);
     } catch (error) {
       console.error('Error fetching branches:', error);
     } finally {
@@ -236,9 +242,14 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Worktree Management</DialogTitle>
+            <DialogTitle>
+              {projectId ? 'Project Worktree Management' : 'All Worktrees'}
+            </DialogTitle>
+            <DialogDescription>
+              Manage worktrees and branches created by Vibe Kanban (branches starting with "vk-")
+            </DialogDescription>
           </DialogHeader>
 
           {loading ? (
@@ -259,8 +270,8 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                               </h3>
                             </TooltipTrigger>
                             <TooltipContent className="max-w-xs">
-                              <p>Orphaned branches are git branches that don't match any task in the database.</p>
-                              <p className="mt-1 text-xs text-gray-400">They may be from deleted tasks, manually created branches, or branches created outside of Vibe Kanban.</p>
+                              <p>Orphaned branches are Vibe Kanban branches (vk-*) that don't match any task in the database.</p>
+                              <p className="mt-1 text-xs text-gray-400">They may be from deleted tasks or tasks that were removed from the database.</p>
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>
