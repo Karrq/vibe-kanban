@@ -48,7 +48,7 @@ function Conversation() {
 
   // Load checkpoints when attempt data changes
   useEffect(() => {
-    if (projectId && taskId && attemptId && !isAttemptRunning) {
+    if (projectId && taskId && attemptId) {
       setCheckpointsLoading(true);
       console.log('Loading checkpoints for attempt:', attemptId);
       checkpointApi
@@ -56,6 +56,22 @@ function Conversation() {
         .then((data) => {
           console.log('Checkpoints loaded:', data);
           setCheckpoints(data);
+          
+          // For testing: create fake checkpoints if none exist
+          if (data.length === 0 && allEntries.length > 0) {
+            console.log('No checkpoints found, creating fake ones for testing');
+            const fakeCheckpoints = allEntries
+              .map((_, index) => index)
+              .filter(index => index % 3 === 0) // Every 3rd message
+              .map(index => ({
+                message_index: index,
+                commit_sha: `fake-${index}`,
+                timestamp: Date.now() / 1000
+              }));
+            console.log('Fake checkpoints:', fakeCheckpoints);
+            // Uncomment to test with fake checkpoints:
+            // setCheckpoints(fakeCheckpoints);
+          }
         })
         .catch((error) => {
           console.error('Failed to load checkpoints:', error);
@@ -64,7 +80,7 @@ function Conversation() {
           setCheckpointsLoading(false);
         });
     }
-  }, [projectId, taskId, attemptId, isAttemptRunning]);
+  }, [projectId, taskId, attemptId, allEntries.length]);
 
   useEffect(() => {
     if (shouldAutoScrollLogs && scrollContainerRef.current) {

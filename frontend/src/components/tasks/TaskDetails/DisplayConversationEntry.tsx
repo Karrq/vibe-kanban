@@ -394,19 +394,26 @@ function DisplayConversationEntry({
           )}
         </div>
         
-        {/* Fork button - shown when checkpoint exists (temporarily always visible for debugging) */}
+        {/* Fork button - ALWAYS VISIBLE FOR TESTING */}
         {onFork && globalMessageIndex !== undefined && (
-          <div className={`flex-shrink-0 ${hasCheckpoint ? '' : 'opacity-30'} ${showForkButton || hasCheckpoint ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+          <div className="flex-shrink-0">
             <Button
-              variant="ghost"
+              variant={hasCheckpoint ? "outline" : "ghost"}
               size="sm"
-              onClick={() => hasCheckpoint && onFork(globalMessageIndex)}
+              onClick={() => {
+                console.log('Fork clicked:', { globalMessageIndex, hasCheckpoint });
+                if (hasCheckpoint) {
+                  onFork(globalMessageIndex);
+                } else {
+                  console.log('No checkpoint at this message');
+                }
+              }}
               disabled={!hasCheckpoint}
-              title={hasCheckpoint ? `Fork from this point (message ${globalMessageIndex})` : `No checkpoint at message ${globalMessageIndex}`}
-              className="h-8 px-2"
+              title={hasCheckpoint ? `Fork from checkpoint at message ${globalMessageIndex}` : `No checkpoint at message ${globalMessageIndex}`}
+              className={`h-8 px-2 ${hasCheckpoint ? 'text-blue-600' : 'opacity-50'}`}
             >
               <GitBranch className="h-4 w-4 mr-1" />
-              {hasCheckpoint ? 'Fork' : 'No CP'}
+              {hasCheckpoint ? 'Fork' : `M${globalMessageIndex}`}
             </Button>
           </div>
         )}
