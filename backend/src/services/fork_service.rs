@@ -286,11 +286,13 @@ impl ForkService {
     /// Create a new worktree from a checkpoint commit
     pub fn create_forked_worktree(
         &self,
+        main_repo_path: &str,
         checkpoint: &CheckpointInfo,
         new_branch_name: &str,
         new_worktree_path: &str,
     ) -> Result<(), ForkServiceError> {
-        let repo = Repository::open(&self.worktree_path)?;
+        // Open the main repository, not the worktree
+        let repo = Repository::open(main_repo_path)?;
         
         // Find the checkpoint commit
         let commit_oid = Oid::from_str(&checkpoint.commit_sha)?;

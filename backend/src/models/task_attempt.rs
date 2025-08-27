@@ -1258,13 +1258,40 @@ impl TaskAttempt {
         let fork_service = crate::services::ForkService::new(&ctx.task_attempt.worktree_path, source_attempt_id)?;
         
         // Generate new attempt ID and branch name - same as regular attempt creation
-        let new_attempt_id = Uuid::new_v4();
+        // Retry with new UUIDs if branch name collides
         let task_title_id = crate::utils::text::git_branch_id(&ctx.task.title);
-        let new_branch_name = format!(
-            "vk-{}-{}",
-            crate::utils::text::short_uuid(&new_attempt_id),
-            task_title_id
-        );
+        let max_retries = 10;
+        let mut new_attempt_id = Uuid::new_v4();
+        let mut new_branch_name = String::new();
+        
+        for retry in 0..max_retries {
+            if retry > 0 {
+                new_attempt_id = Uuid::new_v4();
+            }
+            new_branch_name = format!(
+                "vk-{}-{}",
+                crate::utils::text::short_uuid(&new_attempt_id),
+                task_title_id
+            );
+            
+            // Check if branch already exists
+            let repo = Repository::open(&ctx.project.git_repo_path)?;
+            if repo.find_branch(&new_branch_name, git2::BranchType::Local).is_err() {
+                // Branch doesn't exist, we can use this name
+                break;
+            }
+            
+            if retry == max_retries - 1 {
+                return Err(TaskAttemptError::ValidationError(
+                    "Failed to generate unique branch name after multiple attempts".to_string()
+                ));
+            }
+            
+            tracing::warn!(
+                "Branch name {} already exists, retrying with new UUID (attempt {}/{})",
+                new_branch_name, retry + 1, max_retries
+            );
+        }
         
         // Create new worktree path
         let new_worktree_path = Self::get_worktree_base_dir().join(&new_branch_name);
@@ -1274,6 +1301,7 @@ impl TaskAttempt {
         if let Some(cp) = checkpoint {
             // Create worktree from checkpoint
             fork_service.create_forked_worktree(
+                &ctx.project.git_repo_path,
                 cp,
                 &new_branch_name,
                 &new_worktree_path_str,
