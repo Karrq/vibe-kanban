@@ -114,7 +114,7 @@ export type UpdateExecutionProcess = { status: ExecutionProcessStatus | null, ex
 
 export type ExecutorSession = { id: string, task_attempt_id: string, execution_process_id: string, session_id: string | null, prompt: string | null, summary: string | null, created_at: string, updated_at: string, };
 
-export type CreateExecutorSession = { task_attempt_id: string, execution_process_id: string, prompt: string | null, };
+export type CreateExecutorSession = { task_attempt_id: string, execution_process_id: string, session_id: string | null, prompt: string | null, };
 
 export type UpdateExecutorSession = { session_id: string | null, prompt: string | null, summary: string | null, };
 
@@ -125,6 +125,12 @@ export type NormalizedEntry = { timestamp: string | null, entry_type: Normalized
 export type NormalizedEntryType = { "type": "user_message" } | { "type": "assistant_message" } | { "type": "tool_use", tool_name: string, action_type: ActionType, } | { "type": "system_message" } | { "type": "error_message" } | { "type": "thinking" };
 
 export type ActionType = { "action": "file_read", path: string, } | { "action": "file_write", path: string, } | { "action": "command_run", command: string, } | { "action": "search", query: string, } | { "action": "web_fetch", url: string, } | { "action": "task_create", description: string, } | { "action": "plan_presentation", plan: string, } | { "action": "other", description: string, };
+
+export type ForkTaskAttemptRequest = { message_index: number, };
+
+export type CheckpointResponse = { message_index: number, commit_sha: string, timestamp: bigint, };
+
+export type ForkResponse = { new_attempt_id: string, worktree_path: string, branch: string, checkpoint_used: CheckpointResponse, };
 
 // Generated constants
 export const EXECUTOR_TYPES: string[] = [
@@ -199,21 +205,3 @@ export const SOUND_LABELS: Record<string, string> = {
     "phone-vibration": "Phone Vibration",
     "rooster": "Rooster Call"
 };
-
-// Fork-related types
-export interface ForkTaskAttemptRequest {
-    message_index: number;
-}
-
-export interface CheckpointResponse {
-    message_index: number;
-    commit_sha: string;
-    timestamp: number;
-}
-
-export interface ForkResponse {
-    new_attempt_id: string;
-    worktree_path: string;
-    branch: string;
-    checkpoint_used: CheckpointResponse;
-}
