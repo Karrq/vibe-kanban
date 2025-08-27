@@ -1237,9 +1237,9 @@ impl TaskAttempt {
             cumulative_diffs,
         })
     }
-    
+
     /// Fork a task attempt, creating a new independent attempt
-    /// 
+    ///
     /// This creates a completely new attempt that is independent from the source attempt.
     /// If a checkpoint is available, it starts from that checkpoint's commit state.
     /// Otherwise, it starts from the base branch with preserved conversation history.
@@ -1248,104 +1248,48 @@ impl TaskAttempt {
         source_attempt_id: Uuid,
         task_id: Uuid,
         project_id: Uuid,
-        checkpoint: Option<&crate::services::CheckpointInfo>,
+        checkpoint: &crate::services::CheckpointInfo,
         message_index: usize,
     ) -> Result<TaskAttempt, TaskAttemptError> {
         // Load source attempt context
         let ctx = TaskAttempt::load_context(pool, source_attempt_id, task_id, project_id).await?;
-        
+
         // Create fork service to handle git operations
-        let fork_service = crate::services::ForkService::new(&ctx.task_attempt.worktree_path, source_attempt_id)?;
-        
+        let fork_service =
+            crate::services::ForkService::new(&ctx.task_attempt.worktree_path, source_attempt_id)?;
+
         // Generate new attempt ID and branch name - same as regular attempt creation
-        // Retry with new UUIDs if branch name collides
         let task_title_id = crate::utils::text::git_branch_id(&ctx.task.title);
-        let max_retries = 10;
-        let mut new_attempt_id = Uuid::new_v4();
-        let mut new_branch_name = String::new();
-        
-        for retry in 0..max_retries {
-            if retry > 0 {
-                new_attempt_id = Uuid::new_v4();
-            }
-            new_branch_name = format!(
-                "vk-{}-{}",
-                crate::utils::text::short_uuid(&new_attempt_id),
-                task_title_id
-            );
-            
-            // Check if branch already exists
-            let repo = Repository::open(&ctx.project.git_repo_path)?;
-            if repo.find_branch(&new_branch_name, git2::BranchType::Local).is_err() {
-                // Branch doesn't exist, we can use this name
-                break;
-            }
-            
-            if retry == max_retries - 1 {
-                return Err(TaskAttemptError::ValidationError(
-                    "Failed to generate unique branch name after multiple attempts".to_string()
-                ));
-            }
-            
-            tracing::warn!(
-                "Branch name {} already exists, retrying with new UUID (attempt {}/{})",
-                new_branch_name, retry + 1, max_retries
-            );
-        }
-        
+        let new_attempt_id = Uuid::new_v4();
+        let new_branch_name = format!(
+            "vk-{}-{}",
+            crate::utils::text::short_uuid(&new_attempt_id),
+            task_title_id
+        );
+
         // Create new worktree path
         let new_worktree_path = Self::get_worktree_base_dir().join(&new_branch_name);
         let new_worktree_path_str = new_worktree_path.to_string_lossy().to_string();
-        
+
         // Create the worktree based on whether we have a checkpoint
-        if let Some(cp) = checkpoint {
-            // Create worktree from checkpoint
-            fork_service.create_forked_worktree(
-                &ctx.project.git_repo_path,
-                cp,
-                &new_branch_name,
-                &new_worktree_path_str,
-            )?;
-            
-            tracing::info!(
-                "Created forked worktree from checkpoint at message {} for attempt {}",
-                cp.message_index, new_attempt_id
-            );
-        } else {
-            // Create worktree from base branch (no checkpoint available)
-            // Scope git operations to avoid Send issues
-            let base_branch = ctx.task_attempt.base_branch.clone();
-            {
-                let repo = Repository::open(&ctx.project.git_repo_path)?;
-                
-                // Get base branch commit
-                let base_branch_ref = repo
-                    .find_branch(&base_branch, git2::BranchType::Local)
-                    .map_err(|_| TaskAttemptError::BranchNotFound(base_branch.clone()))?;
-                let base_commit = base_branch_ref.get().peel_to_commit()?;
-                
-                // Create a new branch from base
-                repo.branch(&new_branch_name, &base_commit, false)?;
-                
-                // Create worktree for the new branch
-                let _worktree = repo.worktree(
-                    &new_branch_name,
-                    std::path::Path::new(&new_worktree_path_str),
-                    None,
-                )?;
-                
-                tracing::info!(
-                    "Created forked worktree without checkpoint from base branch {} for attempt {}",
-                    base_branch, new_attempt_id
-                );
-            }
-        }
-        
+        fork_service.create_forked_worktree(
+            &ctx.project.git_repo_path,
+            checkpoint,
+            &new_branch_name,
+            &new_worktree_path_str,
+        )?;
+
+        tracing::info!(
+            "Created forked worktree from checkpoint at message {} for attempt {}",
+            checkpoint.message_index,
+            new_attempt_id
+        );
+
         // Create database record for the forked attempt
         // IMPORTANT: Use the original task's base branch, not the source attempt's branch
         let base_branch = ctx.task_attempt.base_branch.clone();
         let executor = ctx.task_attempt.executor.clone();
-        
+
         let forked_attempt = sqlx::query_as!(
             TaskAttempt,
             r#"INSERT INTO task_attempts (
@@ -1374,30 +1318,34 @@ impl TaskAttempt {
             task_id,
             new_worktree_path_str,
             new_branch_name,
-            base_branch, // Use same base branch as source
-            Option::<String>::None, // merge_commit
-            executor, // Use same executor
-            Option::<String>::None, // pr_url
-            Option::<i64>::None, // pr_number
-            Option::<String>::None, // pr_status
+            base_branch,                   // Use same base branch as source
+            Option::<String>::None,        // merge_commit
+            executor,                      // Use same executor
+            Option::<String>::None,        // pr_url
+            Option::<i64>::None,           // pr_number
+            Option::<String>::None,        // pr_status
             Option::<DateTime<Utc>>::None, // pr_merged_at
-            false, // worktree_deleted
-            Option::<DateTime<Utc>>::None // setup_completed_at
+            false,                         // worktree_deleted
+            Option::<DateTime<Utc>>::None  // setup_completed_at
         )
         .fetch_one(pool)
         .await?;
-        
+
         // Extract truncated output in the executor's native format
-        let executor_type = ctx.task_attempt.executor.as_deref()
-            .ok_or_else(|| TaskAttemptError::ValidationError("Source attempt has no executor type".to_string()))?;
-        
-        let truncated_output = fork_service.extract_truncated_output(
-            pool, 
-            message_index, 
-            executor_type
-        ).await
-            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to extract truncated output: {}", e)))?;
-        
+        let executor_type = ctx.task_attempt.executor.as_deref().ok_or_else(|| {
+            TaskAttemptError::ValidationError("Source attempt has no executor type".to_string())
+        })?;
+
+        let truncated_output = fork_service
+            .extract_truncated_output(pool, message_index, executor_type)
+            .await
+            .map_err(|e| {
+                TaskAttemptError::ValidationError(format!(
+                    "Failed to extract truncated output: {}",
+                    e
+                ))
+            })?;
+
         // Store the truncated output if we have any
         if !truncated_output.is_empty() {
             // Create an initial execution process to store the conversation context
@@ -1407,12 +1355,12 @@ impl TaskAttempt {
             let new_attempt_id_str = new_attempt_id.to_string();
             let executor_for_process = ctx.task_attempt.executor.clone();
             let worktree_for_process = new_worktree_path_str.clone();
-            
+
             sqlx::query!(
                 r#"INSERT INTO execution_processes (
                     id, task_attempt_id, process_type, executor_type, status,
                     command, working_directory, stdout, started_at, completed_at
-                ) VALUES ($1, $2, 'coding_agent', $3, 'completed', 
+                ) VALUES ($1, $2, 'codingagent', $3, 'completed',
                     'forked_context', $4, $5, datetime('now'), datetime('now'))
                 "#,
                 process_id_str,
@@ -1423,17 +1371,19 @@ impl TaskAttempt {
             )
             .execute(pool)
             .await?;
-            
+
             tracing::info!(
                 "Stored truncated output for forked attempt {} (preserving executor native format)",
                 new_attempt_id
             );
-            
+
             // Apply the fork for executors that support it (e.g., Claude Code)
             // This creates necessary files for resuming the conversation
-            use crate::executor::ExecutorConfig;
-            use crate::models::executor_session::{ExecutorSession, CreateExecutorSession};
-            
+            use crate::{
+                executor::ExecutorConfig,
+                models::executor_session::{CreateExecutorSession, ExecutorSession},
+            };
+
             if let Ok(executor_config) = executor_type.to_string().parse::<ExecutorConfig>() {
                 let executor = executor_config.create_executor();
                 match executor.apply_fork(&truncated_output, &new_worktree_path_str) {
@@ -1443,7 +1393,7 @@ impl TaskAttempt {
                             executor_type,
                             forked_session_id
                         );
-                        
+
                         // Create an executor_session record to store the forked session ID
                         // This ensures follow-up executors will use the correct session
                         let session_data = CreateExecutorSession {
@@ -1452,9 +1402,10 @@ impl TaskAttempt {
                             session_id: Some(forked_session_id.clone()),
                             prompt: None, // The forked session contains full conversation history
                         };
-                        
+
                         let session_record_id = Uuid::new_v4();
-                        match ExecutorSession::create(pool, &session_data, session_record_id).await {
+                        match ExecutorSession::create(pool, &session_data, session_record_id).await
+                        {
                             Ok(session) => {
                                 tracing::info!(
                                     "Created executor session {} with forked session ID: {}",
@@ -1463,7 +1414,10 @@ impl TaskAttempt {
                                 );
                             }
                             Err(e) => {
-                                tracing::error!("Failed to create executor session for fork: {}", e);
+                                tracing::error!(
+                                    "Failed to create executor session for fork: {}",
+                                    e
+                                );
                             }
                         }
                     }
@@ -1478,110 +1432,17 @@ impl TaskAttempt {
                 }
             }
         }
-        
+
         tracing::info!(
-            "Created forked attempt {} from {} at message {} (has checkpoint: {})",
+            "Created forked attempt {} from {} at message {}",
             new_attempt_id,
             source_attempt_id,
             message_index,
-            checkpoint.is_some()
         );
-        
-        // Extract truncated output in the executor's native format
-        let executor_type = ctx.task_attempt.executor.as_deref()
-            .ok_or_else(|| TaskAttemptError::ValidationError("Source attempt has no executor type".to_string()))?;
-        
-        let truncated_output = fork_service.extract_truncated_output(
-            pool, 
-            message_index, 
-            executor_type
-        ).await
-            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to extract truncated output: {}", e)))?;
-        
-        // Store the truncated output if we have any
-        if !truncated_output.is_empty() {
-            // Create an initial execution process to store the conversation context
-            // This preserves the executor's native format for proper continuation
-            let process_id = Uuid::new_v4();
-            let process_id_str = process_id.to_string();
-            let new_attempt_id_str = new_attempt_id.to_string();
-            let executor_for_process = ctx.task_attempt.executor.clone();
-            let worktree_for_process = new_worktree_path_str.clone();
-            
-            sqlx::query!(
-                r#"INSERT INTO execution_processes (
-                    id, task_attempt_id, process_type, executor_type, status,
-                    command, working_directory, stdout, started_at, completed_at
-                ) VALUES ($1, $2, 'coding_agent', $3, 'completed', 
-                    'forked_context', $4, $5, datetime('now'), datetime('now'))
-                "#,
-                process_id_str,
-                new_attempt_id_str,
-                executor_for_process,
-                worktree_for_process,
-                truncated_output
-            )
-            .execute(pool)
-            .await?;
-            
-            tracing::info!(
-                "Stored truncated output for forked attempt {} (preserving executor native format)",
-                new_attempt_id
-            );
-            
-            // Apply the fork for executors that support it (e.g., Claude Code)
-            // This creates necessary files for resuming the conversation
-            use crate::executor::ExecutorConfig;
-            use crate::models::executor_session::{ExecutorSession, CreateExecutorSession};
-            
-            if let Ok(executor_config) = executor_type.to_string().parse::<ExecutorConfig>() {
-                let executor = executor_config.create_executor();
-                match executor.apply_fork(&truncated_output, &new_worktree_path_str) {
-                    Ok(forked_session_id) => {
-                        tracing::info!(
-                            "Applied fork for executor {} with session ID: {}",
-                            executor_type,
-                            forked_session_id
-                        );
-                        
-                        // Create an executor_session record to store the forked session ID
-                        // This ensures follow-up executors will use the correct session
-                        let session_data = CreateExecutorSession {
-                            task_attempt_id: new_attempt_id,
-                            execution_process_id: process_id,
-                            session_id: Some(forked_session_id.clone()),
-                            prompt: None, // The forked session contains full conversation history
-                        };
-                        
-                        let session_record_id = Uuid::new_v4();
-                        match ExecutorSession::create(pool, &session_data, session_record_id).await {
-                            Ok(session) => {
-                                tracing::info!(
-                                    "Created executor session {} with forked session ID: {}",
-                                    session.id,
-                                    forked_session_id
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to create executor session for fork: {}", e);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Log the error but don't fail - not all executors support forking
-                        tracing::debug!(
-                            "Executor {} does not support fork application: {}",
-                            executor_type,
-                            e
-                        );
-                    }
-                }
-            }
-        }
-        
+
         Ok(forked_attempt)
     }
-    
+
     /// List all checkpoints available for this attempt
     pub async fn list_checkpoints(
         pool: &SqlitePool,
@@ -1591,12 +1452,14 @@ impl TaskAttempt {
         let attempt = TaskAttempt::find_by_id(pool, attempt_id)
             .await?
             .ok_or(TaskAttemptError::TaskNotFound)?;
-        
+
         // Create checkpoint service
-        let checkpoint_service = crate::services::CheckpointService::new(&attempt.worktree_path, attempt_id)?;
-        
+        let checkpoint_service =
+            crate::services::CheckpointService::new(&attempt.worktree_path, attempt_id)?;
+
         // List checkpoints
-        checkpoint_service.list_checkpoints()
-            .map_err(|e| TaskAttemptError::ValidationError(format!("Failed to list checkpoints: {}", e)))
+        checkpoint_service.list_checkpoints().map_err(|e| {
+            TaskAttemptError::ValidationError(format!("Failed to list checkpoints: {}", e))
+        })
     }
 }
