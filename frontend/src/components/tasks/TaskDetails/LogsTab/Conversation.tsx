@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { TaskAttemptDataContext } from '@/components/context/taskDetailsContext.ts';
+import { TaskAttemptDataContext, TaskSelectedAttemptContext } from '@/components/context/taskDetailsContext.ts';
 import { useTaskPlan } from '@/components/context/TaskPlanContext.ts';
 import { Loader } from '@/components/ui/loader.tsx';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 
 function Conversation() {
   const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
+  const { selectedAttempt } = useContext(TaskSelectedAttemptContext);
   const { isPlanningMode, latestProcessHasNoPlan } = useTaskPlan();
   const [shouldAutoScrollLogs, setShouldAutoScrollLogs] = useState(true);
   const [conversationUpdateTrigger, setConversationUpdateTrigger] = useState(0);
@@ -39,7 +40,8 @@ function Conversation() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { projectId, taskId, attemptId } = useParams();
+  const { projectId, taskId } = useParams();
+  const attemptId = selectedAttempt?.id;
 
   // Callback to trigger auto-scroll when conversation updates
   const handleConversationUpdate = useCallback(() => {
