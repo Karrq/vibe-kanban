@@ -1111,6 +1111,7 @@ pub async fn get_task_attempt_checkpoints(
 /// 
 /// The forked attempt is ready for the user to continue with a new prompt
 /// via the standard follow-up execution endpoint.
+#[axum::debug_handler]
 pub async fn fork_task_attempt(
     Extension(project): Extension<Project>,
     Extension(task): Extension<Task>,
@@ -1128,48 +1129,80 @@ pub async fn fork_task_attempt(
     };
     
     // Find the last checkpoint at or before the requested message
-    let checkpoint = match fork_service.find_last_checkpoint_before(request.message_index) {
-        Ok(Some(checkpoint)) => checkpoint,
-        Ok(None) => {
-            return Ok(ResponseJson(ApiResponse::error(
-                "No checkpoint found at or before the specified message index"
-            )));
-        }
-        Err(e) => {
-            tracing::error!("Failed to find checkpoint: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    let checkpoint_result = fork_service.find_last_checkpoint_before(request.message_index);
     
-    // Call the task attempt fork method - it will extract conversation internally
-    match TaskAttempt::fork_attempt_from_checkpoint(
-        &app_state.db_pool,
-        task_attempt.id,
-        task.id,
-        project.id,
-        &checkpoint,
-        request.message_index,
-    ).await {
-        Ok(new_attempt) => {
-            let response = ForkResponse {
-                new_attempt_id: new_attempt.id,
-                worktree_path: new_attempt.worktree_path,
-                branch: new_attempt.branch,
-                checkpoint_used: CheckpointResponse {
-                    message_index: checkpoint.message_index,
-                    commit_sha: checkpoint.commit_sha,
-                    timestamp: checkpoint.timestamp,
-                },
-            };
-            
-            Ok(ResponseJson(ApiResponse::success(response)))
+    match checkpoint_result {
+        Ok(Some(checkpoint)) => {
+            // We have a checkpoint - use the existing fork method
+            tracing::info!("Found checkpoint at message {}, creating fork with checkpoint", checkpoint.message_index);
+            match TaskAttempt::fork_attempt_from_checkpoint(
+                &app_state.db_pool,
+                task_attempt.id,
+                task.id,
+                project.id,
+                &checkpoint,
+                request.message_index,
+            ).await {
+                Ok(new_attempt) => {
+                    let response = ForkResponse {
+                        new_attempt_id: new_attempt.id,
+                        worktree_path: new_attempt.worktree_path,
+                        branch: new_attempt.branch,
+                        checkpoint_used: CheckpointResponse {
+                            message_index: checkpoint.message_index,
+                            commit_sha: checkpoint.commit_sha,
+                            timestamp: checkpoint.timestamp,
+                        },
+                    };
+                    
+                    Ok(ResponseJson(ApiResponse::success(response)))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to fork task attempt: {}", e);
+                    Ok(ResponseJson(ApiResponse::error(&format!(
+                        "Failed to fork: {}",
+                        e
+                    ))))
+                }
+            }
+        }
+        Ok(None) => {
+            // No checkpoint found - create fork without checkpoint, preserving conversation only
+            tracing::info!("No checkpoint found, creating fork with conversation preservation only");
+            match TaskAttempt::fork_attempt_without_checkpoint(
+                &app_state.db_pool,
+                task_attempt.id,
+                task.id,
+                project.id,
+                request.message_index,
+            ).await {
+                Ok(new_attempt) => {
+                    // Use a fake checkpoint response to indicate no checkpoint was used
+                    let response = ForkResponse {
+                        new_attempt_id: new_attempt.id,
+                        worktree_path: new_attempt.worktree_path,
+                        branch: new_attempt.branch,
+                        checkpoint_used: CheckpointResponse {
+                            message_index: request.message_index,
+                            commit_sha: "no-checkpoint".to_string(),
+                            timestamp: chrono::Utc::now().timestamp(),
+                        },
+                    };
+                    
+                    Ok(ResponseJson(ApiResponse::success(response)))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to fork task attempt without checkpoint: {}", e);
+                    Ok(ResponseJson(ApiResponse::error(&format!(
+                        "Failed to fork: {}",
+                        e
+                    ))))
+                }
+            }
         }
         Err(e) => {
-            tracing::error!("Failed to fork task attempt: {}", e);
-            Ok(ResponseJson(ApiResponse::error(&format!(
-                "Failed to fork: {}",
-                e
-            ))))
+            tracing::error!("Failed to check for checkpoints: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     }
 }
