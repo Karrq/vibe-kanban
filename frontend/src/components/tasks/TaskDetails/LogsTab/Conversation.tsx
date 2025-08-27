@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { TaskAttemptDataContext } from '@/components/context/taskDetailsContext.ts';
+import { TaskAttemptDataContext, TaskSelectedAttemptContext } from '@/components/context/taskDetailsContext.ts';
 import { useTaskPlan } from '@/components/context/TaskPlanContext.ts';
 import { Loader } from '@/components/ui/loader.tsx';
 import { Button } from '@/components/ui/button';
@@ -15,22 +15,58 @@ import { AlertTriangle } from 'lucide-react';
 import Prompt from './Prompt';
 import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
+import { ForkDialog } from '../ForkDialog';
+import { checkpointApi } from '@/lib/api';
+import { CheckpointResponse } from 'shared/types';
+import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 function Conversation() {
   const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
+  const { selectedAttempt } = useContext(TaskSelectedAttemptContext);
   const { isPlanningMode, latestProcessHasNoPlan } = useTaskPlan();
   const [shouldAutoScrollLogs, setShouldAutoScrollLogs] = useState(true);
   const [conversationUpdateTrigger, setConversationUpdateTrigger] = useState(0);
   const [visibleCount, setVisibleCount] = useState(100);
   const [visibleRunningEntriesCount, setVisibleRunningEntriesCount] =
     useState(0);
+  
+  // Fork-related state
+  const [checkpoints, setCheckpoints] = useState<CheckpointResponse[]>([]);
+  const [checkpointsLoading, setCheckpointsLoading] = useState(false);
+  const [forkDialogOpen, setForkDialogOpen] = useState(false);
+  const [selectedForkIndex, setSelectedForkIndex] = useState<number | null>(null);
+  const [forkLoading, setForkLoading] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
+  const { projectId, taskId } = useParams();
+  const attemptId = selectedAttempt?.id;
 
   // Callback to trigger auto-scroll when conversation updates
   const handleConversationUpdate = useCallback(() => {
     setConversationUpdateTrigger((prev) => prev + 1);
   }, []);
+
+  // Load checkpoints when attempt data changes
+  useEffect(() => {
+    if (projectId && taskId && attemptId) {
+      setCheckpointsLoading(true);
+      console.log('Loading checkpoints for attempt:', attemptId);
+      checkpointApi
+        .list(projectId, taskId, attemptId)
+        .then((data) => {
+          console.log('Checkpoints loaded:', data);
+          setCheckpoints(data);
+        })
+        .catch((error) => {
+          console.error('Failed to load checkpoints:', error);
+        })
+        .finally(() => {
+          setCheckpointsLoading(false);
+        });
+    }
+  }, [projectId, taskId, attemptId]);
 
   useEffect(() => {
     if (shouldAutoScrollLogs && scrollContainerRef.current) {
@@ -52,6 +88,69 @@ function Conversation() {
       }
     }
   }, [shouldAutoScrollLogs]);
+
+  // Handle fork request
+  const handleForkRequest = useCallback((messageIndex: number) => {
+    console.log('handleForkRequest called with messageIndex:', messageIndex);
+    setSelectedForkIndex(messageIndex);
+    setForkDialogOpen(true);
+  }, []);
+
+  // Find the checkpoint for a message index
+  const getCheckpointForMessage = useCallback(
+    (messageIndex: number): CheckpointResponse | null => {
+      if (!checkpoints.length) return null;
+      
+      // Find the last checkpoint at or before this message
+      const eligibleCheckpoints = checkpoints.filter(
+        (cp) => cp.message_index <= messageIndex
+      );
+      
+      if (eligibleCheckpoints.length === 0) return null;
+      
+      // Return the closest checkpoint
+      return eligibleCheckpoints.reduce((closest, current) =>
+        current.message_index > closest.message_index ? current : closest
+      );
+    },
+    [checkpoints]
+  );
+
+  // Handle fork confirmation
+  const handleForkConfirm = useCallback(async () => {
+    console.log('handleForkConfirm called', { projectId, taskId, attemptId, selectedForkIndex });
+    
+    if (!projectId || !taskId || !attemptId || selectedForkIndex === null) {
+      console.error('Missing required parameters for fork', { projectId, taskId, attemptId, selectedForkIndex });
+      return;
+    }
+
+    setForkLoading(true);
+    try {
+      console.log('Attempting to fork at message index:', selectedForkIndex);
+      const result = await checkpointApi.fork(
+        projectId,
+        taskId,
+        attemptId,
+        selectedForkIndex
+      );
+      
+      console.log('Fork created successfully:', result);
+      toast.success('Fork created successfully');
+      
+      // Navigate to the new attempt
+      navigate(`/projects/${projectId}/tasks/${taskId}/attempts/${result.new_attempt_id}`);
+    } catch (error: any) {
+      console.error('Failed to create fork:', error);
+      // More detailed error message
+      const errorMessage = error?.message || error?.response?.data?.message || 'Failed to create fork';
+      toast.error(errorMessage);
+    } finally {
+      setForkLoading(false);
+      setForkDialogOpen(false);
+      setSelectedForkIndex(null);
+    }
+  }, [projectId, taskId, attemptId, selectedForkIndex, navigate]);
 
   // Find main and follow-up processes from allLogs
   const mainCodingAgentLog = useMemo(
@@ -122,6 +221,13 @@ function Conversation() {
     () => allProcessLogs.filter((log) => log.status === 'running'),
     [allProcessLogs]
   );
+  
+  // Don't use fake checkpoints - let backend handle missing checkpoints
+  useEffect(() => {
+    if (!checkpointsLoading && checkpoints.length === 0 && allEntries.length > 0) {
+      console.log('No real checkpoints found, fork will preserve conversation only');
+    }
+  }, [checkpointsLoading, checkpoints.length, allEntries.length]);
 
   // Paginate: show only the last visibleCount entries
   const visibleEntries = useMemo(
@@ -131,20 +237,48 @@ function Conversation() {
 
   const renderedVisibleEntries = useMemo(
     () =>
-      visibleEntries.map((entry, index) => (
-        <ConversationEntry
-          key={entry.entry.timestamp || index}
-          idx={index}
-          item={entry}
-          handleConversationUpdate={handleConversationUpdate}
-          visibleEntriesLength={visibleEntries.length}
-          runningProcessDetails={attemptData.runningProcessDetails}
-        />
-      )),
+      visibleEntries.map((entry, index) => {
+        // Calculate global message index
+        const startIndex = allEntries.length - visibleEntries.length;
+        const globalIndex = startIndex + index;
+        
+        // Check if checkpoint exists for this message
+        const hasCheckpoint = checkpoints.some(
+          (cp) => cp.message_index === globalIndex
+        );
+        
+        // Debug logging
+        if (index === 0) {
+          console.log('Rendering entry:', {
+            index,
+            globalIndex,
+            hasCheckpoint,
+            checkpointsCount: checkpoints.length,
+            checkpoints: checkpoints.map(cp => cp.message_index)
+          });
+        }
+        
+        return (
+          <ConversationEntry
+            key={entry.entry.timestamp || index}
+            idx={index}
+            item={entry}
+            handleConversationUpdate={handleConversationUpdate}
+            visibleEntriesLength={visibleEntries.length}
+            runningProcessDetails={attemptData.runningProcessDetails}
+            globalMessageIndex={globalIndex}
+            onFork={handleForkRequest}
+            hasCheckpoint={hasCheckpoint}
+          />
+        );
+      }),
     [
       visibleEntries,
+      allEntries.length,
       handleConversationUpdate,
       attemptData.runningProcessDetails,
+      checkpoints,
+      handleForkRequest,
     ]
   );
 
@@ -269,6 +403,16 @@ function Conversation() {
           </p>
         </div>
       )}
+      
+      {/* Fork Dialog */}
+      <ForkDialog
+        open={forkDialogOpen}
+        onOpenChange={setForkDialogOpen}
+        messageIndex={selectedForkIndex ?? 0}
+        checkpoint={selectedForkIndex !== null ? getCheckpointForMessage(selectedForkIndex) : null}
+        onConfirm={handleForkConfirm}
+        isLoading={forkLoading}
+      />
     </div>
   );
 }

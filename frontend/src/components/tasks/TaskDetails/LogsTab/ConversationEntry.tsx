@@ -11,6 +11,9 @@ type Props = {
   handleConversationUpdate: () => void;
   visibleEntriesLength: number;
   runningProcessDetails: Record<string, ExecutionProcess>;
+  globalMessageIndex?: number;
+  onFork?: (messageIndex: number) => void;
+  hasCheckpoint?: boolean;
 };
 
 const ConversationEntry = ({
@@ -19,6 +22,9 @@ const ConversationEntry = ({
   handleConversationUpdate,
   visibleEntriesLength,
   runningProcessDetails,
+  globalMessageIndex,
+  onFork,
+  hasCheckpoint,
 }: Props) => {
   const showPrompt = item.isFirstInProcess && item.processPrompt;
   // For running processes, render the live viewer below the static entries
@@ -47,6 +53,9 @@ const ConversationEntry = ({
           entry={item.entry}
           index={idx}
           diffDeletable
+          globalMessageIndex={globalMessageIndex}
+          onFork={onFork}
+          hasCheckpoint={hasCheckpoint}
         />
       </div>
     );
