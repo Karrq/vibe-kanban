@@ -333,21 +333,16 @@ function CurrentAttempt({
     }
   }, [selectedAttempt, fetchBranchStatus]);
 
-  // Track shift key press state only when hovering merge button
+  // Track shift key state globally
   useEffect(() => {
-    if (!isHoveringMergeButton) {
-      setIsShiftPressed(false);
-      return;
-    }
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.shiftKey) {
+      if (e.key === 'Shift') {
         setIsShiftPressed(true);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (!e.shiftKey) {
+      if (e.key === 'Shift') {
         setIsShiftPressed(false);
       }
     };
@@ -359,7 +354,7 @@ function CurrentAttempt({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [isHoveringMergeButton]);
+  }, []);
 
   const performMerge = async (customTitle?: string, customDescription?: string) => {
     if (!projectId || !selectedAttempt?.id || !selectedAttempt?.task_id) return;
@@ -879,11 +874,11 @@ function CurrentAttempt({
                             className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 gap-1"
                           >
                             <GitBranchIcon className="h-3 w-3" />
-                            {merging ? 'Merging...' : isShiftPressed ? 'Quick Merge' : 'Merge'}
+                            {merging ? 'Merging...' : (isHoveringMergeButton && isShiftPressed) ? 'Quick Merge' : 'Merge'}
                           </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>{isShiftPressed 
+                          <p>{(isHoveringMergeButton && isShiftPressed) 
                             ? 'Merge directly with auto-generated commit message' 
                             : 'Click to customize commit message, Shift+Click for quick merge'}</p>
                         </TooltipContent>
