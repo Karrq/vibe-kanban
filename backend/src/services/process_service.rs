@@ -584,7 +584,7 @@ impl ProcessService {
                     prompt.to_string()
                 };
                 
-                // Start new session with context from summary
+                // Start new session with empty session ID (triggers new session in executor)
                 crate::executor::ExecutorType::CodingAgent {
                     config: executor_config.clone(),
                     follow_up: Some(crate::executor::FollowUpInfo {
