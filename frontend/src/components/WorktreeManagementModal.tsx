@@ -241,8 +241,8 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
 
   return (
     <>
-      <Dialog open={isOpen} onOpenChange={onClose}>
-        <DialogContent className="max-w-7xl max-h-[80vh] overflow-y-auto">
+      <Dialog open={isOpen} onOpenChange={onClose} className="max-w-none w-[90vw] max-w-[1400px]">
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {projectId ? 'Project Worktree Management' : 'All Worktrees'}
