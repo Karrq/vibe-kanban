@@ -161,13 +161,23 @@ Task title: {}"#,
 
         // Determine the command based on whether this is plan mode or not
         let claude_command = if self.executor_type == "ClaudePlan" {
-            let command = format!(
-                "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json --resume={}",
-                session_id
-            );
+            let command = if session_id.is_empty() {
+                // Start new session without --resume flag
+                "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json".to_string()
+            } else {
+                format!(
+                    "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json --resume={}",
+                    session_id
+                )
+            };
             create_watchkill_script(&command)
         } else {
-            format!("{} --resume={}", self.command, session_id)
+            if session_id.is_empty() {
+                // Start new session without --resume flag
+                self.command.clone()
+            } else {
+                format!("{} --resume={}", self.command, session_id)
+            }
         };
 
         let mut command = CommandRunner::new();

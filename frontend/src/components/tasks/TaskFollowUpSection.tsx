@@ -148,62 +148,73 @@ export function TaskFollowUpSection() {
           )}
           <div className="flex gap-2 items-start">
             <FileSearchTextarea
-                placeholder="Continue working on this task... Type @ to search files."
-                value={followUpMessage}
-                onChange={(value) => {
-                  setFollowUpMessage(value);
-                  if (followUpError) setFollowUpError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
-                    e.preventDefault();
-                    if (
-                      canSendFollowUp &&
-                      followUpMessage.trim() &&
-                      !isSendingFollowUp
-                    ) {
-                      onSendFollowUp(e.shiftKey);
-                    }
+              placeholder="Continue working on this task... Type @ to search files."
+              value={followUpMessage}
+              onChange={(value) => {
+                setFollowUpMessage(value);
+                if (followUpError) setFollowUpError(null);
+              }}
+              onKeyDown={(e) => {
+                if (
+                  e.key === 'Enter' &&
+                  (e.metaKey || e.ctrlKey || e.shiftKey)
+                ) {
+                  e.preventDefault();
+                  if (
+                    canSendFollowUp &&
+                    followUpMessage.trim() &&
+                    !isSendingFollowUp
+                  ) {
+                    onSendFollowUp(e.shiftKey);
                   }
-                }}
-                className="flex-1 min-h-[40px] resize-none"
-                disabled={!canSendFollowUp}
-                projectId={projectId}
-                rows={1}
-                maxRows={6}
-              />
-              <TooltipProvider>
-                <Tooltip open={isButtonHovered && isShiftPressed}>
-                  <TooltipTrigger asChild>
-                    <Button
-                      onClick={(e) => onSendFollowUp(e.shiftKey)}
-                      onMouseEnter={() => setIsButtonHovered(true)}
-                      onMouseLeave={() => setIsButtonHovered(false)}
-                      disabled={
-                        !canSendFollowUp || !followUpMessage.trim() || isSendingFollowUp
-                      }
-                      size="sm"
-                      variant={isButtonHovered && isShiftPressed ? "secondary" : "default"}
-                    >
-                      {isSendingFollowUp ? (
-                        <Loader size={16} className="mr-2" />
-                      ) : (
-                        <>
-                          {isButtonHovered && isShiftPressed ? (
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                          ) : (
-                            <Send className="h-4 w-4 mr-2" />
-                          )}
-                          Send
-                        </>
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Start new session with last assistant message as context</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                }
+              }}
+              className="flex-1 min-h-[40px] resize-none"
+              disabled={!canSendFollowUp}
+              projectId={projectId}
+              rows={1}
+              maxRows={6}
+            />
+            <TooltipProvider>
+              <Tooltip open={isButtonHovered && isShiftPressed}>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={(e) => onSendFollowUp(e.shiftKey)}
+                    onMouseEnter={() => setIsButtonHovered(true)}
+                    onMouseLeave={() => setIsButtonHovered(false)}
+                    disabled={
+                      !canSendFollowUp ||
+                      !followUpMessage.trim() ||
+                      isSendingFollowUp
+                    }
+                    size="sm"
+                    variant={
+                      isButtonHovered && isShiftPressed
+                        ? 'secondary'
+                        : 'default'
+                    }
+                  >
+                    {isSendingFollowUp ? (
+                      <Loader size={16} className="mr-2" />
+                    ) : (
+                      <>
+                        {isButtonHovered && isShiftPressed ? (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        ) : (
+                          <Send className="h-4 w-4 mr-2" />
+                        )}
+                        Send
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    Start new session with last assistant message as context
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       </div>
