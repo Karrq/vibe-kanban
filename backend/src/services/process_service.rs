@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use sqlx::SqlitePool;
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
@@ -110,8 +110,13 @@ impl ProcessService {
                         .and_then(|p| p.get("prompt"))
                         .and_then(|p| p.as_str())
                         .unwrap_or("");
+                    let restart_session = operation_params
+                        .as_ref()
+                        .and_then(|p| p.get("restart_session"))
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false);
                     Self::start_followup_execution_direct(
-                        pool, app_state, attempt_id, task_id, project_id, prompt,
+                        pool, app_state, attempt_id, task_id, project_id, prompt, restart_session,
                     )
                     .await
                     .map(|_| ())
@@ -345,6 +350,7 @@ impl ProcessService {
         result
     }
 
+
     /// Start a follow-up execution using the same executor type as the first process (with automatic setup)
     /// Returns the attempt_id that was actually used (always the original attempt_id for session continuity)
     pub async fn start_followup_execution(
@@ -354,6 +360,7 @@ impl ProcessService {
         task_id: Uuid,
         project_id: Uuid,
         prompt: &str,
+        restart_session: bool,
     ) -> Result<Uuid, TaskAttemptError> {
         use crate::models::task::{Task, TaskStatus};
 
@@ -387,7 +394,8 @@ impl ProcessService {
 
         // Use automatic setup logic with followup parameters
         let operation_params = serde_json::json!({
-            "prompt": prompt
+            "prompt": prompt,
+            "restart_session": restart_session
         });
 
         Self::auto_setup_and_execute(
@@ -412,6 +420,7 @@ impl ProcessService {
         task_id: Uuid,
         project_id: Uuid,
         prompt: &str,
+        restart_session: bool,
     ) -> Result<Uuid, TaskAttemptError> {
         // Ensure worktree exists (recreate if needed for cold task support)
         // This will resurrect the worktree at the exact same path for session continuity
@@ -474,26 +483,30 @@ impl ProcessService {
             }
         };
 
-        // Try to use follow-up with session ID, but fall back to new session if it fails
+        // Determine how to proceed based on restart_session flag only
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
-            // First try with session ID for continuation
-            debug!(
-                "SESSION_FOLLOWUP: Attempting follow-up execution with session ID: {} (attempt: {}, worktree: {})",
-                session_id, attempt_id, worktree_path
-            );
-            crate::executor::ExecutorType::CodingAgent {
-                config: executor_config.clone(),
-                follow_up: Some(crate::executor::FollowUpInfo {
-                    session_id: session_id.clone(),
-                    prompt: prompt.to_string(),
-                }),
+            if restart_session {
+                // User explicitly requested restart, start new session
+                // Start new session with empty session ID (triggers new session in executor)
+                crate::executor::ExecutorType::CodingAgent {
+                    config: executor_config.clone(),
+                    follow_up: Some(crate::executor::FollowUpInfo {
+                        session_id: String::new(), // Empty session ID forces new session
+                        prompt: prompt.to_string(),
+                    }),
+                }
+            } else {
+                // Normal follow-up with session ID
+                crate::executor::ExecutorType::CodingAgent {
+                    config: executor_config.clone(),
+                    follow_up: Some(crate::executor::FollowUpInfo {
+                        session_id: session_id.clone(),
+                        prompt: prompt.to_string(),
+                    }),
+                }
             }
         } else {
-            // No session ID available, start new session
-            tracing::warn!(
-                "SESSION_FOLLOWUP: No session ID available for follow-up execution on attempt {}, starting new session (worktree: {})",
-                attempt_id, worktree_path
-            );
+            // No session ID available, just start new session
             crate::executor::ExecutorType::CodingAgent {
                 config: executor_config.clone(),
                 follow_up: None,

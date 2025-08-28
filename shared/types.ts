@@ -74,7 +74,7 @@ export type CreateTaskAttempt = { executor: string | null, base_branch: string |
 
 export type UpdateTaskAttempt = Record<string, never>;
 
-export type CreateFollowUpAttempt = { prompt: string, };
+export type CreateFollowUpAttempt = { prompt: string, restart_session: boolean, };
 
 export type DirectoryEntry = { name: string, path: string, is_directory: boolean, is_git_repo: boolean, };
 

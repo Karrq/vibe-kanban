@@ -101,6 +101,7 @@ async fn handle_setup_delegation(app_state: &AppState, delegation_context: Deleg
                 task_id,
                 project_id,
                 prompt,
+                false, // Auto-retries don't restart session
             )
             .await
             .map(|_| ())

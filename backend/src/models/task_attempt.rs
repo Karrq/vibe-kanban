@@ -132,6 +132,9 @@ pub struct CreatePrParams<'a> {
 #[ts(export)]
 pub struct CreateFollowUpAttempt {
     pub prompt: String,
+    /// Force a new session with the given prompt
+    #[serde(default)]
+    pub restart_session: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq)]
@@ -639,9 +642,16 @@ impl TaskAttempt {
         task_id: Uuid,
         project_id: Uuid,
         prompt: &str,
+        restart_session: bool,
     ) -> Result<Uuid, TaskAttemptError> {
         ProcessService::start_followup_execution(
-            pool, app_state, attempt_id, task_id, project_id, prompt,
+            pool,
+            app_state,
+            attempt_id,
+            task_id,
+            project_id,
+            prompt,
+            restart_session,
         )
         .await
     }

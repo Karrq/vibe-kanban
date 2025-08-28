@@ -3,7 +3,16 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2, Terminal, GitBranch } from 'lucide-react';
+import {
+  Archive,
+  FolderOpen,
+  Plus,
+  Settings,
+  LibraryBig,
+  Globe2,
+  Terminal,
+  GitBranch,
+} from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { projectsApi, tasksApi, templatesApi } from '@/lib/api';
 import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
@@ -55,7 +64,12 @@ export function ProjectTasks() {
     taskId?: string;
   }>();
   const navigate = useNavigate();
-  const { showArchivedTasks, toggleShowArchivedTasks, hasArchivedTasks, getProjectArchivedTaskCount } = useArchive();
+  const {
+    showArchivedTasks,
+    toggleShowArchivedTasks,
+    hasArchivedTasks,
+    getProjectArchivedTaskCount,
+  } = useArchive();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [project, setProject] = useState<ProjectWithBranch | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +85,7 @@ export function ProjectTasks() {
   const [showProcessesDialog, setShowProcessesDialog] = useState(false);
   const [taskDetailsRefreshTrigger, setTaskDetailsRefreshTrigger] = useState(0);
   const [showWorktreeModal, setShowWorktreeModal] = useState(false);
-  
+
   // Calculate project-specific archived count efficiently
   const projectArchivedCount = useMemo(() => {
     if (!hasArchivedTasks || !projectId) return 0;
@@ -198,12 +212,12 @@ export function ProjectTasks() {
           description: description || null,
           parent_task_attempt: null,
         });
-        
+
         // Store the branch selection for this task if provided
         if (branch && createdTask.id) {
           sessionStorage.setItem(`task-branch-${createdTask.id}`, branch);
         }
-        
+
         await fetchTasks();
         // Open the newly created task in the details panel
         navigate(`/projects/${projectId}/tasks/${createdTask.id}`, {
@@ -217,7 +231,12 @@ export function ProjectTasks() {
   );
 
   const handleCreateAndStartTask = useCallback(
-    async (title: string, description: string, executor?: ExecutorConfig, branch?: string) => {
+    async (
+      title: string,
+      description: string,
+      executor?: ExecutorConfig,
+      branch?: string
+    ) => {
       try {
         const payload: CreateTaskAndStart = {
           project_id: projectId!,
@@ -228,12 +247,12 @@ export function ProjectTasks() {
           base_branch: branch || null,
         };
         const result = await tasksApi.createAndStart(projectId!, payload);
-        
+
         // Store the branch selection for this task if provided
         if (branch && result.id) {
           sessionStorage.setItem(`task-branch-${result.id}`, branch);
         }
-        
+
         await fetchTasks();
         // Open the newly created task in the details panel
         handleViewTaskDetails(result);
@@ -457,16 +476,20 @@ export function ProjectTasks() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-64"
             />
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               onClick={toggleShowArchivedTasks}
               disabled={projectArchivedCount === 0}
               className={cn(
-                projectArchivedCount === 0 ? "opacity-50" : "",
-                showArchivedTasks && projectArchivedCount > 0 && "bg-accent"
+                projectArchivedCount === 0 ? 'opacity-50' : '',
+                showArchivedTasks && projectArchivedCount > 0 && 'bg-accent'
               )}
-              title={showArchivedTasks ? `Hide archived tasks${projectArchivedCount > 0 ? ` (${projectArchivedCount})` : ''}` : `Show archived tasks${projectArchivedCount > 0 ? ` (${projectArchivedCount})` : ''}`}
+              title={
+                showArchivedTasks
+                  ? `Hide archived tasks${projectArchivedCount > 0 ? ` (${projectArchivedCount})` : ''}`
+                  : `Show archived tasks${projectArchivedCount > 0 ? ` (${projectArchivedCount})` : ''}`
+              }
             >
               <Archive className="h-4 w-4" />
             </Button>
@@ -640,7 +663,7 @@ export function ProjectTasks() {
         onProcessKilled={() => {
           // Only trigger task details refresh when a process is killed
           // fetchAttemptData in TaskDetailsContextProvider will update the process status
-          setTaskDetailsRefreshTrigger(prev => prev + 1);
+          setTaskDetailsRefreshTrigger((prev) => prev + 1);
         }}
       />
 
@@ -649,7 +672,6 @@ export function ProjectTasks() {
         onClose={() => setShowWorktreeModal(false)}
         projectId={projectId}
       />
-
     </div>
   );
 }

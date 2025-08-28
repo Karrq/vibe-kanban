@@ -70,8 +70,7 @@ pub fn cache_dir() -> std::path::PathBuf {
 }
 
 /// Get or create cached PowerShell script file
-pub async fn get_powershell_script(
-) -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn get_powershell_script() -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
     use std::io::Write;
 
     let cache_dir = cache_dir();

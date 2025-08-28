@@ -145,15 +145,22 @@ impl Executor for ClaudeExecutor {
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
 
+        // Compute the resume flag once
+        let resume_flag = if session_id.is_empty() {
+            String::new()
+        } else {
+            format!(" --resume={}", session_id)
+        };
+
         // Determine the command based on whether this is plan mode or not
         let claude_command = if self.executor_type == "ClaudePlan" {
             let command = format!(
-                "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json --resume={}",
-                session_id
+                "npx -y @anthropic-ai/claude-code@latest -p --permission-mode=plan --verbose --output-format=stream-json{}",
+                resume_flag
             );
             create_watchkill_script(&command)
         } else {
-            format!("{} --resume={}", self.command, session_id)
+            format!("{}{}", self.command, resume_flag)
         };
 
         let mut command = CommandRunner::new();
