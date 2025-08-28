@@ -333,13 +333,23 @@ pub trait Executor: Send + Sync {
     /// Other executors may have different requirements.
     /// 
     /// Returns the session ID that can be used for resumption (executor-specific).
-    fn apply_fork(
+    /// Fork a session properly by copying the original session data
+    /// This preserves all metadata and handles cross-session truncation
+    /// 
+    /// Parameters:
+    /// - original_session_ids: All session IDs for the source attempt, ordered chronologically
+    /// - original_worktree_path: Path of the original worktree
+    /// - new_worktree_path: Path of the new forked worktree
+    /// - message_index: Target message index to truncate at
+    fn fork_session(
         &self,
-        _truncated_logs: &str,
-        _worktree_path: &str,
+        _original_session_ids: &[String],
+        _original_worktree_path: &str,
+        _new_worktree_path: &str,
+        _message_index: usize,
     ) -> Result<String, String> {
         // Default implementation returns unsupported
-        Err("Fork support not implemented for this executor".to_string())
+        Err("Session fork not implemented for this executor".to_string())
     }
 
     #[allow(clippy::result_large_err)]

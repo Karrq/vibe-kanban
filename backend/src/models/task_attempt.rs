@@ -1384,48 +1384,79 @@ impl TaskAttempt {
 
             if let Ok(executor_config) = executor_type.to_string().parse::<ExecutorConfig>() {
                 let executor = executor_config.create_executor();
-                match executor.apply_fork(&truncated_output, &new_worktree_path_str) {
-                    Ok(forked_session_id) => {
-                        tracing::info!(
-                            "Applied fork for executor {} with session ID: {}",
-                            executor_type,
-                            forked_session_id
-                        );
+                
+                // Get all session IDs from the source attempt, ordered chronologically
+                let original_sessions = ExecutorSession::find_by_task_attempt_id(pool, source_attempt_id)
+                    .await
+                    .unwrap_or_default();
+                
+                // Extract session IDs that actually exist
+                let original_session_ids: Vec<String> = original_sessions
+                    .iter()
+                    .filter_map(|s| s.session_id.clone())
+                    .collect();
+                
+                if original_session_ids.is_empty() {
+                    tracing::warn!(
+                        "No session IDs found for source attempt {}, fork may not preserve full context",
+                        source_attempt_id
+                    );
+                    // Don't fail, just continue without forking the session
+                } else {
+                    // Fork the session using all available session IDs
+                    tracing::info!(
+                        "Using fork_session with {} original session IDs",
+                        original_session_ids.len()
+                    );
+                    
+                    match executor.fork_session(
+                        &original_session_ids,
+                        &ctx.task_attempt.worktree_path,
+                        &new_worktree_path_str,
+                        message_index,
+                    ) {
+                        Ok(forked_session_id) => {
+                            tracing::info!(
+                                "Applied fork for executor {} with session ID: {}",
+                                executor_type,
+                                forked_session_id
+                            );
 
-                        // Create an executor_session record to store the forked session ID
-                        // This ensures follow-up executors will use the correct session
-                        let session_data = CreateExecutorSession {
-                            task_attempt_id: new_attempt_id,
-                            execution_process_id: process_id,
-                            session_id: Some(forked_session_id.clone()),
-                            prompt: None, // The forked session contains full conversation history
-                        };
+                            // Create an executor_session record to store the forked session ID
+                            // This ensures follow-up executors will use the correct session
+                            let session_data = CreateExecutorSession {
+                                task_attempt_id: new_attempt_id,
+                                execution_process_id: process_id,
+                                session_id: Some(forked_session_id.clone()),
+                                prompt: None, // The forked session contains full conversation history
+                            };
 
-                        let session_record_id = Uuid::new_v4();
-                        match ExecutorSession::create(pool, &session_data, session_record_id).await
-                        {
-                            Ok(session) => {
-                                tracing::info!(
-                                    "Created executor session {} with forked session ID: {}",
-                                    session.id,
-                                    forked_session_id
-                                );
-                            }
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to create executor session for fork: {}",
-                                    e
-                                );
+                            let session_record_id = Uuid::new_v4();
+                            match ExecutorSession::create(pool, &session_data, session_record_id).await
+                            {
+                                Ok(session) => {
+                                    tracing::info!(
+                                        "Created executor session {} with forked session ID: {}",
+                                        session.id,
+                                        forked_session_id
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to create executor session for fork: {}",
+                                        e
+                                    );
+                                }
                             }
                         }
-                    }
-                    Err(e) => {
-                        // Log the error but don't fail - not all executors support forking
-                        tracing::debug!(
-                            "Executor {} does not support fork application: {}",
-                            executor_type,
-                            e
-                        );
+                        Err(e) => {
+                            // Log the error but don't fail - not all executors support forking
+                            tracing::debug!(
+                                "Executor {} does not support fork application: {}",
+                                executor_type,
+                                e
+                            );
+                        }
                     }
                 }
             }

@@ -403,56 +403,104 @@ Task title: {}"#,
         Ok((accumulated_logs, total_count))
     }
 
-    fn apply_fork(
+    /// Fork a session by copying JSONL files across multiple sessions up to a specific message index
+    fn fork_session(
         &self,
-        truncated_logs: &str,
-        worktree_path: &str,
+        original_session_ids: &[String],
+        original_worktree_path: &str,
+        new_worktree_path: &str,
+        message_index: usize,
     ) -> Result<String, String> {
         // Generate a new session UUID for the fork
         let fork_session_id = Uuid::new_v4().to_string();
         
-        // Normalize the worktree path for Claude's folder structure
-        let normalized_dir = Self::normalize_directory_for_claude(worktree_path);
+        // Normalize paths for Claude's folder structure
+        let original_normalized_dir = Self::normalize_directory_for_claude(original_worktree_path);
+        let new_normalized_dir = Self::normalize_directory_for_claude(new_worktree_path);
         
         // Get home directory
         let home_dir = dirs::home_dir()
             .ok_or_else(|| "Could not determine home directory".to_string())?;
         
-        // Create the Claude projects directory for this worktree
-        let claude_project_dir = home_dir
+        // Create the new Claude projects directory
+        let new_project_dir = home_dir
             .join(".claude")
             .join("projects")
-            .join(&normalized_dir);
+            .join(&new_normalized_dir);
         
-        // Create directory if it doesn't exist
-        fs::create_dir_all(&claude_project_dir)
+        fs::create_dir_all(&new_project_dir)
             .map_err(|e| format!("Failed to create Claude project directory: {}", e))?;
         
-        // Write the JSONL file with the truncated logs directly
-        // The logs are already in the correct streaming JSON format from the executor
-        let session_file_path = claude_project_dir.join(format!("{}.jsonl", fork_session_id));
-        let mut file = fs::File::create(&session_file_path)
-            .map_err(|e| format!("Failed to create session file: {}", e))?;
+        // Collect lines from all session files until we reach the target message index
+        // TODO: Currently counting 1 line = 1 message, will need to update this logic
+        // to properly map message types to indices when needed
+        let mut collected_lines = Vec::new();
+        let mut total_messages = 0;
+        let target_messages = message_index + 1; // Convert from 0-based index to count
         
-        // TODO: Update last message UUID for proper TUI rendering
-        // TODO: Update CWD in messages to the new worktree path
-        // For now, just write the truncated logs as-is
-        
-        // Convert the streaming JSON logs to JSONL format
-        // Each line should be a valid JSON object
-        for line in truncated_logs.lines() {
-            let trimmed = line.trim();
-            if !trimmed.is_empty() {
-                writeln!(file, "{}", trimmed)
-                    .map_err(|e| format!("Failed to write to session file: {}", e))?;
+        for session_id in original_session_ids {
+            if total_messages >= target_messages {
+                break;
             }
+            
+            // Locate this session's JSONL file
+            let session_file = home_dir
+                .join(".claude")
+                .join("projects")
+                .join(&original_normalized_dir)
+                .join(format!("{}.jsonl", session_id));
+            
+            if !session_file.exists() {
+                tracing::warn!(
+                    "Session file not found (skipping): {}",
+                    session_file.display()
+                );
+                continue;
+            }
+            
+            // Read and process lines from this session
+            let content = fs::read_to_string(&session_file)
+                .map_err(|e| format!("Failed to read session file {}: {}", session_id, e))?;
+            
+            let lines_needed = target_messages - total_messages;
+            let session_lines: Vec<String> = content
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .take(lines_needed)
+                .map(|line| line.to_string())
+                .collect();
+            
+            let lines_added = session_lines.len();
+            collected_lines.extend(session_lines);
+            total_messages += lines_added;
+            
+            tracing::debug!(
+                "Added {} messages from session {}, total now: {}/{}",
+                lines_added,
+                session_id,
+                total_messages,
+                target_messages
+            );
         }
         
+        if collected_lines.is_empty() {
+            return Err("No messages found to fork".to_string());
+        }
+        
+        // Write the collected content to the new session file
+        let new_session_file = new_project_dir.join(format!("{}.jsonl", fork_session_id));
+        let truncated_content = collected_lines.join("\n") + "\n";
+        
+        fs::write(&new_session_file, truncated_content)
+            .map_err(|e| format!("Failed to write forked session file: {}", e))?;
+        
         tracing::info!(
-            "Created fork session {} in directory {} (normalized: {})",
+            "Forked Claude session from {} sessions (target index {}, included {} messages) to {} at {}",
+            original_session_ids.len(),
+            message_index,
+            total_messages,
             fork_session_id,
-            worktree_path,
-            normalized_dir
+            new_session_file.display()
         );
         
         Ok(fork_session_id)
