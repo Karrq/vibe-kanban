@@ -46,8 +46,35 @@ pub struct CheckpointService {
 impl CheckpointService {
     /// Create a new CheckpointService for a worktree
     pub fn new(worktree_path: &str, attempt_id: Uuid) -> Result<Self, CheckpointError> {
-        // Verify the repository exists
-        let _repo = Repository::open(worktree_path)?;
+        // Verify the repository exists and is accessible
+        let repo = Repository::open(worktree_path)?;
+        
+        // Check if the repository has a valid HEAD (might be unborn for new repos)
+        match repo.head() {
+            Ok(_) => {
+                debug!("Repository has valid HEAD");
+            }
+            Err(e) if e.class() == git2::ErrorClass::Reference 
+                && e.code() == git2::ErrorCode::UnbornBranch => {
+                info!("Repository has unborn HEAD - will handle initial commit case");
+            }
+            Err(e) => {
+                return Err(CheckpointError::Git(e));
+            }
+        }
+        
+        // Ensure the repository has a valid index
+        match repo.index() {
+            Ok(_) => {
+                debug!("Repository has valid index");
+            }
+            Err(e) => {
+                info!("Repository index error: {} - attempting to initialize", e);
+                // Try to initialize an empty index if it doesn't exist
+                let mut index = git2::Index::new()?;
+                index.write()?;
+            }
+        }
         
         // Format the ref prefix for this attempt
         let attempt_id_short = attempt_id.to_string().split('-').next().unwrap_or("unknown").to_string();
@@ -74,26 +101,45 @@ impl CheckpointService {
             // Open the repository
             let repo = Repository::open(&self.worktree_path)?;
             
-            // Get HEAD info
-            let head = repo.head()?;
-            let head_tree = head.peel_to_tree()?;
-            let parent_oid = head.peel_to_commit()?.id();
+            // Get HEAD info - handle unborn HEAD (new repos)
+            let (head_tree, parent_oid) = match repo.head() {
+                Ok(head) => {
+                    let tree = head.peel_to_tree()?;
+                    let commit_id = head.peel_to_commit()?.id();
+                    (tree, commit_id)
+                }
+                Err(e) if e.class() == git2::ErrorClass::Reference 
+                    && e.code() == git2::ErrorCode::UnbornBranch => {
+                    // Repository has no commits yet - create empty tree
+                    debug!("Repository has unborn HEAD, using empty tree for checkpoint");
+                    let tree_builder = repo.treebuilder(None)?;
+                    let empty_tree_oid = tree_builder.write()?;
+                    let empty_tree = repo.find_tree(empty_tree_oid)?;
+                    // Use a fake parent OID (all zeros) - we'll handle this specially in commit creation
+                    let zero_oid = Oid::from_str("0000000000000000000000000000000000000000")?;
+                    (empty_tree, zero_oid)
+                }
+                Err(e) => return Err(e.into()),
+            };
             
-            // Create a new in-memory index, pre-populated from HEAD
-            let mut temp_index = git2::Index::new()?;
-            temp_index.read_tree(&head_tree)?;
+            // Use the repository's index instead of creating a new in-memory one
+            // This ensures the index is properly backed by the repository
+            let mut index = repo.index()?;
+            
+            // Read the current HEAD tree into the index
+            index.read_tree(&head_tree)?;
             
             // CRITICAL SECTION - must be fast and synchronous
-            // Update the temp index with all changes from the worktree
-            temp_index.update_all(&["."], None)?;
+            // Update the index with all changes from the worktree
+            index.update_all(&["."], None)?;
             
             // Add any new untracked files
             let mut add_opts = git2::IndexAddOption::DEFAULT;
             add_opts.insert(git2::IndexAddOption::CHECK_PATHSPEC);
-            temp_index.add_all(&["."], add_opts, None)?;
+            index.add_all(&["."], add_opts, None)?;
             
             // Write the index to a tree object
-            let tree_oid = temp_index.write_tree_to(&repo)?;
+            let tree_oid = index.write_tree()?;
             
             (tree_oid, parent_oid)
         };
@@ -139,21 +185,34 @@ impl CheckpointService {
             // Get the tree object
             let tree = repo.find_tree(data.tree_oid)?;
             
-            // Get parent commit
-            let parent_commit = repo.find_commit(data.parent_oid)?;
-            
             // Create a minimal signature
             let sig = Signature::now("vibe-kanban", "checkpoint@vibe-kanban.local")?;
             
-            // Create the checkpoint commit
-            let _commit_oid = repo.commit(
-                Some(&data.checkpoint_ref),
-                &sig,
-                &sig,
-                ".",  // Minimal commit message
-                &tree,
-                &[&parent_commit],
-            )?;
+            // Check if this is an initial commit (parent OID is all zeros)
+            let zero_oid = Oid::from_str("0000000000000000000000000000000000000000").unwrap();
+            let _commit_oid = if data.parent_oid == zero_oid {
+                // Create initial commit without parent
+                debug!("Creating initial checkpoint commit without parent");
+                repo.commit(
+                    Some(&data.checkpoint_ref),
+                    &sig,
+                    &sig,
+                    ".",  // Minimal commit message
+                    &tree,
+                    &[],  // No parent commits
+                )?
+            } else {
+                // Normal case - get parent commit
+                let parent_commit = repo.find_commit(data.parent_oid)?;
+                repo.commit(
+                    Some(&data.checkpoint_ref),
+                    &sig,
+                    &sig,
+                    ".",  // Minimal commit message
+                    &tree,
+                    &[&parent_commit],
+                )?
+            };
             
             let elapsed = start.elapsed();
             info!(
