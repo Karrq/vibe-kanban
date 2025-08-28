@@ -1,4 +1,4 @@
-import { AlertCircle, Send } from 'lucide-react';
+import { AlertCircle, Send, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FileSearchTextarea } from '@/components/ui/file-search-textarea';
@@ -10,6 +10,12 @@ import {
   TaskSelectedAttemptContext,
 } from '@/components/context/taskDetailsContext.ts';
 import { Loader } from '@/components/ui/loader';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export function TaskFollowUpSection() {
   const { task, projectId } = useContext(TaskDetailsContext);
@@ -21,6 +27,7 @@ export function TaskFollowUpSection() {
   const [followUpMessage, setFollowUpMessage] = useState('');
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   // Generate a unique key for localStorage based on task and attempt
   const getDraftKey = useCallback(() => {
@@ -51,6 +58,29 @@ export function TaskFollowUpSection() {
     }
   }, [followUpMessage, getDraftKey]);
 
+  // Track shift key state
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
   const canSendFollowUp = useMemo(() => {
     if (
       !selectedAttempt ||
@@ -75,7 +105,7 @@ export function TaskFollowUpSection() {
     isSendingFollowUp,
   ]);
 
-  const onSendFollowUp = async () => {
+  const onSendFollowUp = async (restartSession = false) => {
     if (!task || !selectedAttempt || !followUpMessage.trim()) return;
 
     try {
@@ -87,6 +117,7 @@ export function TaskFollowUpSection() {
         selectedAttempt.id,
         {
           prompt: followUpMessage.trim(),
+          restart_session: restartSession,
         }
       );
       setFollowUpMessage('');
@@ -114,48 +145,70 @@ export function TaskFollowUpSection() {
               <AlertDescription>{followUpError}</AlertDescription>
             </Alert>
           )}
-          <div className="flex gap-2 items-start">
-            <FileSearchTextarea
-              placeholder="Continue working on this task... Type @ to search files."
-              value={followUpMessage}
-              onChange={(value) => {
-                setFollowUpMessage(value);
-                if (followUpError) setFollowUpError(null);
-              }}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                  e.preventDefault();
-                  if (
-                    canSendFollowUp &&
-                    followUpMessage.trim() &&
-                    !isSendingFollowUp
-                  ) {
-                    onSendFollowUp();
+          <div className="space-y-2">
+            <div className="flex gap-2 items-start">
+              <FileSearchTextarea
+                placeholder="Continue working on this task... Type @ to search files."
+                value={followUpMessage}
+                onChange={(value) => {
+                  setFollowUpMessage(value);
+                  if (followUpError) setFollowUpError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || e.shiftKey)) {
+                    e.preventDefault();
+                    if (
+                      canSendFollowUp &&
+                      followUpMessage.trim() &&
+                      !isSendingFollowUp
+                    ) {
+                      onSendFollowUp(e.shiftKey);
+                    }
                   }
-                }
-              }}
-              className="flex-1 min-h-[40px] resize-none"
-              disabled={!canSendFollowUp}
-              projectId={projectId}
-              rows={1}
-              maxRows={6}
-            />
-            <Button
-              onClick={onSendFollowUp}
-              disabled={
-                !canSendFollowUp || !followUpMessage.trim() || isSendingFollowUp
-              }
-              size="sm"
-            >
-              {isSendingFollowUp ? (
-                <Loader size={16} className="mr-2" />
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  Send
-                </>
-              )}
-            </Button>
+                }}
+                className="flex-1 min-h-[40px] resize-none"
+                disabled={!canSendFollowUp}
+                projectId={projectId}
+                rows={1}
+                maxRows={6}
+              />
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={(e) => onSendFollowUp(e.shiftKey)}
+                      disabled={
+                        !canSendFollowUp || !followUpMessage.trim() || isSendingFollowUp
+                      }
+                      size="sm"
+                      variant={isShiftPressed ? "secondary" : "default"}
+                    >
+                      {isSendingFollowUp ? (
+                        <Loader size={16} className="mr-2" />
+                      ) : isShiftPressed ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          New Session
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 mr-2" />
+                          Send
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isShiftPressed ? "Start new session with context" : "Hold Shift to start new session with context"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            {isShiftPressed && (
+              <p className="text-xs text-muted-foreground">
+                Will start a new session with previous context
+              </p>
+            )}
           </div>
         </div>
       </div>
