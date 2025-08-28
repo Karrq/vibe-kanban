@@ -475,13 +475,13 @@ impl ClaudeExecutor {
         // Convert to string and replace path separators and spaces with dashes
         let path_str = canonical_path.to_string_lossy();
         
-        // Replace path separators and spaces with dashes, convert to lowercase
+        // Replace path separators, underscores, and spaces with dashes, convert to lowercase
         let normalized = path_str
             .chars()
             .map(|c| {
-                if c == '/' || c == '\\' || c.is_whitespace() {
+                if c == '/' || c == '\\' || c.is_whitespace() || c == '_' {
                     '-'
-                } else if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                } else if c.is_alphanumeric() || c == '-' || c == '.' {
                     c.to_ascii_lowercase()
                 } else {
                     '-' // Replace other special characters with dash
@@ -1011,6 +1011,12 @@ mod tests {
         assert_eq!(
             ClaudeExecutor::normalize_directory_for_claude("/path/to/dir/"),
             "-path-to-dir"
+        );
+        
+        // Test path with underscores - they should be replaced with dashes
+        assert_eq!(
+            ClaudeExecutor::normalize_directory_for_claude("/var/folders/lz/wvfg31c94kjg_jgqqnt8ybmc0000gn/T/vibe_kanban_dev"),
+            "-var-folders-lz-wvfg31c94kjg-jgqqnt8ybmc0000gn-t-vibe-kanban-dev"
         );
     }
 
