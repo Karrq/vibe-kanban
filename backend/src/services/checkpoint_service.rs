@@ -42,7 +42,6 @@ pub struct CheckpointService {
     worktree_path: String,
     attempt_ref_prefix: String,
     last_tree_oid: Mutex<Option<Oid>>,
-    last_checkpoint_oid: Mutex<Option<Oid>>,
 }
 
 impl CheckpointService {
@@ -95,7 +94,6 @@ impl CheckpointService {
             worktree_path: worktree_path.to_string(),
             attempt_ref_prefix,
             last_tree_oid: Mutex::new(None),
-            last_checkpoint_oid: Mutex::new(None),
         })
     }
 
@@ -107,13 +105,16 @@ impl CheckpointService {
         let start = std::time::Instant::now();
 
         // Do all git operations in a sync block to avoid Send issues
-        let tree_oid = {
+        let (tree_oid, parent_oid) = {
             // Open the repository
             let repo = Repository::open(&self.worktree_path)?;
 
             // Get HEAD - should always exist now since we create initial commit in new()
             let head = repo.head()?;
             let head_tree = head.peel_to_tree()?;
+            
+            // Get the HEAD commit as parent for all checkpoints
+            let parent_oid = head.peel_to_commit().ok().map(|commit| commit.id());
 
             // Use the repository's index instead of creating a new in-memory one
             // This ensures the index is properly backed by the repository
@@ -132,7 +133,9 @@ impl CheckpointService {
             index.add_all(&["."], add_opts, None)?;
 
             // Write the index to a tree object
-            index.write_tree()?
+            let tree_oid = index.write_tree()?;
+            
+            (tree_oid, parent_oid)
         };
 
         // Check if tree has changed
@@ -192,13 +195,23 @@ impl CheckpointService {
                 .unwrap_or_else(|| &[][..]);
 
             // Create the checkpoint commit
-            repo.commit(
-                Some(&data.checkpoint_ref),
+            // Note: We need to handle the case where the reference might already exist
+            // from a previous checkpoint at the same message index (e.g., retry scenarios)
+            let commit_oid = repo.commit(
+                None,  // Don't update the reference yet
                 &sig,
                 &sig,
                 ".", // Minimal commit message
                 &tree,
                 &parent,
+            )?;
+            
+            // Now update or create the reference, forcing if it already exists
+            repo.reference(
+                &data.checkpoint_ref,
+                commit_oid,
+                true,  // Force update if reference exists
+                "checkpoint",
             )?;
 
             let elapsed = start.elapsed();
