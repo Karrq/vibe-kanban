@@ -1351,8 +1351,6 @@ impl TaskAttempt {
             // Create an initial execution process to store the conversation context
             // This preserves the executor's native format for proper continuation
             let process_id = Uuid::new_v4();
-            let process_id_str = process_id.to_string();
-            let new_attempt_id_str = new_attempt_id.to_string();
             let executor_for_process = ctx.task_attempt.executor.clone();
             let worktree_for_process = new_worktree_path_str.clone();
 
@@ -1361,10 +1359,10 @@ impl TaskAttempt {
                     id, task_attempt_id, process_type, executor_type, status,
                     command, working_directory, stdout, started_at, completed_at
                 ) VALUES ($1, $2, 'codingagent', $3, 'completed',
-                    'forked_context', $4, $5, datetime('now'), datetime('now'))
+                    'executor', $4, $5, datetime('now'), datetime('now'))
                 "#,
-                process_id_str,
-                new_attempt_id_str,
+                process_id,
+                new_attempt_id,
                 executor_for_process,
                 worktree_for_process,
                 truncated_output

@@ -63,7 +63,7 @@ export function ForkDialog({
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <Label className="text-muted-foreground">Checkpoint Time:</Label>
                   <span>
-                    {formatDistanceToNow(new Date(checkpoint.timestamp * 1000), {
+                    {formatDistanceToNow(new Date(Number(checkpoint.timestamp) * 1000), {
                       addSuffix: true,
                     })}
                   </span>
