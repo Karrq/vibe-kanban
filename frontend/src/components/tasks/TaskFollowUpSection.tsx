@@ -145,9 +145,8 @@ export function TaskFollowUpSection() {
               <AlertDescription>{followUpError}</AlertDescription>
             </Alert>
           )}
-          <div className="space-y-2">
-            <div className="flex gap-2 items-start">
-              <FileSearchTextarea
+          <div className="flex gap-2 items-start">
+            <FileSearchTextarea
                 placeholder="Continue working on this task... Type @ to search files."
                 value={followUpMessage}
                 onChange={(value) => {
@@ -185,14 +184,13 @@ export function TaskFollowUpSection() {
                     >
                       {isSendingFollowUp ? (
                         <Loader size={16} className="mr-2" />
-                      ) : isShiftPressed ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-2" />
-                          New Session
-                        </>
                       ) : (
                         <>
-                          <Send className="h-4 w-4 mr-2" />
+                          {isShiftPressed ? (
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                          ) : (
+                            <Send className="h-4 w-4 mr-2" />
+                          )}
                           Send
                         </>
                       )}
@@ -203,12 +201,6 @@ export function TaskFollowUpSection() {
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
-            </div>
-            {isShiftPressed && (
-              <p className="text-xs text-muted-foreground">
-                Will start a new session with previous context
-              </p>
-            )}
           </div>
         </div>
       </div>
