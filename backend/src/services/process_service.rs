@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use sqlx::SqlitePool;
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
@@ -484,43 +484,19 @@ impl ProcessService {
         };
 
         // Determine how to proceed based on restart_session flag only
-        tracing::info!(
-            "SESSION_FOLLOWUP: Decision point - session_id: {:?}, restart_session: {}",
-            executor_session.session_id, restart_session
-        );
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
             if restart_session {
-                // User explicitly requested restart, start new session with summary
-                tracing::info!(
-                    "SESSION_FOLLOWUP: Restart requested, starting new session with summary for attempt {} (worktree: {})",
-                    attempt_id, worktree_path
-                );
-                
-                // Get the summary from the previous session if available
-                let summary = executor_session.summary.as_deref().unwrap_or("");
-                let context_prompt = if !summary.is_empty() {
-                    format!(
-                        "## Context from Previous Session\n\n{}\n\n## Current Request\n\n{}",
-                        summary, prompt
-                    )
-                } else {
-                    prompt.to_string()
-                };
-                
+                // User explicitly requested restart, start new session
                 // Start new session with empty session ID (triggers new session in executor)
                 crate::executor::ExecutorType::CodingAgent {
                     config: executor_config.clone(),
                     follow_up: Some(crate::executor::FollowUpInfo {
                         session_id: String::new(), // Empty session ID forces new session
-                        prompt: context_prompt,
+                        prompt: prompt.to_string(),
                     }),
                 }
             } else {
                 // Normal follow-up with session ID
-                debug!(
-                    "SESSION_FOLLOWUP: Attempting follow-up execution with session ID: {} (attempt: {}, worktree: {})",
-                    session_id, attempt_id, worktree_path
-                );
                 crate::executor::ExecutorType::CodingAgent {
                     config: executor_config.clone(),
                     follow_up: Some(crate::executor::FollowUpInfo {
@@ -530,11 +506,7 @@ impl ProcessService {
                 }
             }
         } else {
-            // No session ID available, just start new session without any context
-            tracing::warn!(
-                "SESSION_FOLLOWUP: No session ID available for follow-up execution on attempt {}, starting fresh session (worktree: {})",
-                attempt_id, worktree_path
-            );
+            // No session ID available, just start new session
             crate::executor::ExecutorType::CodingAgent {
                 config: executor_config.clone(),
                 follow_up: None,
