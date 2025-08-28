@@ -25,6 +25,12 @@ import {
 } from 'shared/types.ts';
 import { TaskDiffContext } from '@/components/context/taskDetailsContext.ts';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type Props = {
   entry: NormalizedEntry;

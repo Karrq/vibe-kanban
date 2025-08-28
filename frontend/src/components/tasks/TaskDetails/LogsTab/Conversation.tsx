@@ -16,14 +16,14 @@ import Prompt from './Prompt';
 import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
 import { ForkDialog } from '../ForkDialog';
-import { checkpointApi } from '@/lib/api';
+import { checkpointApi, attemptsApi } from '@/lib/api';
 import { CheckpointResponse } from 'shared/types';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 function Conversation() {
   const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
-  const { selectedAttempt } = useContext(TaskSelectedAttemptContext);
+  const { selectedAttempt, setSelectedAttempt } = useContext(TaskSelectedAttemptContext);
   const { isPlanningMode, latestProcessHasNoPlan } = useTaskPlan();
   const [shouldAutoScrollLogs, setShouldAutoScrollLogs] = useState(true);
   const [conversationUpdateTrigger, setConversationUpdateTrigger] = useState(0);
@@ -39,7 +39,6 @@ function Conversation() {
   const [forkLoading, setForkLoading] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
   const { projectId, taskId } = useParams();
   const attemptId = selectedAttempt?.id;
 
@@ -138,8 +137,9 @@ function Conversation() {
       console.log('Fork created successfully:', result);
       toast.success('Fork created successfully');
       
-      // Navigate to the new attempt
-      navigate(`/projects/${projectId}/tasks/${taskId}/attempts/${result.new_attempt_id}`);
+      // Fetch the new attempt and select it
+      const newAttempt = await attemptsApi.get(projectId, taskId, result.new_attempt_id);
+      setSelectedAttempt(newAttempt);
     } catch (error: any) {
       console.error('Failed to create fork:', error);
       // More detailed error message
@@ -150,7 +150,7 @@ function Conversation() {
       setForkDialogOpen(false);
       setSelectedForkIndex(null);
     }
-  }, [projectId, taskId, attemptId, selectedForkIndex, navigate]);
+  }, [projectId, taskId, attemptId, selectedForkIndex, setSelectedAttempt]);
 
   // Find main and follow-up processes from allLogs
   const mainCodingAgentLog = useMemo(
