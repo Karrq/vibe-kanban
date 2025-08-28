@@ -195,23 +195,13 @@ impl CheckpointService {
                 .unwrap_or_else(|| &[][..]);
 
             // Create the checkpoint commit
-            // Note: We need to handle the case where the reference might already exist
-            // from a previous checkpoint at the same message index (e.g., retry scenarios)
-            let commit_oid = repo.commit(
-                None,  // Don't update the reference yet
+            repo.commit(
+                Some(&data.checkpoint_ref),
                 &sig,
                 &sig,
                 ".", // Minimal commit message
                 &tree,
                 &parent,
-            )?;
-            
-            // Now update or create the reference, forcing if it already exists
-            repo.reference(
-                &data.checkpoint_ref,
-                commit_oid,
-                true,  // Force update if reference exists
-                "checkpoint",
             )?;
 
             let elapsed = start.elapsed();
