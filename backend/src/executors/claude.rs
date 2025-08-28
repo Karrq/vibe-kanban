@@ -404,16 +404,6 @@ Task title: {}"#,
 }
 
 impl ClaudeExecutor {
-    /// Check if the conversation has hit a context limit error
-    pub fn has_context_limit_error(conversation: &NormalizedConversation) -> bool {
-        conversation.entries.iter().any(|entry| {
-            matches!(entry.entry_type, NormalizedEntryType::ErrorMessage) &&
-            (entry.content.to_lowercase().contains("context limit") ||
-             entry.content.to_lowercase().contains("prompt too long") ||
-             entry.content.to_lowercase().contains("token limit"))
-        })
-    }
-
     /// Convert absolute paths to relative paths based on worktree path
     fn make_path_relative(&self, path: &str, worktree_path: &str) -> String {
         let path_obj = Path::new(path);
