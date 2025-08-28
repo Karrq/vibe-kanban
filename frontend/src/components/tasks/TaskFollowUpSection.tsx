@@ -28,6 +28,7 @@ export function TaskFollowUpSection() {
   const [isSendingFollowUp, setIsSendingFollowUp] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
+  const [isButtonHovered, setIsButtonHovered] = useState(false);
 
   // Generate a unique key for localStorage based on task and attempt
   const getDraftKey = useCallback(() => {
@@ -172,21 +173,23 @@ export function TaskFollowUpSection() {
                 maxRows={6}
               />
               <TooltipProvider>
-                <Tooltip>
+                <Tooltip open={isButtonHovered && isShiftPressed}>
                   <TooltipTrigger asChild>
                     <Button
                       onClick={(e) => onSendFollowUp(e.shiftKey)}
+                      onMouseEnter={() => setIsButtonHovered(true)}
+                      onMouseLeave={() => setIsButtonHovered(false)}
                       disabled={
                         !canSendFollowUp || !followUpMessage.trim() || isSendingFollowUp
                       }
                       size="sm"
-                      variant={isShiftPressed ? "secondary" : "default"}
+                      variant={isButtonHovered && isShiftPressed ? "secondary" : "default"}
                     >
                       {isSendingFollowUp ? (
                         <Loader size={16} className="mr-2" />
                       ) : (
                         <>
-                          {isShiftPressed ? (
+                          {isButtonHovered && isShiftPressed ? (
                             <RefreshCw className="h-4 w-4 mr-2" />
                           ) : (
                             <Send className="h-4 w-4 mr-2" />
@@ -197,7 +200,7 @@ export function TaskFollowUpSection() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{isShiftPressed ? "Start new session with context" : "Hold Shift to start new session with context"}</p>
+                    <p>Start new session with last assistant message as context</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
