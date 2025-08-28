@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use sqlx::SqlitePool;
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
@@ -17,85 +17,10 @@ use crate::{
     utils::shell::get_shell_command,
 };
 
-/// Prompt sent to Claude for manual compaction request
-/// This creates a summary that will be used as context for a new session
-pub const COMPACTION_REQUEST_PROMPT: &str = "Please provide a comprehensive summary of our conversation including:
-- Key decisions made
-- Tasks completed  
-- Current state of the work
-- Any important context needed to continue
-
-This summary will be used to preserve context in a fresh session.";
-
 /// Service responsible for managing process execution lifecycle
 pub struct ProcessService;
 
 impl ProcessService {
-    /// Check if the execution process output contains a context limit error
-    async fn has_context_limit_error(
-        pool: &SqlitePool,
-        execution_process_id: Uuid,
-    ) -> Result<bool, TaskAttemptError> {
-        let process = ExecutionProcess::find_by_id(pool, execution_process_id)
-            .await?
-            .ok_or(TaskAttemptError::ValidationError(
-                "Execution process not found".to_string(),
-            ))?;
-        
-        if let Some(stdout) = &process.stdout {
-            let stdout_lower = stdout.to_lowercase();
-            // Check for context limit indicators
-            if stdout_lower.contains("[context_limit_error]") ||
-               stdout.contains("prompt too long") ||
-               (stdout_lower.contains("context") && stdout_lower.contains("limit")) ||
-               stdout_lower.contains("token limit") {
-                return Ok(true);
-            }
-        }
-        
-        Ok(false)
-    }
-
-    /// Estimate approximate context usage based on output size
-    /// Returns a value between 0.0 and 1.0 representing the estimated context usage
-    pub fn estimate_context_usage(stdout: &str) -> f32 {
-        // Rough estimation: Claude Code has approximately 200k token context
-        // Average token is ~4 characters
-        // So roughly 800k characters max
-        const MAX_CHARS: usize = 800_000;
-        
-        let char_count = stdout.len();
-        let usage = char_count as f32 / MAX_CHARS as f32;
-        
-        usage.min(1.0)
-    }
-
-    /// Check if we should compact the conversation (context usage >= 85%)
-    pub async fn should_compact_conversation(
-        pool: &SqlitePool,
-        execution_process_id: Uuid,
-    ) -> Result<bool, TaskAttemptError> {
-        let process = ExecutionProcess::find_by_id(pool, execution_process_id)
-            .await?
-            .ok_or(TaskAttemptError::ValidationError(
-                "Execution process not found".to_string(),
-            ))?;
-        
-        if let Some(stdout) = &process.stdout {
-            let usage = Self::estimate_context_usage(stdout);
-            
-            if usage >= 0.85 {
-                tracing::info!(
-                    "Context usage estimated at {:.1}% for process {}, recommending compaction",
-                    usage * 100.0,
-                    execution_process_id
-                );
-                return Ok(true);
-            }
-        }
-        
-        Ok(false)
-    }
     /// Run cleanup script if project has one configured
     pub async fn run_cleanup_script_if_configured(
         pool: &SqlitePool,
@@ -558,46 +483,20 @@ impl ProcessService {
             }
         };
 
-        // Check if the previous execution had a context limit error
-        let had_context_limit_error = Self::has_context_limit_error(pool, most_recent_coding_agent.id)
-            .await
-            .unwrap_or(false);
-
-        // Determine how to proceed based on context state
+        // Determine how to proceed based on restart_session flag only
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
-            if had_context_limit_error || restart_session {
-                // Previous session hit context limit OR user requested restart, start new session with summary
-                tracing::info!(
-                    "SESSION_FOLLOWUP: {}, starting new session with summary for attempt {} (worktree: {})",
-                    if had_context_limit_error { "Previous session hit context limit" } else { "Restart requested" },
-                    attempt_id, worktree_path
-                );
-                
-                // Get the summary from the previous session if available
-                let summary = executor_session.summary.as_deref().unwrap_or("");
-                let context_prompt = if !summary.is_empty() {
-                    format!(
-                        "## Context from Previous Session\n\n{}\n\n## Current Request\n\n{}",
-                        summary, prompt
-                    )
-                } else {
-                    prompt.to_string()
-                };
-                
-                // Start new session with context from summary
+            if restart_session {
+                // User explicitly requested restart, start new session
+                // Start new session with empty session ID (triggers new session in executor)
                 crate::executor::ExecutorType::CodingAgent {
                     config: executor_config.clone(),
                     follow_up: Some(crate::executor::FollowUpInfo {
                         session_id: String::new(), // Empty session ID forces new session
-                        prompt: context_prompt,
+                        prompt: prompt.to_string(),
                     }),
                 }
             } else {
                 // Normal follow-up with session ID
-                debug!(
-                    "SESSION_FOLLOWUP: Attempting follow-up execution with session ID: {} (attempt: {}, worktree: {})",
-                    session_id, attempt_id, worktree_path
-                );
                 crate::executor::ExecutorType::CodingAgent {
                     config: executor_config.clone(),
                     follow_up: Some(crate::executor::FollowUpInfo {
@@ -607,11 +506,7 @@ impl ProcessService {
                 }
             }
         } else {
-            // No session ID available, start new session
-            tracing::warn!(
-                "SESSION_FOLLOWUP: No session ID available for follow-up execution on attempt {}, starting new session (worktree: {})",
-                attempt_id, worktree_path
-            );
+            // No session ID available, just start new session
             crate::executor::ExecutorType::CodingAgent {
                 config: executor_config.clone(),
                 follow_up: None,
