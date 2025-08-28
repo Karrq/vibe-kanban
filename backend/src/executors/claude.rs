@@ -161,8 +161,10 @@ Task title: {}"#,
 
         // Compute the resume flag once
         let resume_flag = if session_id.is_empty() {
+            tracing::info!("ClaudeExecutor: Starting NEW session (empty session_id)");
             String::new()
         } else {
+            tracing::info!("ClaudeExecutor: Resuming session with ID: {}", session_id);
             format!(" --resume={}", session_id)
         };
 

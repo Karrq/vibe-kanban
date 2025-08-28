@@ -564,6 +564,10 @@ impl ProcessService {
             .unwrap_or(false);
 
         // Determine how to proceed based on context state
+        tracing::info!(
+            "SESSION_FOLLOWUP: Decision point - session_id: {:?}, had_context_limit: {}, restart_session: {}",
+            executor_session.session_id, had_context_limit_error, restart_session
+        );
         let followup_executor = if let Some(session_id) = &executor_session.session_id {
             if had_context_limit_error || restart_session {
                 // Previous session hit context limit OR user requested restart, start new session with summary
