@@ -15,6 +15,7 @@ import { AlertTriangle } from 'lucide-react';
 import Prompt from './Prompt';
 import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
+import { CompactModal } from '../CompactModal';
 
 function Conversation() {
   const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
@@ -24,6 +25,7 @@ function Conversation() {
   const [visibleCount, setVisibleCount] = useState(100);
   const [visibleRunningEntriesCount, setVisibleRunningEntriesCount] =
     useState(0);
+  const [showCompactModal, setShowCompactModal] = useState(false);
   
   // Check if we're in side-by-side mode (desktop)
   const [isSideBySide, setIsSideBySide] = useState(() => {
@@ -204,22 +206,30 @@ function Conversation() {
 
   const renderedVisibleEntries = useMemo(
     () =>
-      visibleEntries.map((entry, index) => (
-        <ConversationEntry
-          key={entry.entry.timestamp || index}
-          idx={index}
-          item={entry}
-          handleConversationUpdate={handleConversationUpdate}
-          visibleEntriesLength={visibleEntries.length}
-          runningProcessDetails={attemptData.runningProcessDetails}
-          sessionIdToCommand={sessionIdToCommand}
-        />
-      )),
+      visibleEntries.map((entry, index) => {
+        const isLastEntry = index === visibleEntries.length - 1 && 
+                          runningProcessLogs.length === 0 && 
+                          entry.entry.entry_type.type === 'assistant_message';
+        return (
+          <ConversationEntry
+            key={entry.entry.timestamp || index}
+            idx={index}
+            item={entry}
+            handleConversationUpdate={handleConversationUpdate}
+            visibleEntriesLength={visibleEntries.length}
+            runningProcessDetails={attemptData.runningProcessDetails}
+            sessionIdToCommand={sessionIdToCommand}
+            isLastEntry={isLastEntry}
+            onCompact={() => setShowCompactModal(true)}
+          />
+        );
+      }),
     [
       visibleEntries,
       handleConversationUpdate,
       attemptData.runningProcessDetails,
       sessionIdToCommand,
+      runningProcessLogs.length,
     ]
   );
 
@@ -346,6 +356,12 @@ function Conversation() {
           </p>
         </div>
       )}
+      
+      {/* Compact Modal */}
+      <CompactModal 
+        open={showCompactModal}
+        onClose={() => setShowCompactModal(false)}
+      />
     </div>
   );
 }

@@ -12,6 +12,8 @@ type Props = {
   visibleEntriesLength: number;
   runningProcessDetails: Record<string, ExecutionProcess>;
   sessionIdToCommand?: Record<string, string>;
+  isLastEntry?: boolean;
+  onCompact?: () => void;
 };
 
 const ConversationEntry = ({
@@ -21,6 +23,8 @@ const ConversationEntry = ({
   visibleEntriesLength,
   runningProcessDetails,
   sessionIdToCommand,
+  isLastEntry = false,
+  onCompact,
 }: Props) => {
   // Show prompt only for the first entry of each process
   // For follow-up processes: show at the start of each follow-up
@@ -53,6 +57,8 @@ const ConversationEntry = ({
           index={idx}
           diffDeletable
           sessionIdToCommand={sessionIdToCommand}
+          isLast={isLastEntry}
+          onCompact={onCompact}
         />
       </div>
     );

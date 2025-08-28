@@ -1,6 +1,7 @@
 import { useContext, useMemo, useState } from 'react';
 import { DiffCard } from './DiffCard';
 import { ToolResultDisplay } from './ToolResultDisplay';
+import { MessageToolbar } from './MessageToolbar';
 import MarkdownRenderer from '@/components/ui/markdown-renderer.tsx';
 import {
   AlertCircle,
@@ -10,7 +11,6 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  Copy,
   Edit,
   Eye,
   Globe,
@@ -33,6 +33,7 @@ type Props = {
   diffDeletable?: boolean;
   isLast?: boolean;
   sessionIdToCommand?: Record<string, string>;
+  onCompact?: () => void;
 };
 
 const getEntryIcon = (entryType: NormalizedEntryType) => {
@@ -305,13 +306,13 @@ function DisplayConversationEntry({
   diffDeletable,
   isLast = false,
   sessionIdToCommand,
+  onCompact,
 }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
   const [expandedToolResults, setExpandedToolResults] = useState<Set<number>>(
     new Set()
   );
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   // Check if this entry is a file modification to set initial expanded state
   const isFileModEntry = isFileModificationToolCall(entry.entry_type);
@@ -374,10 +375,6 @@ function DisplayConversationEntry({
       }
 
       await navigator.clipboard.writeText(textToCopy);
-      setCopiedIndex(index);
-      setTimeout(() => {
-        setCopiedIndex(null);
-      }, 2000);
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
@@ -423,20 +420,12 @@ function DisplayConversationEntry({
 
   return (
     <div key={index} className="relative group">
-      {/* Copy button positioned at top right */}
-      <button
-        onClick={copyToClipboard}
-        className="absolute -top-1 -right-1 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 bg-gray-100 dark:bg-gray-800 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 z-10"
-        title="Copy message"
-      >
-        {copiedIndex === index ? (
-          <span className="text-xs text-green-600 dark:text-green-400 font-medium">
-            Copied!
-          </span>
-        ) : (
-          <Copy className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
-        )}
-      </button>
+      {/* Message toolbar positioned at top right */}
+      <MessageToolbar 
+        onCopy={copyToClipboard}
+        onCompact={onCompact}
+        showCompact={isLast && entry.entry_type.type === 'assistant_message'}
+      />
 
       <div className="flex items-start gap-3">
         <div className="flex-shrink-0 mt-1">
