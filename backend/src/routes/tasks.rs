@@ -34,6 +34,20 @@ pub async fn get_task(
     Ok(ResponseJson(ApiResponse::success(task)))
 }
 
+pub async fn get_task_by_id(
+    State(app_state): State<AppState>,
+    axum::extract::Path(task_id): axum::extract::Path<Uuid>,
+) -> Result<ResponseJson<ApiResponse<Task>>, StatusCode> {
+    match Task::find_by_id(&app_state.db_pool, task_id).await {
+        Ok(Some(task)) => Ok(ResponseJson(ApiResponse::success(task))),
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to fetch task {}: {}", task_id, e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub async fn create_task(
     Extension(project): Extension<Project>,
     State(app_state): State<AppState>,

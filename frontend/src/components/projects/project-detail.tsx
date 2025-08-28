@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ProjectWithBranch } from 'shared/types';
 import { ProjectForm } from './project-form';
 import { ProcessesDialog } from './ProcessesDialog';
+import { WorktreeManagementModal } from '@/components/WorktreeManagementModal';
 import { projectsApi } from '@/lib/api';
 import {
   AlertCircle,
@@ -21,6 +22,7 @@ import {
   CheckSquare,
   Clock,
   Edit,
+  GitBranch,
   Loader2,
   Trash2,
   Terminal,
@@ -38,6 +40,7 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
   const [loading, setLoading] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showProcessesDialog, setShowProcessesDialog] = useState(false);
+  const [showWorktreeModal, setShowWorktreeModal] = useState(false);
   const [error, setError] = useState('');
 
   useKeyboardShortcuts({
@@ -136,9 +139,14 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold">{project.name}</h1>
               {project.current_branch && (
-                <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded-md">
+                <button
+                  onClick={() => setShowWorktreeModal(true)}
+                  className="inline-flex items-center gap-1 text-sm text-muted-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors cursor-pointer"
+                  title="Manage worktrees for this project"
+                >
+                  <GitBranch className="h-3 w-3" />
                   {project.current_branch}
-                </span>
+                </button>
               )}
             </div>
             <p className="text-sm text-muted-foreground">
@@ -258,6 +266,12 @@ export function ProjectDetail({ projectId, onBack }: ProjectDetailProps) {
         projectId={projectId}
         open={showProcessesDialog}
         onClose={() => setShowProcessesDialog(false)}
+      />
+
+      <WorktreeManagementModal
+        isOpen={showWorktreeModal}
+        onClose={() => setShowWorktreeModal(false)}
+        projectId={projectId}
       />
     </div>
   );

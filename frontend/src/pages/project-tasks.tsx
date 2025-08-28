@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2, Terminal } from 'lucide-react';
+import { Archive, FolderOpen, Plus, Settings, LibraryBig, Globe2, Terminal, GitBranch } from 'lucide-react';
 import { Loader } from '@/components/ui/loader';
 import { projectsApi, tasksApi, templatesApi } from '@/lib/api';
 import { TaskFormDialog } from '@/components/tasks/TaskFormDialog';
@@ -36,6 +36,7 @@ import {
 import TaskKanbanBoard from '@/components/tasks/TaskKanbanBoard';
 import { TaskDetailsPanel } from '@/components/tasks/TaskDetailsPanel';
 import { useArchive } from '@/hooks/useArchive';
+import { WorktreeManagementModal } from '@/components/WorktreeManagementModal';
 import type {
   CreateTaskAndStart,
   ExecutorConfig,
@@ -69,6 +70,7 @@ export function ProjectTasks() {
   );
   const [showProcessesDialog, setShowProcessesDialog] = useState(false);
   const [taskDetailsRefreshTrigger, setTaskDetailsRefreshTrigger] = useState(0);
+  const [showWorktreeModal, setShowWorktreeModal] = useState(false);
   
   // Calculate project-specific archived count efficiently
   const projectArchivedCount = useMemo(() => {
@@ -410,9 +412,14 @@ export function ProjectTasks() {
           <div className="w-full flex items-center gap-3">
             <h1 className="text-2xl font-bold">{project?.name || 'Project'}</h1>
             {project?.current_branch && (
-              <span className="text-sm text-muted-foreground bg-muted px-2 py-1 rounded-md">
+              <button
+                onClick={() => setShowWorktreeModal(true)}
+                className="inline-flex items-center gap-1 text-sm text-muted-foreground bg-muted hover:bg-muted/80 px-2 py-1 rounded-md transition-colors cursor-pointer"
+                title="Manage worktrees for this project"
+              >
+                <GitBranch className="h-3 w-3" />
                 {project.current_branch}
-              </span>
+              </button>
             )}
             <Button
               variant="ghost"
@@ -635,6 +642,12 @@ export function ProjectTasks() {
           // fetchAttemptData in TaskDetailsContextProvider will update the process status
           setTaskDetailsRefreshTrigger(prev => prev + 1);
         }}
+      />
+
+      <WorktreeManagementModal
+        isOpen={showWorktreeModal}
+        onClose={() => setShowWorktreeModal(false)}
+        projectId={projectId}
       />
 
     </div>

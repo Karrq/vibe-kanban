@@ -154,6 +154,8 @@ is_error: boolean,
  */
 exit_code: number | null, };
 
+export type BranchInfo = { branch_name: string, project_id: string, project_name: string, worktree_path: string | null, worktree_exists: boolean, task_id: string | null, task_title: string | null, task_status: TaskStatus | null, attempt_id: string | null, attempt_deleted: boolean, pr_url: string | null, pr_status: string | null, pr_merged_at: string | null, merge_commit: string | null, };
+
 // Generated constants
 export const EXECUTOR_TYPES: string[] = [
     "echo",

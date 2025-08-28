@@ -208,6 +208,9 @@ fn main() -> anyhow::Result<()> {
                 .merge(auth::auth_router())
                 .route("/sounds/:filename", get(serve_sound_file))
                 .route("/processes/:process_id/kill", post(routes::processes::kill_process))
+                .route("/branches", get(routes::branches::get_all_branches))
+                .route("/branches/delete", post(routes::branches::delete_branch))
+                .route("/tasks/:task_id", get(tasks::get_task_by_id))
                 .merge(
                     Router::new()
                         .route("/execution-processes/:process_id", get(task_attempts::get_execution_process))
