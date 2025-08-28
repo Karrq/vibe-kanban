@@ -172,26 +172,28 @@ impl CheckpointService {
             // Create a minimal signature
             let sig = Signature::now("vibe-kanban", "checkpoint@vibe-kanban.local")?;
             
-            // Build parent commits array dynamically
-            let parent_commits: Vec<_> = if let Some(parent_oid) = data.parent_oid {
-                vec![repo.find_commit(parent_oid)?]
+            // Create the checkpoint commit with or without parent
+            let _commit_oid = if let Some(parent_oid) = data.parent_oid {
+                let parent_commit = repo.find_commit(parent_oid)?;
+                repo.commit(
+                    Some(&data.checkpoint_ref),
+                    &sig,
+                    &sig,
+                    ".",  // Minimal commit message
+                    &tree,
+                    &[&parent_commit],
+                )?
             } else {
                 debug!("Creating checkpoint commit without parent");
-                vec![]
+                repo.commit(
+                    Some(&data.checkpoint_ref),
+                    &sig,
+                    &sig,
+                    ".",  // Minimal commit message
+                    &tree,
+                    &[],
+                )?
             };
-            
-            // Get references to parent commits for the commit call
-            let parent_refs: Vec<_> = parent_commits.iter().collect();
-            
-            // Create the checkpoint commit
-            let _commit_oid = repo.commit(
-                Some(&data.checkpoint_ref),
-                &sig,
-                &sig,
-                ".",  // Minimal commit message
-                &tree,
-                &parent_refs,
-            )?;
             
             let elapsed = start.elapsed();
             info!(
