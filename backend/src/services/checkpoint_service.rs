@@ -46,8 +46,33 @@ pub struct CheckpointService {
 impl CheckpointService {
     /// Create a new CheckpointService for a worktree
     pub fn new(worktree_path: &str, attempt_id: Uuid) -> Result<Self, CheckpointError> {
-        // Verify the repository exists and is accessible
-        let _repo = Repository::open(worktree_path)?;
+        // Verify the repository exists and handle unborn HEAD case
+        let repo = Repository::open(worktree_path)?;
+        
+        // If repository has unborn HEAD, create an initial empty commit to speed up later operations
+        if let Err(e) = repo.head() {
+            if e.class() == git2::ErrorClass::Reference && e.code() == git2::ErrorCode::UnbornBranch {
+                info!("Repository has unborn HEAD, creating initial empty commit for faster checkpointing");
+                
+                // Create an empty tree
+                let tree_builder = repo.treebuilder(None)?;
+                let tree_oid = tree_builder.write()?;
+                let tree = repo.find_tree(tree_oid)?;
+                
+                // Create initial commit
+                let sig = Signature::now("vibe-kanban", "init@vibe-kanban.local")?;
+                repo.commit(
+                    Some("HEAD"),  // Update HEAD to point to this commit
+                    &sig,
+                    &sig,
+                    "Initial commit",
+                    &tree,
+                    &[],  // No parents
+                )?;
+                
+                debug!("Created initial empty commit for unborn HEAD repository");
+            }
+        }
         
         // Format the ref prefix for this attempt
         let attempt_id_short = attempt_id.to_string().split('-').next().unwrap_or("unknown").to_string();
@@ -74,24 +99,12 @@ impl CheckpointService {
             // Open the repository
             let repo = Repository::open(&self.worktree_path)?;
             
-            // Get HEAD info - handle unborn HEAD (new repos)
-            let (head_tree, parent_oid) = match repo.head() {
-                Ok(head) => {
-                    let tree = head.peel_to_tree()?;
-                    let commit_id = head.peel_to_commit()?.id();
-                    (tree, Some(commit_id))
-                }
-                Err(e) if e.class() == git2::ErrorClass::Reference 
-                    && e.code() == git2::ErrorCode::UnbornBranch => {
-                    // Repository has no commits yet - create empty tree
-                    debug!("Repository has unborn HEAD, using empty tree for checkpoint");
-                    let tree_builder = repo.treebuilder(None)?;
-                    let empty_tree_oid = tree_builder.write()?;
-                    let empty_tree = repo.find_tree(empty_tree_oid)?;
-                    (empty_tree, None)
-                }
-                Err(e) => return Err(e.into()),
-            };
+            // Get HEAD - should always exist now since we create initial commit in new()
+            let head = repo.head()?;
+            let head_tree = head.peel_to_tree()?;
+            
+            // Try to get parent commit, use None if we can't (e.g., detached HEAD or other edge cases)
+            let parent_oid = head.peel_to_commit().ok().map(|commit| commit.id());
             
             // Use the repository's index instead of creating a new in-memory one
             // This ensures the index is properly backed by the repository
@@ -159,33 +172,26 @@ impl CheckpointService {
             // Create a minimal signature
             let sig = Signature::now("vibe-kanban", "checkpoint@vibe-kanban.local")?;
             
-            // Create commit with or without parent
-            let _commit_oid = match data.parent_oid {
-                Some(parent_oid) => {
-                    // Normal case - get parent commit
-                    let parent_commit = repo.find_commit(parent_oid)?;
-                    repo.commit(
-                        Some(&data.checkpoint_ref),
-                        &sig,
-                        &sig,
-                        ".",  // Minimal commit message
-                        &tree,
-                        &[&parent_commit],
-                    )?
-                }
-                None => {
-                    // Create initial commit without parent
-                    debug!("Creating initial checkpoint commit without parent");
-                    repo.commit(
-                        Some(&data.checkpoint_ref),
-                        &sig,
-                        &sig,
-                        ".",  // Minimal commit message
-                        &tree,
-                        &[],  // No parent commits
-                    )?
-                }
+            // Build parent commits array dynamically
+            let parent_commits: Vec<_> = if let Some(parent_oid) = data.parent_oid {
+                vec![repo.find_commit(parent_oid)?]
+            } else {
+                debug!("Creating checkpoint commit without parent");
+                vec![]
             };
+            
+            // Get references to parent commits for the commit call
+            let parent_refs: Vec<_> = parent_commits.iter().collect();
+            
+            // Create the checkpoint commit
+            let _commit_oid = repo.commit(
+                Some(&data.checkpoint_ref),
+                &sig,
+                &sig,
+                ".",  // Minimal commit message
+                &tree,
+                &parent_refs,
+            )?;
             
             let elapsed = start.elapsed();
             info!(
