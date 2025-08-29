@@ -373,8 +373,11 @@ pub async fn search_project_files(
         }
     };
 
+    // Get optional branch parameter
+    let branch = params.get("branch").map(|b| b.as_str());
+
     // Search files in the project repository
-    match search_files_in_repo(&project.git_repo_path, query).await {
+    match search_files_in_repo(&project.git_repo_path, query, branch).await {
         Ok(results) => Ok(ResponseJson(ApiResponse::success(results))),
         Err(e) => {
             tracing::error!("Failed to search files: {}", e);
@@ -386,6 +389,7 @@ pub async fn search_project_files(
 async fn search_files_in_repo(
     repo_path: &str,
     query: &str,
+    branch: Option<&str>,
 ) -> Result<Vec<SearchResult>, Box<dyn std::error::Error + Send + Sync>> {
     use std::path::Path;
 
@@ -397,11 +401,57 @@ async fn search_files_in_repo(
         return Err("Repository path does not exist".into());
     }
 
+    // If a branch is specified, we need to check if it's a worktree branch
+    // and search in the worktree directory instead
+    let worktree_path_owned = if let Some(branch_name) = branch {
+        // Check if there's a worktree for this branch
+        use git2::Repository;
+        
+        if let Ok(repo) = Repository::open(repo_path) {
+            if let Ok(worktree_names) = repo.worktrees() {
+                // Look for a worktree matching the branch name
+                let mut found_worktree_path = None;
+                for name in worktree_names.iter().flatten() {
+                    if let Ok(worktree) = repo.find_worktree(&name) {
+                        let wt_path = worktree.path();
+                        // Check if this worktree is for the requested branch
+                        if let Ok(wt_repo) = Repository::open(&wt_path) {
+                            if let Ok(head) = wt_repo.head() {
+                                if let Some(head_name) = head.name() {
+                                    // Remove refs/heads/ prefix if present
+                                    let head_branch = head_name.strip_prefix("refs/heads/").unwrap_or(head_name);
+                                    if head_branch == branch_name {
+                                        found_worktree_path = Some(wt_path.to_path_buf());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                found_worktree_path
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    let search_path = if let Some(ref wt_path) = worktree_path_owned {
+        wt_path.as_path()
+    } else {
+        repo_path
+    };
+
     let mut results = Vec::new();
     let query_lower = query.to_lowercase();
 
     // Use ignore::WalkBuilder to respect gitignore files
-    let walker = WalkBuilder::new(repo_path)
+    let walker = WalkBuilder::new(search_path)
         .git_ignore(true)
         .git_global(true)
         .git_exclude(true)
@@ -413,11 +463,11 @@ async fn search_files_in_repo(
         let path = entry.path();
 
         // Skip the root directory itself
-        if path == repo_path {
+        if path == search_path {
             continue;
         }
 
-        let relative_path = path.strip_prefix(repo_path)?;
+        let relative_path = path.strip_prefix(search_path)?;
 
         // Skip .git directory and its contents
         if relative_path

@@ -16,6 +16,7 @@ interface FileSearchTextareaProps {
   disabled?: boolean;
   className?: string;
   projectId?: string;
+  branch?: string;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   maxRows?: number;
 }
@@ -28,6 +29,7 @@ export function FileSearchTextarea({
   disabled = false,
   className,
   projectId,
+  branch,
   onKeyDown,
   maxRows = 10,
 }: FileSearchTextareaProps) {
@@ -54,7 +56,7 @@ export function FileSearchTextarea({
       setIsLoading(true);
 
       try {
-        const result = await projectsApi.searchFiles(projectId, searchQuery);
+        const result = await projectsApi.searchFiles(projectId, searchQuery, branch);
         setSearchResults(result);
         setShowDropdown(true);
         setSelectedIndex(-1);
@@ -67,7 +69,7 @@ export function FileSearchTextarea({
 
     const debounceTimer = setTimeout(searchFiles, 300);
     return () => clearTimeout(debounceTimer);
-  }, [searchQuery, projectId]);
+  }, [searchQuery, projectId, branch]);
 
   // Handle text changes and detect @ symbol
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -141,7 +143,7 @@ export function FileSearchTextarea({
 
     const beforeAt = value.slice(0, atSymbolPosition);
     const afterQuery = value.slice(atSymbolPosition + 1 + searchQuery.length);
-    const newValue = beforeAt + file.path + afterQuery;
+    const newValue = beforeAt + '@' + file.path + afterQuery;
 
     onChange(newValue);
     setShowDropdown(false);
@@ -151,7 +153,7 @@ export function FileSearchTextarea({
     // Focus back to textarea
     setTimeout(() => {
       if (textareaRef.current) {
-        const newCursorPos = atSymbolPosition + file.path.length;
+        const newCursorPos = atSymbolPosition + 1 + file.path.length; // +1 for the @ character
         textareaRef.current.focus();
         textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
       }

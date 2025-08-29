@@ -74,7 +74,11 @@ export type CreateTaskAttempt = { executor: string | null, base_branch: string |
 
 export type UpdateTaskAttempt = Record<string, never>;
 
-export type CreateFollowUpAttempt = { prompt: string, restart_session: boolean, };
+export type CreateFollowUpAttempt = { prompt: string, 
+/**
+ * Force a new session with the given prompt
+ */
+restart_session: boolean, };
 
 export type DirectoryEntry = { name: string, path: string, is_directory: boolean, is_git_repo: boolean, };
 
@@ -87,6 +91,8 @@ export type RepositoryInfo = { id: bigint, name: string, full_name: string, owne
 export type CommitAuthor = { name: string, email: string, date: string | null, };
 
 export type FileChangeMetadata = { filename: string, old_filename: string | null, additions: bigint, deletions: bigint, status: string, chunks: Array<DiffChunk>, };
+
+export type CommitSignature = { key_id: string, fingerprint: string | null, signer_name: string | null, signer_email: string | null, status: string, };
 
 export type CommitDetails = { sha: string, message: string, author: CommitAuthor | null, files: Array<FileChangeMetadata>, signature: CommitSignature | null, };
 

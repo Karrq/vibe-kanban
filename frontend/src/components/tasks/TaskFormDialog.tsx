@@ -360,6 +360,7 @@ export function TaskFormDialog({
               className="mt-1.5"
               disabled={isSubmitting || isSubmittingAndStart}
               projectId={projectId}
+              branch={selectedBranch || undefined}
             />
           </div>
 

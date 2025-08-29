@@ -196,11 +196,14 @@ export const projectsApi = {
 
   searchFiles: async (
     id: string,
-    query: string
+    query: string,
+    branch?: string
   ): Promise<FileSearchResult[]> => {
-    const response = await makeRequest(
-      `/api/projects/${id}/search?q=${encodeURIComponent(query)}`
-    );
+    let url = `/api/projects/${id}/search?q=${encodeURIComponent(query)}`;
+    if (branch) {
+      url += `&branch=${encodeURIComponent(branch)}`;
+    }
+    const response = await makeRequest(url);
     return handleApiResponse<FileSearchResult[]>(response);
   },
 };

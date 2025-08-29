@@ -177,6 +177,7 @@ export function TaskFollowUpSection() {
               className="flex-1 min-h-[40px] resize-none"
               disabled={false}
               projectId={projectId}
+              branch={selectedAttempt?.branch}
               rows={1}
               maxRows={6}
             />
