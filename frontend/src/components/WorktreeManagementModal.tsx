@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, GitBranch, FolderOpen, ExternalLink, GitCommit, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Trash2, GitBranch, FolderOpen, ExternalLink, GitCommit, ChevronRight, AlertTriangle, CheckSquare, Square } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
   Dialog,
@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { CommitDetailsModal } from '@/components/tasks/CommitDetailsModal';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface BranchInfo {
   branch_name: string;
@@ -67,6 +68,8 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
     action: 'worktree' | 'branch' | 'both';
   } | null>(null);
   const [isShiftHovering, setIsShiftHovering] = useState(false);
+  const [selectedBranches, setSelectedBranches] = useState<Set<string>>(new Set());
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const navigate = useNavigate();
 
   // Group branches by task, but put orphaned ones in a separate group
@@ -96,6 +99,10 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
   useEffect(() => {
     if (isOpen) {
       fetchBranches();
+    } else {
+      // Clear selections when modal closes
+      setSelectedBranches(new Set());
+      setIsSelectionMode(false);
     }
   }, [isOpen]);
 
@@ -121,6 +128,54 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleBranchSelection = (branchName: string) => {
+    const newSelected = new Set(selectedBranches);
+    if (newSelected.has(branchName)) {
+      newSelected.delete(branchName);
+    } else {
+      newSelected.add(branchName);
+    }
+    setSelectedBranches(newSelected);
+  };
+
+  const selectAllInGroup = (branchesInGroup: BranchInfo[]) => {
+    const newSelected = new Set(selectedBranches);
+    const deletableBranches = branchesInGroup.filter(b => !b.pr_merged_at);
+    deletableBranches.forEach(b => newSelected.add(b.branch_name));
+    setSelectedBranches(newSelected);
+  };
+
+  const deselectAllInGroup = (branchesInGroup: BranchInfo[]) => {
+    const newSelected = new Set(selectedBranches);
+    branchesInGroup.forEach(b => newSelected.delete(b.branch_name));
+    setSelectedBranches(newSelected);
+  };
+
+  const getSelectedBranchesData = (): BranchInfo[] => {
+    return branches.filter(b => selectedBranches.has(b.branch_name));
+  };
+
+  const handleBatchDelete = () => {
+    const selectedBranchesData = getSelectedBranchesData();
+    if (selectedBranchesData.length === 0) return;
+
+    // Determine default action based on what exists
+    const hasWorktrees = selectedBranchesData.some(b => b.worktree_exists && b.worktree_path);
+    const hasBranchOnly = selectedBranchesData.some(b => !b.worktree_path || !b.worktree_exists);
+
+    let action: 'worktree' | 'branch' | 'both' = 'worktree';
+    if (hasWorktrees && !hasBranchOnly) {
+      action = 'worktree';
+    } else if (!hasWorktrees && hasBranchOnly) {
+      action = 'branch';
+    } else {
+      // Mixed - default to worktree only for safety
+      action = 'worktree';
+    }
+
+    setBulkDeleteConfirm({ branches: selectedBranchesData, action });
   };
 
 
@@ -218,6 +273,10 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
       console.log(`Successfully deleted ${successCount} items`);
     }
 
+    // Clear selections after deletion
+    setSelectedBranches(new Set());
+    setIsSelectionMode(false);
+
     // Refresh the list after operations
     await fetchBranches();
   };
@@ -244,11 +303,52 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
       <Dialog open={isOpen} onOpenChange={onClose} className="max-w-none w-[35vw]">
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {projectId ? 'Project Worktree Management' : 'All Worktrees'}
-            </DialogTitle>
+            <div className="flex items-center justify-between mb-2">
+              <DialogTitle>
+                {projectId ? 'Project Worktree Management' : 'All Worktrees'}
+              </DialogTitle>
+              <div className="flex items-center gap-2">
+                {isSelectionMode && selectedBranches.size > 0 && (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={handleBatchDelete}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Delete Selected ({selectedBranches.size})
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant={isSelectionMode ? "default" : "outline"}
+                  onClick={() => {
+                    setIsSelectionMode(!isSelectionMode);
+                    if (isSelectionMode) {
+                      setSelectedBranches(new Set());
+                    }
+                  }}
+                >
+                  {isSelectionMode ? (
+                    <>
+                      <CheckSquare className="w-4 h-4 mr-1" />
+                      Exit Selection
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-4 h-4 mr-1" />
+                      Select Items
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
             <DialogDescription>
               Manage worktrees and branches created by Vibe Kanban (branches starting with "vk-")
+              {isSelectionMode && (
+                <span className="ml-2 text-blue-600 dark:text-blue-400">
+                  • Selection mode active - click checkboxes to select items for batch deletion
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
@@ -258,29 +358,60 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
             <div className="space-y-6">
               {sortedGroups.map(([taskId, taskData]) => {
                 const isOrphanedGroup = taskId === 'orphaned';
+                const deletableBranchesInGroup = taskData.branches.filter(b => !b.pr_merged_at);
+                const selectedInGroup = deletableBranchesInGroup.filter(b => selectedBranches.has(b.branch_name));
+                const allSelectedInGroup = deletableBranchesInGroup.length > 0 && 
+                  deletableBranchesInGroup.every(b => selectedBranches.has(b.branch_name));
+                const someSelectedInGroup = selectedInGroup.length > 0 && !allSelectedInGroup;
+
                 return (
                   <div key={taskId} className={`border rounded-lg p-4 flex flex-col ${isOrphanedGroup ? 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-300 dark:border-yellow-700' : ''}`}>
                     <div className="flex items-center justify-between mb-3">
-                      {isOrphanedGroup ? (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <h3 className="font-semibold text-yellow-900 dark:text-yellow-200 cursor-help underline decoration-dotted">
-                                {taskData.task_title}
-                              </h3>
-                            </TooltipTrigger>
-                            <TooltipContent className="max-w-xs">
-                              <p>Orphaned branches are Vibe Kanban branches (vk-*) that don't match any task in the database.</p>
-                              <p className="mt-1 text-xs text-gray-400">They may be from deleted tasks or tasks that were removed from the database.</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : (
-                        <h3 className="font-semibold">
-                          {taskData.task_title}
-                        </h3>
-                      )}
-                      {isOrphanedGroup ? (
+                      <div className="flex items-center gap-2">
+                        {isSelectionMode && deletableBranchesInGroup.length > 0 && (
+                          <Checkbox
+                            checked={allSelectedInGroup}
+                            onCheckedChange={(checked) => {
+                              if (checked || someSelectedInGroup) {
+                                selectAllInGroup(taskData.branches);
+                              } else {
+                                deselectAllInGroup(taskData.branches);
+                              }
+                            }}
+                            className={someSelectedInGroup ? 'data-[state=checked]:bg-blue-400' : ''}
+                          />
+                        )}
+                        {isOrphanedGroup ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <h3 className="font-semibold text-yellow-900 dark:text-yellow-200 cursor-help underline decoration-dotted">
+                                  {taskData.task_title}
+                                  {isSelectionMode && selectedInGroup.length > 0 && (
+                                    <span className="ml-2 text-sm font-normal">
+                                      ({selectedInGroup.length} selected)
+                                    </span>
+                                  )}
+                                </h3>
+                              </TooltipTrigger>
+                              <TooltipContent className="max-w-xs">
+                                <p>Orphaned branches are Vibe Kanban branches (vk-*) that don't match any task in the database.</p>
+                                <p className="mt-1 text-xs text-gray-400">They may be from deleted tasks or tasks that were removed from the database.</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <h3 className="font-semibold">
+                            {taskData.task_title}
+                            {isSelectionMode && selectedInGroup.length > 0 && (
+                              <span className="ml-2 text-sm font-normal text-gray-500">
+                                ({selectedInGroup.length} selected)
+                              </span>
+                            )}
+                          </h3>
+                        )}
+                      </div>
+                      {isOrphanedGroup && !isSelectionMode ? (
                         <TooltipProvider>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -344,7 +475,7 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                           </Tooltip>
                         </TooltipProvider>
                       ) : (
-                        taskData.task_id && (
+                        taskData.task_id && !isSelectionMode && (
                           <button
                             className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1"
                             onClick={() => handleTaskNavigation(taskData.task_id!)}
@@ -371,9 +502,18 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                               : isOrphaned
                               ? 'bg-transparent border-yellow-400 dark:border-yellow-600'
                               : 'hover:bg-gray-50 dark:hover:bg-gray-800'
-                          }`}
+                          } ${selectedBranches.has(branch.branch_name) ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                         >
-                          <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-3 flex-1">
+                            {isSelectionMode && canDelete && (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedBranches.has(branch.branch_name)}
+                                  onCheckedChange={() => toggleBranchSelection(branch.branch_name)}
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 space-y-1">
                             <div className="flex items-center gap-2">
                               <GitBranch className={`w-4 h-4 ${isGhost ? 'text-gray-400 dark:text-gray-500' : isOrphaned ? 'text-yellow-600 dark:text-yellow-400' : ''}`} />
                               <code className={`text-sm ${isGhost ? 'text-gray-500 dark:text-gray-400' : isOrphaned ? 'text-yellow-900 dark:text-yellow-200' : ''}`}>
@@ -433,10 +573,11 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
                                 </a>
                               )}
                             </div>
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-1">
-                            {canDelete && (
+                            {canDelete && !isSelectionMode && (
                               <>
                                 {branch.worktree_exists && branch.worktree_path && (
                                   <TooltipProvider>
@@ -587,33 +728,70 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-yellow-600" />
-              {bulkDeleteConfirm?.action === 'worktree' && 'Delete All Orphaned Worktrees'}
-              {bulkDeleteConfirm?.action === 'branch' && 'Delete All Orphaned Branches'}
-              {bulkDeleteConfirm?.action === 'both' && 'Delete All Orphaned Worktrees and Branches'}
+              Batch Delete Confirmation
             </DialogTitle>
-            <DialogDescription className="space-y-2">
+            <DialogDescription className="space-y-3">
               <p>
-                This will delete {bulkDeleteConfirm?.branches.length} orphaned {
-                  bulkDeleteConfirm?.action === 'worktree' ? 'worktree(s)' :
-                  bulkDeleteConfirm?.action === 'branch' ? 'branch(es)' :
-                  'worktree(s) and branch(es)'
-                }:
+                You have selected {bulkDeleteConfirm?.branches.length} item(s) for deletion:
               </p>
               <div className="max-h-32 overflow-y-auto border rounded p-2 bg-gray-50 dark:bg-gray-900">
                 {bulkDeleteConfirm?.branches.map((branch) => (
-                  <div key={branch.branch_name} className="text-xs font-mono py-0.5">
+                  <div key={branch.branch_name} className="text-xs font-mono py-0.5 flex items-center gap-2">
+                    <GitBranch className="w-3 h-3" />
                     {branch.branch_name}
+                    {branch.worktree_exists && (
+                      <Badge className="text-[10px] py-0 px-1">worktree</Badge>
+                    )}
                   </div>
                 ))}
               </div>
+              <div className="space-y-2">
+                <p className="font-medium">What would you like to delete?</p>
+                <div className="flex gap-2">
+                  {bulkDeleteConfirm?.branches.some(b => b.worktree_exists && b.worktree_path) && (
+                    <Button
+                      size="sm"
+                      variant={bulkDeleteConfirm?.action === 'worktree' ? 'default' : 'outline'}
+                      onClick={() => setBulkDeleteConfirm({
+                        ...bulkDeleteConfirm,
+                        action: 'worktree'
+                      })}
+                    >
+                      Worktrees Only
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={bulkDeleteConfirm?.action === 'branch' ? 'default' : 'outline'}
+                    onClick={() => setBulkDeleteConfirm({
+                      ...bulkDeleteConfirm!,
+                      action: 'branch'
+                    })}
+                  >
+                    Branches Only
+                  </Button>
+                  {bulkDeleteConfirm?.branches.some(b => b.worktree_exists && b.worktree_path) && (
+                    <Button
+                      size="sm"
+                      variant={bulkDeleteConfirm?.action === 'both' ? 'destructive' : 'outline'}
+                      onClick={() => setBulkDeleteConfirm({
+                        ...bulkDeleteConfirm,
+                        action: 'both'
+                      })}
+                    >
+                      Both Worktrees & Branches
+                    </Button>
+                  )}
+                </div>
+              </div>
               {bulkDeleteConfirm?.action === 'worktree' && (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                  The branches will be preserved for future use.
+                  ℹ️ The branches will be preserved for future use.
                 </p>
               )}
               {(bulkDeleteConfirm?.action === 'branch' || bulkDeleteConfirm?.action === 'both') && (
                 <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                  ⚠️ This action cannot be undone. The branches will be permanently deleted.
+                  ⚠️ This action cannot be undone. Branches will be permanently deleted.
                 </p>
               )}
             </DialogDescription>
@@ -625,8 +803,9 @@ export const WorktreeManagementModal: React.FC<WorktreeManagementModalProps> = (
             <Button
               variant="destructive"
               onClick={() => bulkDeleteConfirm && handleBulkDelete(bulkDeleteConfirm.branches, bulkDeleteConfirm.action)}
+              disabled={!bulkDeleteConfirm?.action}
             >
-              Delete All ({bulkDeleteConfirm?.branches.length})
+              Delete Selected ({bulkDeleteConfirm?.branches.length})
             </Button>
           </DialogFooter>
         </DialogContent>
