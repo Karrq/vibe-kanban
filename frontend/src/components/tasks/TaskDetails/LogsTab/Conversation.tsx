@@ -7,7 +7,11 @@ import {
   useRef,
   useState,
 } from 'react';
-import { TaskAttemptDataContext } from '@/components/context/taskDetailsContext.ts';
+import { 
+  TaskAttemptDataContext,
+  TaskDetailsContext,
+  TaskSelectedAttemptContext 
+} from '@/components/context/taskDetailsContext.ts';
 import { useTaskPlan } from '@/components/context/TaskPlanContext.ts';
 import { Loader } from '@/components/ui/loader.tsx';
 import { Button } from '@/components/ui/button';
@@ -15,17 +19,20 @@ import { AlertTriangle } from 'lucide-react';
 import Prompt from './Prompt';
 import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
-import { CompactModal } from '../CompactModal';
+import { attemptsApi } from '@/lib/api';
+import { useCompactState } from '@/hooks/useCompactState';
 
 function Conversation() {
-  const { attemptData, isAttemptRunning } = useContext(TaskAttemptDataContext);
+  const { attemptData, isAttemptRunning, fetchAttemptData } = useContext(TaskAttemptDataContext);
+  const { task, projectId } = useContext(TaskDetailsContext);
+  const { selectedAttempt } = useContext(TaskSelectedAttemptContext);
   const { isPlanningMode, latestProcessHasNoPlan } = useTaskPlan();
   const [shouldAutoScrollLogs, setShouldAutoScrollLogs] = useState(true);
   const [conversationUpdateTrigger, setConversationUpdateTrigger] = useState(0);
   const [visibleCount, setVisibleCount] = useState(100);
   const [visibleRunningEntriesCount, setVisibleRunningEntriesCount] =
     useState(0);
-  const [showCompactModal, setShowCompactModal] = useState(false);
+  const { setCompactedSummary } = useCompactState();
   
   // Check if we're in side-by-side mode (desktop)
   const [isSideBySide, setIsSideBySide] = useState(() => {
@@ -204,6 +211,71 @@ function Conversation() {
     [allEntries, visibleCount, visibleRunningEntriesCount]
   );
 
+  // Track if we're waiting for a compacting response
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [compactRequestTime, setCompactRequestTime] = useState<Date | null>(null);
+  
+  // Monitor for the compacting summary when it's ready
+  useEffect(() => {
+    if (!isCompacting || !compactRequestTime) return;
+    
+    // Find the last assistant message that came after the compact request
+    const lastAssistantEntry = allEntries
+      .filter(e => {
+        if (e.entry.entry_type.type !== 'assistant_message') return false;
+        if (!e.entry.timestamp) return false;
+        const entryTime = new Date(e.entry.timestamp);
+        return entryTime > compactRequestTime;
+      })
+      .pop();
+    
+    if (lastAssistantEntry) {
+      // This should be the summary - store it
+      setCompactedSummary(lastAssistantEntry.entry.content);
+      setIsCompacting(false);
+      setCompactRequestTime(null);
+    }
+  }, [allEntries, isCompacting, compactRequestTime, setCompactedSummary]);
+  
+  // Handle compacting the conversation
+  const handleCompact = useCallback(async () => {
+    if (!task || !selectedAttempt || isCompacting) return;
+    
+    const COMPACT_PROMPT = `Please provide a concise summary of our conversation so far, including:
+1. The main goal/task being worked on
+2. What has been completed so far
+3. Any key decisions or findings
+4. Current status and any pending items
+
+Keep it brief but comprehensive enough to maintain context for continuing the conversation.`;
+    
+    try {
+      setIsCompacting(true);
+      setCompactRequestTime(new Date());
+      
+      // Send the compacting prompt as a regular follow-up
+      await attemptsApi.followUp(
+        projectId!,
+        selectedAttempt.task_id,
+        selectedAttempt.id,
+        {
+          prompt: COMPACT_PROMPT,
+          restart_session: false,
+        }
+      );
+      
+      // Refresh attempt data to get the summary
+      setTimeout(() => {
+        fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
+      }, 500);
+      
+    } catch (error) {
+      console.error('Failed to compact conversation:', error);
+      setIsCompacting(false);
+      setCompactRequestTime(null);
+    }
+  }, [task, selectedAttempt, projectId, fetchAttemptData, isCompacting]);
+
   const renderedVisibleEntries = useMemo(
     () =>
       visibleEntries.map((entry, index) => {
@@ -220,7 +292,8 @@ function Conversation() {
             runningProcessDetails={attemptData.runningProcessDetails}
             sessionIdToCommand={sessionIdToCommand}
             isLastEntry={isLastEntry}
-            onCompact={() => setShowCompactModal(true)}
+            onCompact={handleCompact}
+            isCompacting={isCompacting}
           />
         );
       }),
@@ -230,6 +303,7 @@ function Conversation() {
       attemptData.runningProcessDetails,
       sessionIdToCommand,
       runningProcessLogs.length,
+      handleCompact,
     ]
   );
 
@@ -356,12 +430,6 @@ function Conversation() {
           </p>
         </div>
       )}
-      
-      {/* Compact Modal */}
-      <CompactModal 
-        open={showCompactModal}
-        onClose={() => setShowCompactModal(false)}
-      />
     </div>
   );
 }

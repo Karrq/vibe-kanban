@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Layers } from 'lucide-react';
+import { Copy, Layers, Loader2 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -11,9 +11,10 @@ type MessageToolbarProps = {
   onCopy: () => void;
   onCompact?: () => void;
   showCompact?: boolean;
+  isCompacting?: boolean;
 };
 
-export function MessageToolbar({ onCopy, onCompact, showCompact = false }: MessageToolbarProps) {
+export function MessageToolbar({ onCopy, onCompact, showCompact = false, isCompacting = false }: MessageToolbarProps) {
   const [copiedIndex, setCopiedIndex] = useState<boolean>(false);
 
   const handleCopy = async () => {
@@ -32,14 +33,19 @@ export function MessageToolbar({ onCopy, onCompact, showCompact = false }: Messa
             <TooltipTrigger asChild>
               <button
                 onClick={onCompact}
-                className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                disabled={isCompacting}
+                className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Compact conversation"
               >
-                <Layers className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
+                {isCompacting ? (
+                  <Loader2 className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400 animate-spin" />
+                ) : (
+                  <Layers className="h-3.5 w-3.5 text-gray-600 dark:text-gray-400" />
+                )}
               </button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Compact conversation context</p>
+              <p>{isCompacting ? 'Compacting...' : 'Compact conversation context'}</p>
             </TooltipContent>
           </Tooltip>
         )}

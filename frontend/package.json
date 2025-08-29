@@ -39,7 +39,8 @@
     "react-markdown": "^10.1.0",
     "react-router-dom": "^6.8.1",
     "tailwind-merge": "^2.2.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

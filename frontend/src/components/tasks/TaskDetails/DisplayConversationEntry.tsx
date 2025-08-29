@@ -34,6 +34,7 @@ type Props = {
   isLast?: boolean;
   sessionIdToCommand?: Record<string, string>;
   onCompact?: () => void;
+  isCompacting?: boolean;
 };
 
 const getEntryIcon = (entryType: NormalizedEntryType) => {
@@ -307,6 +308,7 @@ function DisplayConversationEntry({
   isLast = false,
   sessionIdToCommand,
   onCompact,
+  isCompacting = false,
 }: Props) {
   const { diff } = useContext(TaskDiffContext);
   const [expandedErrors, setExpandedErrors] = useState<Set<number>>(new Set());
@@ -425,6 +427,7 @@ function DisplayConversationEntry({
         onCopy={copyToClipboard}
         onCompact={onCompact}
         showCompact={isLast && entry.entry_type.type === 'assistant_message'}
+        isCompacting={isCompacting}
       />
 
       <div className="flex items-start gap-3">

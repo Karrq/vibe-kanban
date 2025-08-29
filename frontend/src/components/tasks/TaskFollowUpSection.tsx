@@ -1,4 +1,4 @@
-import { AlertCircle, Send, RefreshCw } from 'lucide-react';
+import { AlertCircle, Send, RefreshCw, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FileSearchTextarea } from '@/components/ui/file-search-textarea';
@@ -16,6 +16,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useCompactState } from '@/hooks/useCompactState';
 
 export function TaskFollowUpSection() {
   const { task, projectId } = useContext(TaskDetailsContext);
@@ -29,6 +30,8 @@ export function TaskFollowUpSection() {
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [isShiftPressed, setIsShiftPressed] = useState(false);
   const [isButtonHovered, setIsButtonHovered] = useState(false);
+  
+  const { compactedSummary, clearCompactedSummary } = useCompactState();
 
   // Generate a unique key for localStorage based on task and attempt
   const getDraftKey = useCallback(() => {
@@ -108,22 +111,39 @@ export function TaskFollowUpSection() {
     isSendingFollowUp,
   ]);
 
-  const onSendFollowUp = async (restartSession = false) => {
+  const onSendFollowUp = async (forceRestartSession = false) => {
     if (!task || !selectedAttempt || !followUpMessage.trim()) return;
 
     try {
       setIsSendingFollowUp(true);
       setFollowUpError(null);
+      
+      // Check if we have a compacted summary
+      const shouldRestartSession = forceRestartSession || !!compactedSummary;
+      let finalPrompt = followUpMessage.trim();
+      
+      if (compactedSummary && !forceRestartSession) {
+        // Prefix the follow-up with the summary
+        finalPrompt = `[Previous conversation context: ${compactedSummary}]\n\n${followUpMessage.trim()}`;
+      }
+      
       await attemptsApi.followUp(
         projectId!,
         selectedAttempt.task_id,
         selectedAttempt.id,
         {
-          prompt: followUpMessage.trim(),
-          restart_session: restartSession,
+          prompt: finalPrompt,
+          restart_session: shouldRestartSession,
         }
       );
+      
       setFollowUpMessage('');
+      
+      // Clear the compacted summary after using it
+      if (compactedSummary) {
+        clearCompactedSummary();
+      }
+      
       // Clear the draft from localStorage after successful send
       const draftKey = getDraftKey();
       if (draftKey) {
@@ -149,6 +169,14 @@ export function TaskFollowUpSection() {
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{followUpError}</AlertDescription>
+            </Alert>
+          )}
+          {compactedSummary && (
+            <Alert className="mb-2">
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                Conversation has been compacted. Your next message will start a fresh session with the summary.
+              </AlertDescription>
             </Alert>
           )}
           <div className="flex gap-2 items-start">

@@ -14,6 +14,7 @@ type Props = {
   sessionIdToCommand?: Record<string, string>;
   isLastEntry?: boolean;
   onCompact?: () => void;
+  isCompacting?: boolean;
 };
 
 const ConversationEntry = ({
@@ -25,6 +26,7 @@ const ConversationEntry = ({
   sessionIdToCommand,
   isLastEntry = false,
   onCompact,
+  isCompacting = false,
 }: Props) => {
   // Show prompt only for the first entry of each process
   // For follow-up processes: show at the start of each follow-up
@@ -59,6 +61,7 @@ const ConversationEntry = ({
           sessionIdToCommand={sessionIdToCommand}
           isLast={isLastEntry}
           onCompact={onCompact}
+          isCompacting={isCompacting}
         />
       </div>
     );
