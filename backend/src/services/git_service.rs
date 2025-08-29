@@ -394,6 +394,7 @@ impl GitService {
         let main_repo = self.open_repo()?;
 
         // Check if worktree has uncommitted changes and commit them if needed
+        let mut auto_commit_id = None;
         if let Err(_) = self.check_worktree_clean(&worktree_repo) {
             tracing::info!("Worktree has uncommitted changes, auto-committing before rebase");
             
@@ -433,6 +434,7 @@ impl GitService {
                         )?;
                         
                         tracing::info!("Auto-committed changes before rebase: {}", commit_id);
+                        auto_commit_id = Some(commit_id);
                     }
                 }
             }
@@ -505,12 +507,12 @@ impl GitService {
 
         let new_base_commit_id = base_branch.get().peel_to_commit()?.id();
 
-        // Remember the original task-branch commit before we touch anything
-        let original_head_oid = worktree_repo.head()?.peel_to_commit()?.id();
-
-        // Get the HEAD commit of the worktree (the changes to rebase)
+        // Get the HEAD commit of the worktree (after any auto-commits)
         let head = worktree_repo.head()?;
         let task_branch_commit_id = head.peel_to_commit()?.id();
+        
+        // Remember the original task-branch commit for recovery
+        let original_head_oid = task_branch_commit_id;
 
         let signature = worktree_repo.signature()?;
 
@@ -1976,6 +1978,9 @@ impl GitService {
                 &tree,
                 &[&head_commit],
             )?;
+            
+            // Clean up the index after committing to ensure no leftover state
+            repo.cleanup_state()?;
         }
 
         Ok(())
