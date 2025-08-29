@@ -394,7 +394,6 @@ impl GitService {
         let main_repo = self.open_repo()?;
 
         // Check if worktree has uncommitted changes and commit them if needed
-        let mut auto_commit_id = None;
         if let Err(_) = self.check_worktree_clean(&worktree_repo) {
             tracing::info!("Worktree has uncommitted changes, auto-committing before rebase");
             
@@ -434,7 +433,6 @@ impl GitService {
                         )?;
                         
                         tracing::info!("Auto-committed changes before rebase: {}", commit_id);
-                        auto_commit_id = Some(commit_id);
                     }
                 }
             }
@@ -507,12 +505,12 @@ impl GitService {
 
         let new_base_commit_id = base_branch.get().peel_to_commit()?.id();
 
-        // Get the HEAD commit of the worktree (after any auto-commits)
+        // Remember the original task-branch commit before we touch anything
+        let original_head_oid = worktree_repo.head()?.peel_to_commit()?.id();
+
+        // Get the HEAD commit of the worktree (the changes to rebase)
         let head = worktree_repo.head()?;
         let task_branch_commit_id = head.peel_to_commit()?.id();
-        
-        // Remember the original task-branch commit for recovery
-        let original_head_oid = task_branch_commit_id;
 
         let signature = worktree_repo.signature()?;
 
@@ -1946,6 +1944,11 @@ impl GitService {
         for &commit_id in commits {
             let commit = repo.find_commit(commit_id)?;
 
+            // Ensure the working directory and index are clean before cherry-pick
+            // This prevents "uncommitted changes would be overwritten" errors
+            let head = repo.head()?.peel_to_commit()?;
+            repo.reset(head.as_object(), git2::ResetType::Hard, None)?;
+
             // Cherry-pick the commit
             let mut cherrypick_opts = CherrypickOptions::new();
             repo.cherrypick(&commit, Some(&mut cherrypick_opts))?;
@@ -1978,9 +1981,6 @@ impl GitService {
                 &tree,
                 &[&head_commit],
             )?;
-            
-            // Clean up the index after committing to ensure no leftover state
-            repo.cleanup_state()?;
         }
 
         Ok(())
