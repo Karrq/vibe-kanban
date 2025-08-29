@@ -78,7 +78,11 @@ export type CreateFollowUpAttempt = { prompt: string,
 /**
  * Force a new session with the given prompt
  */
-restart_session: boolean, };
+restart_session: boolean, 
+/**
+ * Include a compact summary of the conversation in the prompt
+ */
+compact: boolean, };
 
 export type DirectoryEntry = { name: string, path: string, is_directory: boolean, is_git_repo: boolean, };
 

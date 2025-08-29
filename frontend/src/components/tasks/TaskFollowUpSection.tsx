@@ -119,21 +119,17 @@ export function TaskFollowUpSection() {
       setFollowUpError(null);
       
       // Check if we have a compacted summary
+      const shouldUseCompact = !!compactedSummary && !forceRestartSession;
       const shouldRestartSession = forceRestartSession || !!compactedSummary;
-      let finalPrompt = followUpMessage.trim();
-      
-      if (compactedSummary && !forceRestartSession) {
-        // Prefix the follow-up with the summary
-        finalPrompt = `[Previous conversation context: ${compactedSummary}]\n\n${followUpMessage.trim()}`;
-      }
       
       await attemptsApi.followUp(
         projectId!,
         selectedAttempt.task_id,
         selectedAttempt.id,
         {
-          prompt: finalPrompt,
+          prompt: followUpMessage.trim(),
           restart_session: shouldRestartSession,
+          compact: shouldUseCompact,
         }
       );
       

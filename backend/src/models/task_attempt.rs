@@ -135,6 +135,9 @@ pub struct CreateFollowUpAttempt {
     /// Force a new session with the given prompt
     #[serde(default)]
     pub restart_session: bool,
+    /// Include a compact summary of the conversation in the prompt
+    #[serde(default)]
+    pub compact: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, TS, PartialEq)]

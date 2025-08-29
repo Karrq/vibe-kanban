@@ -779,6 +779,34 @@ pub async fn delete_task_attempt_file(
     }
 }
 
+/// Get the latest conversation summary for a task attempt
+async fn get_latest_conversation_summary(
+    pool: &SqlitePool,
+    attempt_id: Uuid,
+) -> Option<String> {
+    // Get all execution processes for this attempt
+    let processes = ExecutionProcess::find_by_task_attempt_id(pool, attempt_id)
+        .await
+        .ok()?;
+    
+    // Look for the most recent coding agent process with a summary
+    for process in processes.iter().rev() {
+        // Check if this is a coding agent process
+        if process.process_type == ExecutionProcessType::CodingAgent {
+            // Get the executor session for this process
+            if let Ok(Some(session)) = 
+                crate::models::executor_session::ExecutorSession::find_by_execution_process_id(pool, process.id).await 
+            {
+                if let Some(summary) = session.summary {
+                    return Some(summary);
+                }
+            }
+        }
+    }
+    
+    None
+}
+
 pub async fn create_followup_attempt(
     Extension(project): Extension<Project>,
     Extension(task): Extension<Task>,
@@ -786,6 +814,23 @@ pub async fn create_followup_attempt(
     State(app_state): State<AppState>,
     Json(payload): Json<CreateFollowUpAttempt>,
 ) -> Result<ResponseJson<ApiResponse<FollowUpResponse>>, StatusCode> {
+    // Prepare the prompt, potentially with compact summary
+    let final_prompt = if payload.compact {
+        // Get the conversation summary from the last execution
+        match get_latest_conversation_summary(&app_state.db_pool, task_attempt.id).await {
+            Some(summary) => {
+                // Prefix the prompt with the summary
+                format!("# Previous Conversation Summary\n{}\n\n# Your Request\n{}", summary, payload.prompt)
+            }
+            None => {
+                // No summary available, just use the original prompt
+                payload.prompt.clone()
+            }
+        }
+    } else {
+        payload.prompt.clone()
+    };
+    
     // Start follow-up execution synchronously to catch errors
     match TaskAttempt::start_followup_execution(
         &app_state.db_pool,
@@ -793,7 +838,7 @@ pub async fn create_followup_attempt(
         task_attempt.id,
         task.id,
         project.id,
-        &payload.prompt,
+        &final_prompt,
         payload.restart_session,
     )
     .await

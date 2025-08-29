@@ -261,6 +261,7 @@ Keep it brief but comprehensive enough to maintain context for continuing the co
         {
           prompt: COMPACT_PROMPT,
           restart_session: false,
+          compact: false,
         }
       );
       
