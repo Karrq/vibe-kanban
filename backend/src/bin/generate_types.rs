@@ -133,6 +133,7 @@ fn generate_types_content() -> String {
         vibe_kanban::services::git_service::CommitAuthor::decl(),
         vibe_kanban::services::git_service::CommitSignature::decl(),
         vibe_kanban::services::git_service::FileChangeMetadata::decl(),
+        vibe_kanban::services::git_service::CommitSignature::decl(),
         vibe_kanban::services::git_service::CommitDetails::decl(),
         vibe_kanban::routes::task_attempts::ProcessLogsResponse::decl(),
         vibe_kanban::models::task_attempt::DiffChunkType::decl(),

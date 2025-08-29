@@ -393,6 +393,9 @@ impl GitService {
         let worktree_repo = Repository::open(worktree_path)?;
         let main_repo = self.open_repo()?;
 
+        // Check if worktree is clean before attempting rebase
+        self.check_worktree_clean(&worktree_repo)?;
+
         // Check if there's an existing rebase in progress and abort it
         let state = worktree_repo.state();
         if state == git2::RepositoryState::Rebase
