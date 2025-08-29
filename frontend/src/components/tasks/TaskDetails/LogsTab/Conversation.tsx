@@ -21,6 +21,7 @@ import ConversationEntry from './ConversationEntry';
 import { ConversationEntryDisplayType } from '@/lib/types';
 import { attemptsApi } from '@/lib/api';
 import { useCompactState } from '@/hooks/useCompactState';
+import { trackCompactionAttempt } from '@/utils/compactionTracking';
 
 function Conversation() {
   const { attemptData, isAttemptRunning, fetchAttemptData } = useContext(TaskAttemptDataContext);
@@ -252,6 +253,9 @@ Keep it brief but comprehensive enough to maintain context for continuing the co
     try {
       setIsCompacting(true);
       setCompactRequestTime(new Date());
+      
+      // Track the compaction attempt
+      trackCompactionAttempt(task.id);
       
       // Send the compacting prompt as a regular follow-up
       await attemptsApi.followUp(

@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useCompactState } from '@/hooks/useCompactState';
+import { hasRecentCompactionAttempt } from '@/utils/compactionTracking';
 
 export function TaskFollowUpSection() {
   const { task, projectId } = useContext(TaskDetailsContext);
@@ -32,6 +33,13 @@ export function TaskFollowUpSection() {
   const [isButtonHovered, setIsButtonHovered] = useState(false);
   
   const { compactedSummary, clearCompactedSummary } = useCompactState();
+  
+  // Check if there was a recent compaction attempt
+  const hasRecentCompaction = useMemo(() => {
+    if (!task) return false;
+    // Check for compaction attempts in the last 2 minutes
+    return hasRecentCompactionAttempt(task.id, 120000);
+  }, [task]);
 
   // Generate a unique key for localStorage based on task and attempt
   const getDraftKey = useCallback(() => {
@@ -167,11 +175,13 @@ export function TaskFollowUpSection() {
               <AlertDescription>{followUpError}</AlertDescription>
             </Alert>
           )}
-          {compactedSummary && (
+          {(compactedSummary || hasRecentCompaction) && (
             <Alert className="mb-2">
               <Info className="h-4 w-4" />
               <AlertDescription>
-                Conversation has been compacted. Your next message will start a fresh session with the summary.
+                {compactedSummary 
+                  ? "Conversation has been compacted. Your next message will start a fresh session with the summary."
+                  : "Compaction in progress. The conversation summary will be ready soon."}
               </AlertDescription>
             </Alert>
           )}
