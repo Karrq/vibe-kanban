@@ -281,160 +281,40 @@ pub async fn delete_branch(
     let repo_path = project.git_repo_path.clone();
     let force = request.force;
     let delete_worktree = request.delete_worktree;
+    let delete_branch = request.delete_branch;
     
-    // Delete worktree first if requested
-    if delete_worktree {
-        let worktree_result = tokio::task::spawn_blocking({
-            let repo_path = repo_path.clone();
-            let branch_name = branch_name.clone();
-            move || {
-                use git2::Repository;
-                
-                let repo = Repository::open(&repo_path)
-                    .map_err(|e| format!("Failed to open repository: {}", e))?;
-                
-                // Find and remove the worktree
-                let worktrees = repo.worktrees()
-                    .map_err(|e| format!("Failed to get worktrees: {}", e))?;
-                for worktree_name in worktrees.iter().flatten() {
-                    if let Ok(worktree) = repo.find_worktree(&worktree_name) {
-                        let worktree_path = worktree.path().to_path_buf(); // Clone the path
-                        drop(worktree); // Drop worktree immediately after getting the path
-                        
-                        // Check if this worktree is for our branch
-                        let is_target_branch = if let Ok(wt_repo) = Repository::open(&worktree_path) {
-                            if let Ok(head) = wt_repo.head() {
-                                head.shorthand() == Some(&branch_name)
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        };
-                        
-                        if is_target_branch {
-                            // Remove the worktree directory
-                            if worktree_path.exists() {
-                                let _ = std::fs::remove_dir_all(&worktree_path);
-                            }
-                            
-                            // Remove worktree from git using command
-                            let _ = std::process::Command::new("git")
-                                .arg("-C")
-                                .arg(&repo_path)
-                                .arg("worktree")
-                                .arg("remove")
-                                .arg(&worktree_path)
-                                .arg("--force")
-                                .output();
-                            
-                            // Also run prune to clean up
-                            let _ = std::process::Command::new("git")
-                                .arg("-C")
-                                .arg(&repo_path)
-                                .arg("worktree")
-                                .arg("prune")
-                                .output();
-                            
-                            break;
-                        }
-                    }
-                }
-                
-                Ok::<(), String>(())
-            }
-        })
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to delete worktree: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-        
-        if let Err(e) = worktree_result {
-            tracing::warn!("Failed to delete worktree (continuing): {}", e);
-        }
-    }
-    
-    // Only delete the branch if requested
-    if !request.delete_branch {
-        // If we're not deleting the branch, we're done
-        return Ok(ResponseJson(ApiResponse::success(())));
-    }
-    
-    // Now delete the branch
+    // Use GitService for all operations
     let result = tokio::task::spawn_blocking(move || {
-        use git2::{Repository, BranchType};
+        use crate::services::git_service::GitService;
         
-        let repo = Repository::open(&repo_path)
-            .map_err(|e| format!("Failed to open repository: {}", e))?;
+        let git_service = GitService::new(&repo_path)
+            .map_err(|e| format!("Failed to initialize GitService: {}", e))?;
         
-        // Check if branch is currently checked out
-        if let Ok(head) = repo.head() {
-            if let Some(current_branch) = head.shorthand() {
-                if current_branch == branch_name {
-                    if !force {
-                        return Err(format!("Cannot delete branch '{}' as it is currently checked out. Use force deletion to override.", branch_name));
-                    }
-                    // If forcing, checkout main/master first
-                    let fallback_branch = if repo.find_branch("main", BranchType::Local).is_ok() {
-                        "main"
-                    } else if repo.find_branch("master", BranchType::Local).is_ok() {
-                        "master"
-                    } else {
-                        return Err("Cannot delete the only branch".to_string());
-                    };
-                    
-                    let obj = repo.revparse_single(&format!("refs/heads/{}", fallback_branch))
-                        .map_err(|e| format!("Failed to find branch {}: {}", fallback_branch, e))?;
-                    repo.checkout_tree(&obj, None)
-                        .map_err(|e| format!("Failed to checkout {}: {}", fallback_branch, e))?;
-                    repo.set_head(&format!("refs/heads/{}", fallback_branch))
-                        .map_err(|e| format!("Failed to set HEAD to {}: {}", fallback_branch, e))?;
-                }
+        // Delete worktree first if requested
+        if delete_worktree {
+            if let Err(e) = git_service.delete_worktree(&branch_name) {
+                tracing::warn!("Failed to delete worktree (continuing): {}", e);
             }
         }
         
-        // Find and delete the branch
-        let mut branch = repo.find_branch(&branch_name, BranchType::Local)
-            .map_err(|e| format!("Failed to find branch '{}': {}", branch_name, e))?;
-        
-        // Try to delete the branch
-        let delete_result = branch.delete();
-        
-        if let Err(e) = delete_result {
-            if force {
-                // If force delete requested and regular delete failed, use git command
-                let output = std::process::Command::new("git")
-                    .arg("-C")
-                    .arg(&repo_path)
-                    .arg("branch")
-                    .arg("-D")  // Force delete
-                    .arg(&branch_name)
-                    .output()
-                    .map_err(|e| format!("Failed to run git command: {}", e))?;
-                
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    return Err(format!("Failed to force delete branch '{}': {}", branch_name, stderr));
-                }
-            } else {
-                return Err(format!("Failed to delete branch '{}': {}. Use force deletion to delete unmerged branches.", branch_name, e));
-            }
+        // Only delete the branch if requested
+        if delete_branch {
+            git_service.delete_branch(&branch_name, force)
+                .map_err(|e| format!("Failed to delete branch: {}", e))?;
         }
         
-        tracing::info!("Successfully deleted branch '{}'", branch_name);
         Ok::<(), String>(())
     })
     .await
     .map_err(|e| {
-        tracing::error!("Failed to delete branch (task error): {}", e);
+        tracing::error!("Failed to execute branch deletion: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     
     match result {
         Ok(()) => Ok(ResponseJson(ApiResponse::success(()))),
         Err(e) => {
-            tracing::error!("Failed to delete branch: {}", e);
+            tracing::error!("Branch deletion error: {}", e);
             Ok(ResponseJson(ApiResponse::error(&e)))
         }
     }

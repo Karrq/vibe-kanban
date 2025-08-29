@@ -1199,20 +1199,156 @@ impl GitService {
         result
     }
 
-    /// Delete a branch from the repository
-    pub fn delete_branch(&self, branch_name: &str) -> Result<(), GitServiceError> {
+    /// Delete a branch from the repository with optional force delete
+    pub fn delete_branch(&self, branch_name: &str, force: bool) -> Result<(), GitServiceError> {
         let repo = self.open_repo()?;
+        
+        // Check if branch is currently checked out in main working tree
+        if let Ok(head) = repo.head() {
+            if let Some(current_branch) = head.shorthand() {
+                if current_branch == branch_name {
+                    if !force {
+                        return Err(GitServiceError::Git(GitError::from_str(&format!(
+                            "Cannot delete branch '{}' as it is currently checked out. Use force deletion to override.", 
+                            branch_name
+                        ))));
+                    }
+                    // If forcing, checkout main/master first
+                    let fallback_branch = if repo.find_branch("main", BranchType::Local).is_ok() {
+                        "main"
+                    } else if repo.find_branch("master", BranchType::Local).is_ok() {
+                        "master"
+                    } else {
+                        return Err(GitServiceError::Git(GitError::from_str("Cannot delete the only branch")));
+                    };
+                    
+                    let obj = repo.revparse_single(&format!("refs/heads/{}", fallback_branch))
+                        .map_err(|e| GitServiceError::Git(e))?;
+                    repo.checkout_tree(&obj, None)
+                        .map_err(|e| GitServiceError::Git(e))?;
+                    repo.set_head(&format!("refs/heads/{}", fallback_branch))
+                        .map_err(|e| GitServiceError::Git(e))?;
+                }
+            }
+        }
+        
+        // Before force deleting, check if branch is checked out in any worktree
+        if force {
+            if let Ok(worktrees) = repo.worktrees() {
+                for worktree_name in worktrees.iter().flatten() {
+                    if let Ok(worktree) = repo.find_worktree(&worktree_name) {
+                        let worktree_path = worktree.path();
+                        if let Ok(wt_repo) = Repository::open(&worktree_path) {
+                            if let Ok(head) = wt_repo.head() {
+                                if head.is_branch() && head.shorthand() == Some(branch_name) {
+                                    debug!("Warning: Branch '{}' is checked out in worktree at {}. Force deletion may leave worktree in inconsistent state.", 
+                                           branch_name, worktree_path.display());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
         // Find the branch
         let mut branch = repo
             .find_branch(branch_name, BranchType::Local)
             .map_err(|_| GitServiceError::BranchNotFound(branch_name.to_string()))?;
         
-        // Delete the branch
-        branch.delete()
-            .map_err(|e| GitServiceError::Git(e))?;
+        // Try to delete the branch
+        let delete_result = branch.delete();
+        
+        if let Err(e) = delete_result {
+            if force {
+                // For force delete, we need to directly manipulate the reference
+                // git2's branch.delete() doesn't have a force option, but we can delete the ref directly
+                let ref_name = format!("refs/heads/{}", branch_name);
+                match repo.find_reference(&ref_name) {
+                    Ok(mut reference) => {
+                        reference.delete()
+                            .map_err(|e| GitServiceError::Git(GitError::from_str(&format!(
+                                "Failed to force delete branch '{}': {}", 
+                                branch_name, 
+                                e
+                            ))))?;
+                    }
+                    Err(e) => {
+                        return Err(GitServiceError::Git(GitError::from_str(&format!(
+                            "Failed to find reference for branch '{}': {}", 
+                            branch_name, 
+                            e
+                        ))));
+                    }
+                }
+            } else {
+                return Err(GitServiceError::Git(GitError::from_str(&format!(
+                    "Failed to delete branch '{}': {}. Use force deletion to delete unmerged branches.", 
+                    branch_name, 
+                    e
+                ))));
+            }
+        }
         
         info!("Successfully deleted branch: {}", branch_name);
+        Ok(())
+    }
+    
+    /// Delete a worktree associated with a branch
+    pub fn delete_worktree(&self, branch_name: &str) -> Result<(), GitServiceError> {
+        let repo = self.open_repo()?;
+        
+        // Find and remove the worktree
+        let worktrees = repo.worktrees()
+            .map_err(|e| GitServiceError::Git(e))?;
+            
+        for worktree_name in worktrees.iter().flatten() {
+            if let Ok(worktree) = repo.find_worktree(&worktree_name) {
+                let worktree_path = worktree.path().to_path_buf();
+                
+                // Check if this worktree is for our branch (handle detached HEAD properly)
+                let is_target_branch = if let Ok(wt_repo) = Repository::open(&worktree_path) {
+                    if let Ok(head) = wt_repo.head() {
+                        // Only check if HEAD is a branch (not detached)
+                        if head.is_branch() {
+                            head.shorthand() == Some(branch_name)
+                        } else {
+                            // For detached HEAD, we don't match by branch name
+                            false
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                
+                if is_target_branch {
+                    // Prune first, then remove directory if still present (safer order)
+                    let mut prune_opts = git2::WorktreePruneOptions::new();
+                    prune_opts.valid(true);  // Prune even if the worktree is valid
+                    prune_opts.working_tree(true);  // Prune the working tree
+                    
+                    // Try to prune the worktree metadata first
+                    if let Err(e) = worktree.prune(Some(&mut prune_opts)) {
+                        debug!("Failed to prune worktree metadata: {}", e);
+                        // Continue to try removing directory anyway
+                    }
+                    
+                    // Remove the worktree directory if it still exists
+                    if worktree_path.exists() {
+                        if let Err(e) = std::fs::remove_dir_all(&worktree_path) {
+                            debug!("Failed to remove worktree directory: {}. It may be in use.", e);
+                            return Err(GitServiceError::IoError(e));
+                        }
+                    }
+                    
+                    info!("Successfully deleted worktree for branch: {}", branch_name);
+                    break;
+                }
+            }
+        }
+        
         Ok(())
     }
 
