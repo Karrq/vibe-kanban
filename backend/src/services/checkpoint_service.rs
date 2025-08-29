@@ -141,7 +141,7 @@ impl CheckpointService {
         // Check if tree has changed
         let mut last_tree_oid = self.last_tree_oid.lock().unwrap();
         if Some(tree_oid) == *last_tree_oid {
-            debug!("Skipping checkpoint - no changes detected");
+            debug!("Skipping checkpoint at message {} - no changes detected", message_index);
             return Ok(None);
         }
 
@@ -150,6 +150,11 @@ impl CheckpointService {
 
         // Create checkpoint reference name using message index
         let checkpoint_ref = format!("{}{}", self.attempt_ref_prefix, message_index);
+        
+        debug!(
+            "Checkpoint state captured for message {}: tree={}, parent={:?}, ref={}",
+            message_index, tree_oid, parent_oid, checkpoint_ref
+        );
 
         let elapsed = start.elapsed();
         debug!(
@@ -184,6 +189,24 @@ impl CheckpointService {
             // Create a minimal signature
             let sig = Signature::now("vibe-kanban", "checkpoint@vibe-kanban.local")?;
 
+            // Log what we're about to do
+            debug!(
+                "Creating checkpoint commit: ref={}, tree={}, parent={:?}, msg_index={}",
+                &data.checkpoint_ref,
+                data.tree_oid,
+                data.parent_oid,
+                data.message_index
+            );
+
+            // Check if the reference already exists (shouldn't happen)
+            if let Ok(existing_ref) = repo.find_reference(&data.checkpoint_ref) {
+                let existing_oid = existing_ref.target();
+                tracing::warn!(
+                    "WARNING: Checkpoint reference {} already exists pointing to {:?}",
+                    &data.checkpoint_ref, existing_oid
+                );
+            }
+
             let parent = data
                 .parent_oid
                 .map(|oid| repo.find_commit(oid))
@@ -194,23 +217,61 @@ impl CheckpointService {
                 .map(|commit| &commit[..])
                 .unwrap_or_else(|| &[][..]);
 
-            // Create the checkpoint commit
-            repo.commit(
+            // Log parent information
+            if let Some(parent_oid) = data.parent_oid {
+                debug!("Using parent commit: {}", parent_oid);
+            } else {
+                debug!("Creating checkpoint without parent (initial commit)");
+            }
+
+            // Create the checkpoint commit with detailed error handling
+            match repo.commit(
                 Some(&data.checkpoint_ref),
                 &sig,
                 &sig,
                 ".", // Minimal commit message
                 &tree,
                 &parent,
-            )?;
-
-            let elapsed = start.elapsed();
-            info!(
-                "Created checkpoint commit for message {} at {} ({:.2}ms)",
-                data.message_index,
-                &data.checkpoint_ref,
-                elapsed.as_secs_f64() * 1000.0
-            );
+            ) {
+                Ok(commit_oid) => {
+                    let elapsed = start.elapsed();
+                    info!(
+                        "Successfully created checkpoint commit {} for message {} at {} ({:.2}ms)",
+                        commit_oid,
+                        data.message_index,
+                        &data.checkpoint_ref,
+                        elapsed.as_secs_f64() * 1000.0
+                    );
+                }
+                Err(e) => {
+                    // Log detailed error context
+                    tracing::error!(
+                        "Failed to create checkpoint commit at ref {}: {:?} (class={:?}, code={:?})",
+                        &data.checkpoint_ref,
+                        e.message(),
+                        e.class(),
+                        e.code()
+                    );
+                    
+                    // Additional debugging info for specific errors
+                    if e.class() == git2::ErrorClass::Object && e.code() == git2::ErrorCode::Modified {
+                        tracing::error!(
+                            "This error typically means the parent ({:?}) is not the current tip of reference {}",
+                            data.parent_oid,
+                            &data.checkpoint_ref
+                        );
+                        
+                        // Check what the reference currently points to
+                        if let Ok(existing_ref) = repo.find_reference(&data.checkpoint_ref) {
+                            if let Some(oid) = existing_ref.target() {
+                                tracing::error!("Current reference {} points to: {}", &data.checkpoint_ref, oid);
+                            }
+                        }
+                    }
+                    
+                    return Err(CheckpointError::Git(e));
+                }
+            }
 
             Ok::<(), CheckpointError>(())
         })
