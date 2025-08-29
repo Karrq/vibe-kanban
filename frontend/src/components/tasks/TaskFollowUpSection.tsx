@@ -160,9 +160,11 @@ export function TaskFollowUpSection() {
                 if (followUpError) setFollowUpError(null);
               }}
               onKeyDown={(e) => {
+                // Cmd+Enter (Mac) or Ctrl+Enter (Windows/Linux) sends normally
+                // Cmd+Shift+Enter or Ctrl+Shift+Enter sends with restart_session
                 if (
                   e.key === 'Enter' &&
-                  (e.metaKey || e.ctrlKey || e.shiftKey)
+                  (e.metaKey || e.ctrlKey)
                 ) {
                   e.preventDefault();
                   if (
