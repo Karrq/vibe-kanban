@@ -305,7 +305,7 @@ export function ProcessesDialog({ projectId, open, onClose, onProcessKilled }: P
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h3 className="font-medium text-sm">
-                                  {(process.process_type === 'devserver' || process.process_type === 'codingagent') && process.task_title ? (
+                                  {process.task_title ? (
                                     <>{process.task_title}</>
                                   ) : (
                                     process.process_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
