@@ -94,6 +94,8 @@ export type CommitSignature = { key_id: string, fingerprint: string | null, sign
 
 export type FileChangeMetadata = { filename: string, old_filename: string | null, additions: bigint, deletions: bigint, status: string, chunks: Array<DiffChunk>, };
 
+export type CommitSignature = { key_id: string, fingerprint: string | null, signer_name: string | null, signer_email: string | null, status: string, };
+
 export type CommitDetails = { sha: string, message: string, author: CommitAuthor | null, files: Array<FileChangeMetadata>, signature: CommitSignature | null, };
 
 export type ProcessLogsResponse = { id: string, process_type: ExecutionProcessType, command: string, executor_type: string | null, status: ExecutionProcessStatus, normalized_conversation: NormalizedConversation, };

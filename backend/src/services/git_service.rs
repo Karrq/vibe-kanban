@@ -393,6 +393,51 @@ impl GitService {
         let worktree_repo = Repository::open(worktree_path)?;
         let main_repo = self.open_repo()?;
 
+        // Check if worktree has uncommitted changes and commit them if needed
+        if let Err(_) = self.check_worktree_clean(&worktree_repo) {
+            tracing::info!("Worktree has uncommitted changes, auto-committing before rebase");
+            
+            // Stage all changes (both tracked and new files)
+            let mut index = worktree_repo.index()?;
+            
+            // Add all files in the working directory
+            index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)?;
+            index.write()?;
+            
+            // Check if there are actually changes to commit after staging
+            let tree_id = index.write_tree()?;
+            let tree = worktree_repo.find_tree(tree_id)?;
+            
+            // Get the current HEAD commit
+            if let Ok(head) = worktree_repo.head() {
+                if let Ok(parent_commit) = head.peel_to_commit() {
+                    // Check if tree is different from parent
+                    if parent_commit.tree()?.id() != tree.id() {
+                        // Create a commit for the changes
+                        let signature = worktree_repo.signature()?;
+                        
+                        // Create a commit signer to handle GPG signing if configured
+                        let signer = CommitSigner::from_repo(&worktree_repo)
+                            .map_err(|e| GitServiceError::Git(git2::Error::from_str(&format!("Failed to initialize commit signer: {}", e))))?;
+                        
+                        let commit_message = "chore: auto-commit changes before rebase";
+                        // This will automatically sign the commit if GPG signing is configured
+                        let commit_id = signer.create_commit(
+                            &worktree_repo,
+                            Some("HEAD"),
+                            &signature,
+                            &signature,
+                            commit_message,
+                            &tree,
+                            &[&parent_commit],
+                        )?;
+                        
+                        tracing::info!("Auto-committed changes before rebase: {}", commit_id);
+                    }
+                }
+            }
+        }
+
         // Check if there's an existing rebase in progress and abort it
         let state = worktree_repo.state();
         if state == git2::RepositoryState::Rebase
@@ -1898,6 +1943,11 @@ impl GitService {
     ) -> Result<(), GitServiceError> {
         for &commit_id in commits {
             let commit = repo.find_commit(commit_id)?;
+
+            // Ensure the working directory and index are clean before cherry-pick
+            // This prevents "uncommitted changes would be overwritten" errors
+            let head = repo.head()?.peel_to_commit()?;
+            repo.reset(head.as_object(), git2::ResetType::Hard, None)?;
 
             // Cherry-pick the commit
             let mut cherrypick_opts = CherrypickOptions::new();
