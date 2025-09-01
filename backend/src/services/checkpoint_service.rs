@@ -88,6 +88,13 @@ impl CheckpointService {
                 let commit = reference.peel_to_commit().ok()?;
                 let ref_name = reference.name()?;
                 
+                // Extract executor ID from the path: refs/vk-checkpoints/{attempt_id}/{executor_id}/msg-{index}
+                let parts: Vec<&str> = ref_name.split('/').collect();
+                if parts.len() < 5 {
+                    return None;
+                }
+                let executor_id = parts[parts.len() - 2].to_string();
+                
                 // Get the message index from the last part (msg-{index})
                 let msg_part = ref_name.split('/').last()?;
                 let index_str = msg_part.strip_prefix("msg-")?;
@@ -97,6 +104,7 @@ impl CheckpointService {
                     message_index: index,
                     commit_sha: commit.id().to_string(),
                     timestamp: commit.time().seconds(),
+                    executor_id,
                 })
             })
             .collect();
@@ -224,6 +232,13 @@ impl CheckpointService {
                 let commit = reference.peel_to_commit().ok()?;
                 let ref_name = reference.name()?;
                 
+                // Extract executor ID from the path: refs/vk-checkpoints/{attempt_id}/{executor_id}/msg-{index}
+                let parts: Vec<&str> = ref_name.split('/').collect();
+                if parts.len() < 5 {
+                    return None;
+                }
+                let executor_id = parts[parts.len() - 2].to_string();
+                
                 // Extract message index from ref name
                 let index_str = ref_name.strip_prefix(&self.attempt_ref_prefix)?;
                 let index = index_str.parse::<usize>().ok()?;
@@ -232,6 +247,7 @@ impl CheckpointService {
                     message_index: index,
                     commit_sha: commit.id().to_string(),
                     timestamp: commit.time().seconds(),
+                    executor_id,
                 })
             })
             .collect();
@@ -244,11 +260,13 @@ impl CheckpointService {
 }
 
 /// Information about a checkpoint
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct CheckpointInfo {
     pub message_index: usize,
     pub commit_sha: String,
     pub timestamp: i64,
+    pub executor_id: String,  // Short executor ID from the checkpoint ref
 }
 
 /// Determines if a tool name represents a state-mutating operation

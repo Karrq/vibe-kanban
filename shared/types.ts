@@ -132,6 +132,8 @@ export type CheckpointResponse = { message_index: number, commit_sha: string, ti
 
 export type ForkResponse = { new_attempt_id: string, worktree_path: string, branch: string, checkpoint_used: CheckpointResponse, };
 
+export type CheckpointInfo = { message_index: number, commit_sha: string, timestamp: bigint, executor_id: string, };
+
 // Generated constants
 export const EXECUTOR_TYPES: string[] = [
     "echo",

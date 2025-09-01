@@ -96,6 +96,7 @@ impl ForkService {
             message_index: 0,
             commit_sha: target_commit.id().to_string(),
             timestamp: target_commit.time().seconds(),
+            executor_id: String::from("branch"),  // Special indicator for branch-based checkpoint
         })
     }
 
@@ -131,6 +132,7 @@ impl ForkService {
                         message_index: index,
                         commit_sha: commit.id().to_string(),
                         timestamp: commit.time().seconds(),
+                        executor_id: exec_id_short.clone(),
                     })
                 } else {
                     None

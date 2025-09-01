@@ -116,8 +116,6 @@ function Conversation() {
     [checkpoints]
   );
 
-  // Placeholder for handleForkConfirm - will be defined after allEntries
-
   // Find main and follow-up processes from allLogs
   const mainCodingAgentLog = useMemo(
     () =>
