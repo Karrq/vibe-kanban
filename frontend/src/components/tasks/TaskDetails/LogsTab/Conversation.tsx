@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import Prompt from './Prompt';
 import ConversationEntry from './ConversationEntry';
-import SessionRestartBanner from './SessionRestartBanner';
 import { ConversationEntryDisplayType } from '@/lib/types';
 
 function Conversation() {
@@ -89,22 +88,18 @@ function Conversation() {
     [attemptData.allLogs]
   );
 
-  // Check for session restarts - identifies processes that start new sessions
+  // Determine which processes should show session banners
   // This includes:
-  // 1. New executor processes (not follow-ups) after the first one
-  // 2. Follow-up processes with restart_session=true
-  const sessionRestarts = useMemo(() => {
-    const restarts = new Set<string>();
+  // 1. ALL executor processes (showing "Start of session")
+  // 2. Follow-up processes with restart_session=true (showing "Conversation restarted")
+  const sessionBanners = useMemo(() => {
+    const banners = new Map<string, 'executor' | 'restart'>();
     
-    // For each process, check if it should show a restart banner
-    allProcessLogs.forEach((log, index) => {
-      // Skip the very first process - it doesn't restart anything
-      if (index === 0) return;
-      
-      // Check if this is a new executor (not a follow-up)
-      // Any executor after the first one indicates a task restart
+    // For each process, check if it should show a banner
+    allProcessLogs.forEach((log) => {
+      // All executor processes show "Start of session" banner
       if (log.command === 'executor') {
-        restarts.add(String(log.id));
+        banners.set(String(log.id), 'executor');
         return;
       }
       
@@ -118,7 +113,7 @@ function Conversation() {
             const args = JSON.parse(processDetails.args);
             // The args contains the operation_params which has restart_session
             if (args && args.restart_session === true) {
-              restarts.add(String(log.id));
+              banners.set(String(log.id), 'restart');
             }
           } catch (e) {
             // If we can't parse args, don't show restart banner
@@ -128,7 +123,7 @@ function Conversation() {
       }
     });
     
-    return restarts;
+    return banners;
   }, [allProcessLogs, attemptData.processes]);
 
   // Flatten all entries, keeping process info for each entry
@@ -238,10 +233,9 @@ function Conversation() {
   const renderedVisibleEntries = useMemo(
     () =>
       visibleEntries.map((entry, index) => {
-        const showRestartBanner = entry.isFirstInProcess && sessionRestarts.has(entry.processId);
+        const bannerType = entry.isFirstInProcess ? sessionBanners.get(entry.processId) : undefined;
         return (
           <div key={entry.entry.timestamp || index}>
-            {showRestartBanner && <SessionRestartBanner />}
             <ConversationEntry
               idx={index}
               item={entry}
@@ -249,6 +243,7 @@ function Conversation() {
               visibleEntriesLength={visibleEntries.length}
               runningProcessDetails={attemptData.runningProcessDetails}
               sessionIdToCommand={sessionIdToCommand}
+              bannerType={bannerType}
             />
           </div>
         );
@@ -258,7 +253,7 @@ function Conversation() {
       handleConversationUpdate,
       attemptData.runningProcessDetails,
       sessionIdToCommand,
-      sessionRestarts,
+      sessionBanners,
     ]
   );
 
@@ -272,12 +267,11 @@ function Conversation() {
       const showPrompt =
         log.normalized_conversation.prompt &&
         (isFollowUp || !allEntries.some((e) => e.processId === String(log.id)));
-      const showRestartBanner = sessionRestarts.has(String(log.id));
+      const bannerType = sessionBanners.get(String(log.id));
       return (
         <div key={String(log.id)} className={i > 0 ? 'mt-8' : ''}>
-          {showRestartBanner && <SessionRestartBanner />}
           {showPrompt && (
-            <Prompt prompt={log.normalized_conversation.prompt || ''} />
+            <Prompt prompt={log.normalized_conversation.prompt || ''} bannerType={bannerType} />
           )}
           <NormalizedConversationViewer
             executionProcess={runningProcess}
@@ -295,7 +289,7 @@ function Conversation() {
     handleConversationUpdate,
     allEntries,
     visibleCount,
-    sessionRestarts,
+    sessionBanners,
   ]);
 
   // Check if we should show the status banner - only if the most recent process failed/stopped

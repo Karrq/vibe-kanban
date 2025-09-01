@@ -1,9 +1,19 @@
 import MarkdownRenderer from '@/components/ui/markdown-renderer';
 import { Hammer } from 'lucide-react';
+import SessionRestartBanner from './SessionRestartBanner';
 
-const Prompt = ({ prompt, showSeparator = true }: { prompt: string; showSeparator?: boolean }) => {
+const Prompt = ({ 
+  prompt, 
+  showSeparator = true,
+  bannerType
+}: { 
+  prompt: string; 
+  showSeparator?: boolean;
+  bannerType?: 'executor' | 'restart';
+}) => {
   return (
     <div>
+      {bannerType && <SessionRestartBanner type={bannerType} />}
       <div className="flex items-start gap-3 mb-4">
         <div className="flex-shrink-0 mt-1">
           <Hammer className="h-4 w-4 text-blue-600" />

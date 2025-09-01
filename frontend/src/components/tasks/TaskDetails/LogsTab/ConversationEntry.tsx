@@ -12,6 +12,7 @@ type Props = {
   visibleEntriesLength: number;
   runningProcessDetails: Record<string, ExecutionProcess>;
   sessionIdToCommand?: Record<string, string>;
+  bannerType?: 'executor' | 'restart';
 };
 
 const ConversationEntry = ({
@@ -21,6 +22,7 @@ const ConversationEntry = ({
   visibleEntriesLength,
   runningProcessDetails,
   sessionIdToCommand,
+  bannerType,
 }: Props) => {
   // Show prompt only for the first entry of each process
   // For follow-up processes: show at the start of each follow-up
@@ -33,7 +35,7 @@ const ConversationEntry = ({
     if (runningProcess) {
       return (
         <div key={item.entry.timestamp || idx}>
-          {showPrompt && <Prompt prompt={item.processPrompt || ''} />}
+          {showPrompt && <Prompt prompt={item.processPrompt || ''} bannerType={bannerType} />}
           <NormalizedConversationViewer
             executionProcess={runningProcess}
             onConversationUpdate={handleConversationUpdate}
@@ -47,7 +49,7 @@ const ConversationEntry = ({
   } else {
     return (
       <div key={item.entry.timestamp || idx}>
-        {showPrompt && <Prompt prompt={item.processPrompt || ''} />}
+        {showPrompt && <Prompt prompt={item.processPrompt || ''} bannerType={bannerType} />}
         <DisplayConversationEntry
           entry={item.entry}
           index={idx}
