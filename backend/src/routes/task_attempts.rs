@@ -61,6 +61,7 @@ pub struct FollowUpResponse {
 #[derive(Debug, Deserialize, Serialize, TS)]
 #[ts(export)]
 pub struct ForkTaskAttemptRequest {
+    pub execution_process_id: Uuid,
     pub message_index: usize,
 }
 
@@ -1130,9 +1131,9 @@ pub async fn fork_task_attempt(
         }
     };
 
-    // Find the last checkpoint at or before the requested message
+    // Find the last checkpoint at or before the requested message for the specific execution process
     let checkpoint_result = fork_service
-        .find_last_checkpoint_before(request.message_index)
+        .find_last_checkpoint_before(request.execution_process_id, request.message_index)
         .and_then(|maybe| match maybe {
             Some(cp) => Ok(cp),
             None => fork_service.checkpoint_from_branch(task_attempt.base_branch.as_str()),

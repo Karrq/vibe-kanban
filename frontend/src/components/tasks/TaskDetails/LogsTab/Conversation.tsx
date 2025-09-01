@@ -116,41 +116,7 @@ function Conversation() {
     [checkpoints]
   );
 
-  // Handle fork confirmation
-  const handleForkConfirm = useCallback(async () => {
-    console.log('handleForkConfirm called', { projectId, taskId, attemptId, selectedForkIndex });
-    
-    if (!projectId || !taskId || !attemptId || selectedForkIndex === null) {
-      console.error('Missing required parameters for fork', { projectId, taskId, attemptId, selectedForkIndex });
-      return;
-    }
-
-    setForkLoading(true);
-    try {
-      console.log('Attempting to fork at message index:', selectedForkIndex);
-      const result = await checkpointApi.fork(
-        projectId,
-        taskId,
-        attemptId,
-        selectedForkIndex
-      );
-      
-      console.log('Fork created successfully:', result);
-      toast.success('Fork created successfully');
-      
-      // Navigate to the new attempt
-      navigate(`/projects/${projectId}/tasks/${taskId}/attempts/${result.new_attempt_id}`);
-    } catch (error: any) {
-      console.error('Failed to create fork:', error);
-      // More detailed error message
-      const errorMessage = error?.message || error?.response?.data?.message || 'Failed to create fork';
-      toast.error(errorMessage);
-    } finally {
-      setForkLoading(false);
-      setForkDialogOpen(false);
-      setSelectedForkIndex(null);
-    }
-  }, [projectId, taskId, attemptId, selectedForkIndex, navigate]);
+  // Placeholder for handleForkConfirm - will be defined after allEntries
 
   // Find main and follow-up processes from allLogs
   const mainCodingAgentLog = useMemo(
@@ -228,6 +194,73 @@ function Conversation() {
       console.log('No real checkpoints found, fork will preserve conversation only');
     }
   }, [checkpointsLoading, checkpoints.length, allEntries.length]);
+
+  // Handle fork confirmation (moved here after allEntries is defined)
+  const handleForkConfirm = useCallback(async () => {
+    console.log('handleForkConfirm called', { projectId, taskId, attemptId, selectedForkIndex });
+    
+    if (!projectId || !taskId || !attemptId || selectedForkIndex === null) {
+      console.error('Missing required parameters for fork', { projectId, taskId, attemptId, selectedForkIndex });
+      return;
+    }
+
+    // Find which process this message belongs to and calculate local index
+    let processId: string | null = null;
+    let localMessageIndex = 0;
+    let cumulativeIndex = 0;
+
+    for (const entry of allEntries) {
+      if (cumulativeIndex === selectedForkIndex) {
+        processId = entry.processId;
+        // Calculate local index within this process
+        localMessageIndex = allEntries
+          .slice(0, cumulativeIndex + 1)
+          .filter(e => e.processId === processId)
+          .length - 1; // 0-based index
+        break;
+      }
+      cumulativeIndex++;
+    }
+
+    if (!processId) {
+      console.error('Could not find process for message index:', selectedForkIndex);
+      toast.error('Could not determine which process this message belongs to');
+      return;
+    }
+
+    console.log('Fork details:', { 
+      globalIndex: selectedForkIndex, 
+      processId, 
+      localMessageIndex 
+    });
+
+    setForkLoading(true);
+    try {
+      console.log('Attempting to fork at local message index:', localMessageIndex, 'in process:', processId);
+      const result = await checkpointApi.fork(
+        projectId,
+        taskId,
+        attemptId,
+        processId,
+        localMessageIndex
+      );
+      
+      console.log('Fork created successfully:', result);
+      toast.success('Fork created successfully');
+      
+      // Navigate to the new attempt
+      navigate(`/projects/${projectId}/tasks/${taskId}/attempts/${result.new_attempt_id}`);
+    } catch (error: any) {
+      console.error('Failed to create fork:', error);
+      // More detailed error message
+      const errorMessage = error?.message || error?.response?.data?.message || 'Failed to create fork';
+      toast.error(errorMessage);
+    } finally {
+      setForkLoading(false);
+      setForkDialogOpen(false);
+      setSelectedForkIndex(null);
+    }
+  }, [projectId, taskId, attemptId, selectedForkIndex, allEntries, navigate]);
 
   // Paginate: show only the last visibleCount entries
   const visibleEntries = useMemo(

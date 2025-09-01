@@ -670,13 +670,17 @@ export const checkpointApi = {
     projectId: string,
     taskId: string,
     attemptId: string,
+    executionProcessId: string,
     messageIndex: number
   ): Promise<ForkResponse> => {
     const response = await makeRequest(
       `/api/projects/${projectId}/tasks/${taskId}/attempts/${attemptId}/fork`,
       {
         method: 'POST',
-        body: JSON.stringify({ message_index: messageIndex }),
+        body: JSON.stringify({ 
+          execution_process_id: executionProcessId,
+          message_index: messageIndex 
+        }),
       }
     );
     return handleApiResponse<ForkResponse>(response);

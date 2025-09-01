@@ -99,16 +99,20 @@ impl ForkService {
         })
     }
 
-    /// Find the last checkpoint at or before the given message index
+    /// Find the last checkpoint at or before the given message index for a specific execution process
     pub fn find_last_checkpoint_before(
         &self,
+        execution_process_id: Uuid,
         message_index: usize,
     ) -> Result<Option<CheckpointInfo>, ForkServiceError> {
         let repo = Repository::open(&self.worktree_path)?;
 
-        // Search across all execution subdirectories for this attempt
-        // Pattern: refs/vk-checkpoints/{attempt_id_short}/*/msg-*
-        let glob_pattern = format!("refs/vk-checkpoints/{}/**/msg-*", self.attempt_id_short);
+        // Get the short exec ID to match the checkpoint ref format
+        let exec_id_short = execution_process_id.to_string().split('-').next().unwrap_or("unknown").to_string();
+        
+        // Search in the specific execution process's checkpoint namespace
+        // Pattern: refs/vk-checkpoints/{attempt_id_short}/{exec_id_short}/msg-*
+        let glob_pattern = format!("refs/vk-checkpoints/{}/{}/msg-*", self.attempt_id_short, exec_id_short);
         
         let best_checkpoint = repo.references_glob(&glob_pattern)?
             .filter_map(Result::ok)
