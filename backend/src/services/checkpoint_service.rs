@@ -126,24 +126,22 @@ impl CheckpointService {
             
             // Get HEAD info
             let head = repo.head()?;
-            let head_tree = head.peel_to_tree()?;
             let parent_oid = head.peel_to_commit()?.id();
             
-            // Create a new in-memory index, pre-populated from HEAD
-            let mut temp_index = git2::Index::new()?;
-            temp_index.read_tree(&head_tree)?;
+            // Get the repository's index and use it to create a snapshot
+            let mut index = repo.index()?;
             
             // CRITICAL SECTION - must be fast and synchronous
-            // Update the temp index with all changes from the worktree
-            temp_index.update_all(&["."], None)?;
+            // Update the index with all changes from the worktree
+            index.update_all(&["."], None)?;
             
             // Add any new untracked files
             let mut add_opts = git2::IndexAddOption::DEFAULT;
             add_opts.insert(git2::IndexAddOption::CHECK_PATHSPEC);
-            temp_index.add_all(&["."], add_opts, None)?;
+            index.add_all(&["."], add_opts, None)?;
             
             // Write the index to a tree object
-            let tree_oid = temp_index.write_tree_to(&repo)?;
+            let tree_oid = index.write_tree()?;
             
             (tree_oid, parent_oid)
         };
