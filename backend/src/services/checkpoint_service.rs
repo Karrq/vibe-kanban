@@ -72,8 +72,6 @@ impl CheckpointService {
         worktree_path: &str,
         attempt_id: Uuid,
     ) -> Result<Vec<CheckpointInfo>, CheckpointError> {
-        let mut checkpoints = Vec::new();
-        
         // Open the repository
         let repo = Repository::open(worktree_path)?;
         
@@ -84,30 +82,24 @@ impl CheckpointService {
         // Pattern: refs/vk-checkpoints/{attempt_id_short}/*/msg-*
         let glob_pattern = format!("refs/vk-checkpoints/{}/**/msg-*", attempt_id_short);
         
-        repo.references_glob(&glob_pattern)?
+        let mut checkpoints: Vec<CheckpointInfo> = repo.references_glob(&glob_pattern)?
             .filter_map(Result::ok)
-            .for_each(|reference| {
-                if let Ok(commit) = reference.peel_to_commit() {
-                    if let Some(ref_name) = reference.name() {
-                        // Parse the ref name: refs/vk-checkpoints/{attempt_id}/{exec_id}/msg-{index}
-                        let parts: Vec<&str> = ref_name.split('/').collect();
-                        if parts.len() >= 6 && parts[4] == attempt_id_short.as_str() {
-                            // Get the message index from the last part (msg-{index})
-                            if let Some(msg_part) = parts.last() {
-                                if let Some(index_str) = msg_part.strip_prefix("msg-") {
-                                    if let Ok(index) = index_str.parse::<usize>() {
-                                        checkpoints.push(CheckpointInfo {
-                                            message_index: index,
-                                            commit_sha: commit.id().to_string(),
-                                            timestamp: commit.time().seconds(),
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            });
+            .filter_map(|reference| {
+                let commit = reference.peel_to_commit().ok()?;
+                let ref_name = reference.name()?;
+                
+                // Get the message index from the last part (msg-{index})
+                let msg_part = ref_name.split('/').last()?;
+                let index_str = msg_part.strip_prefix("msg-")?;
+                let index = index_str.parse::<usize>().ok()?;
+                
+                Some(CheckpointInfo {
+                    message_index: index,
+                    commit_sha: commit.id().to_string(),
+                    timestamp: commit.time().seconds(),
+                })
+            })
+            .collect();
         
         // Sort by message index
         checkpoints.sort_by_key(|c| c.message_index);
@@ -222,30 +214,27 @@ impl CheckpointService {
     
     /// List all checkpoints for this execution process
     pub fn list_checkpoints(&self) -> Result<Vec<CheckpointInfo>, CheckpointError> {
-        let mut checkpoints = Vec::new();
-        
         // Open the repository
         let repo = Repository::open(&self.worktree_path)?;
         
         // Iterate through all refs matching our prefix (specific to this execution process)
-        repo.references_glob(&format!("{}*", self.attempt_ref_prefix))?
+        let mut checkpoints: Vec<CheckpointInfo> = repo.references_glob(&format!("{}*", self.attempt_ref_prefix))?
             .filter_map(Result::ok)
-            .for_each(|reference| {
-                if let Ok(commit) = reference.peel_to_commit() {
-                    // Extract message index from ref name
-                    if let Some(ref_name) = reference.name() {
-                        if let Some(index_str) = ref_name.strip_prefix(&self.attempt_ref_prefix) {
-                            if let Ok(index) = index_str.parse::<usize>() {
-                                checkpoints.push(CheckpointInfo {
-                                    message_index: index,
-                                    commit_sha: commit.id().to_string(),
-                                    timestamp: commit.time().seconds(),
-                                });
-                            }
-                        }
-                    }
-                }
-            });
+            .filter_map(|reference| {
+                let commit = reference.peel_to_commit().ok()?;
+                let ref_name = reference.name()?;
+                
+                // Extract message index from ref name
+                let index_str = ref_name.strip_prefix(&self.attempt_ref_prefix)?;
+                let index = index_str.parse::<usize>().ok()?;
+                
+                Some(CheckpointInfo {
+                    message_index: index,
+                    commit_sha: commit.id().to_string(),
+                    timestamp: commit.time().seconds(),
+                })
+            })
+            .collect();
         
         // Sort by message index
         checkpoints.sort_by_key(|c| c.message_index);

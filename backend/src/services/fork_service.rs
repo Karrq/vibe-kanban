@@ -106,51 +106,33 @@ impl ForkService {
     ) -> Result<Option<CheckpointInfo>, ForkServiceError> {
         let repo = Repository::open(&self.worktree_path)?;
 
-        let mut best_checkpoint: Option<CheckpointInfo> = None;
-
         // Search across all execution subdirectories for this attempt
         // Pattern: refs/vk-checkpoints/{attempt_id_short}/*/msg-*
         let glob_pattern = format!("refs/vk-checkpoints/{}/**/msg-*", self.attempt_id_short);
         
-        repo.references_glob(&glob_pattern)?
+        let best_checkpoint = repo.references_glob(&glob_pattern)?
             .filter_map(Result::ok)
-            .for_each(|reference| {
-                if let Ok(commit) = reference.peel_to_commit() {
-                    // Extract message index from ref name
-                    if let Some(ref_name) = reference.name() {
-                        // Parse the ref name: refs/vk-checkpoints/{attempt_id}/{exec_id}/msg-{index}
-                        let parts: Vec<&str> = ref_name.split('/').collect();
-                        if parts.len() >= 6 && parts[4] == self.attempt_id_short.as_str() {
-                            // Get the message index from the last part (msg-{index})
-                            if let Some(msg_part) = parts.last() {
-                                if let Some(index_str) = msg_part.strip_prefix("msg-") {
-                                    if let Ok(index) = index_str.parse::<usize>() {
-                                        // Only consider checkpoints at or before the requested index
-                                        if index <= message_index {
-                                            let checkpoint = CheckpointInfo {
-                                                message_index: index,
-                                                commit_sha: commit.id().to_string(),
-                                                timestamp: commit.time().seconds(),
-                                            };
-
-                                            // Update best checkpoint if this one is closer to target
-                                            match &best_checkpoint {
-                                                None => best_checkpoint = Some(checkpoint),
-                                                Some(current_best) => {
-                                                    if checkpoint.message_index > current_best.message_index
-                                                    {
-                                                        best_checkpoint = Some(checkpoint);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            .filter_map(|reference| {
+                let commit = reference.peel_to_commit().ok()?;
+                let ref_name = reference.name()?;
+                
+                // Get the message index from the last part (msg-{index})
+                let msg_part = ref_name.split('/').last()?;
+                let index_str = msg_part.strip_prefix("msg-")?;
+                let index = index_str.parse::<usize>().ok()?;
+                
+                // Only consider checkpoints at or before the requested index
+                if index <= message_index {
+                    Some(CheckpointInfo {
+                        message_index: index,
+                        commit_sha: commit.id().to_string(),
+                        timestamp: commit.time().seconds(),
+                    })
+                } else {
+                    None
                 }
-            });
+            })
+            .max_by_key(|checkpoint| checkpoint.message_index);
 
         if let Some(ref checkpoint) = best_checkpoint {
             debug!(
