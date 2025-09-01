@@ -70,36 +70,23 @@ function Conversation() {
     }
   }, [shouldAutoScrollLogs]);
 
-  // Find all executor and follow-up processes from allLogs
+  // Get all coding agent processes (both executor and follow-up) in chronological order
   // Note: There can be multiple executor processes if the task was restarted
-  const mainCodingAgentLogs = useMemo(
-    () =>
-      attemptData.allLogs.filter(
-        (log) =>
-          log.process_type.toLowerCase() === 'codingagent' &&
-          log.command === 'executor'
-      ),
-    [attemptData.allLogs]
-  );
-  const followUpLogs = useMemo(
-    () =>
-      attemptData.allLogs.filter(
-        (log) =>
-          log.process_type.toLowerCase() === 'codingagent' &&
-          log.command === 'followup_executor'
-      ),
-    [attemptData.allLogs]
-  );
-
-  // Combine all logs in chronological order
   const allProcessLogs = useMemo(
     () => {
-      const allLogs = [...mainCodingAgentLogs, ...followUpLogs];
-      // Sort by ID or timestamp to maintain chronological order
-      // The logs should already be sorted from the backend, but ensure order
-      return allLogs;
+      // Filter for all coding agent processes
+      const codingAgentLogs = attemptData.allLogs.filter(
+        (log) =>
+          log.process_type.toLowerCase() === 'codingagent' &&
+          (log.command === 'executor' || log.command === 'followup_executor')
+      );
+      
+      // The logs from the backend should already be in chronological order
+      // (sorted by created_at), but we'll keep them as-is
+      // This ensures proper ordering: executor1 -> followups -> executor2 -> more followups
+      return codingAgentLogs;
     },
-    [mainCodingAgentLogs, followUpLogs]
+    [attemptData.allLogs]
   );
 
   // Check for session restarts - currently disabled due to backend limitation
