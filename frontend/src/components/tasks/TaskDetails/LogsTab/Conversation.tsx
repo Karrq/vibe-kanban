@@ -99,23 +99,21 @@ function Conversation() {
     [mainCodingAgentLog, followUpLogs]
   );
 
-  // Check for session restarts - when a follow-up has different/empty session_id
+  // Check for session restarts - when a follow-up has empty or null session_id
+  // This indicates the user explicitly requested a restart (Shift+Click or Cmd/Ctrl+Shift+Enter)
   const sessionRestarts = useMemo(() => {
     const restarts = new Set<string>();
-    allProcessLogs.forEach((log, index) => {
-      if (!log || index === 0) return;
-      const prevLog = allProcessLogs[index - 1];
-      if (!prevLog) return;
+    allProcessLogs.forEach((log) => {
+      if (!log) return;
       
       // Check if this is a follow-up that started a new session
       const isFollowUp = log.command === 'followup_executor';
-      const prevSessionId = prevLog.normalized_conversation.session_id;
-      const currSessionId = log.normalized_conversation.session_id;
+      const sessionId = log.normalized_conversation.session_id;
       
       // A restart occurs when:
       // 1. It's a follow-up AND
-      // 2. Either has no session_id OR has different session_id from previous
-      if (isFollowUp && (!currSessionId || (prevSessionId && currSessionId !== prevSessionId))) {
+      // 2. Session ID is empty string or null (backend sends empty string when restart_session=true)
+      if (isFollowUp && (!sessionId || sessionId === '')) {
         restarts.add(String(log.id));
       }
     });
