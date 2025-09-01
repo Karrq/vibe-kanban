@@ -1482,12 +1482,11 @@ impl TaskAttempt {
             .await?
             .ok_or(TaskAttemptError::TaskNotFound)?;
 
-        // Create checkpoint service
-        let checkpoint_service =
-            crate::services::CheckpointService::new(&attempt.worktree_path, attempt_id)?;
-
-        // List checkpoints
-        checkpoint_service.list_checkpoints().map_err(|e| {
+        // List all checkpoints across all execution processes for this attempt
+        crate::services::CheckpointService::list_all_checkpoints_for_attempt(
+            &attempt.worktree_path, 
+            attempt_id
+        ).map_err(|e| {
             TaskAttemptError::ValidationError(format!("Failed to list checkpoints: {}", e))
         })
     }

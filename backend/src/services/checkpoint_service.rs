@@ -45,17 +45,18 @@ pub struct CheckpointService {
 
 impl CheckpointService {
     /// Create a new CheckpointService for a worktree
-    pub fn new(worktree_path: &str, attempt_id: Uuid) -> Result<Self, CheckpointError> {
+    pub fn new(worktree_path: &str, attempt_id: Uuid, execution_process_id: Uuid) -> Result<Self, CheckpointError> {
         // Verify the repository exists
         let _repo = Repository::open(worktree_path)?;
         
-        // Format the ref prefix for this attempt
+        // Format the ref prefix for this attempt and execution process
         let attempt_id_short = attempt_id.to_string().split('-').next().unwrap_or("unknown").to_string();
-        let attempt_ref_prefix = format!("refs/vk-checkpoints/{}/msg-", attempt_id_short);
+        let exec_id_short = execution_process_id.to_string().split('-').next().unwrap_or("unknown").to_string();
+        let attempt_ref_prefix = format!("refs/vk-checkpoints/{}/{}/msg-", attempt_id_short, exec_id_short);
         
         info!(
-            "Initialized CheckpointService for attempt {} at {}",
-            attempt_id_short, worktree_path
+            "Initialized CheckpointService for attempt {} exec {} at {}",
+            attempt_id_short, exec_id_short, worktree_path
         );
         
         Ok(Self {
@@ -63,6 +64,55 @@ impl CheckpointService {
             attempt_ref_prefix,
             last_tree_oid: Mutex::new(None),
         })
+    }
+    
+    /// List all checkpoints for all execution processes within an attempt
+    /// This is a static method that doesn't require an execution_process_id
+    pub fn list_all_checkpoints_for_attempt(
+        worktree_path: &str,
+        attempt_id: Uuid,
+    ) -> Result<Vec<CheckpointInfo>, CheckpointError> {
+        let mut checkpoints = Vec::new();
+        
+        // Open the repository
+        let repo = Repository::open(worktree_path)?;
+        
+        // Format the short attempt ID
+        let attempt_id_short = attempt_id.to_string().split('-').next().unwrap_or("unknown").to_string();
+        
+        // Search across all execution subdirectories for this attempt
+        // Pattern: refs/vk-checkpoints/{attempt_id_short}/*/msg-*
+        let glob_pattern = format!("refs/vk-checkpoints/{}/**/msg-*", attempt_id_short);
+        
+        repo.references_glob(&glob_pattern)?
+            .filter_map(Result::ok)
+            .for_each(|reference| {
+                if let Ok(commit) = reference.peel_to_commit() {
+                    if let Some(ref_name) = reference.name() {
+                        // Parse the ref name: refs/vk-checkpoints/{attempt_id}/{exec_id}/msg-{index}
+                        let parts: Vec<&str> = ref_name.split('/').collect();
+                        if parts.len() >= 6 && parts[4] == attempt_id_short.as_str() {
+                            // Get the message index from the last part (msg-{index})
+                            if let Some(msg_part) = parts.last() {
+                                if let Some(index_str) = msg_part.strip_prefix("msg-") {
+                                    if let Ok(index) = index_str.parse::<usize>() {
+                                        checkpoints.push(CheckpointInfo {
+                                            message_index: index,
+                                            commit_sha: commit.id().to_string(),
+                                            timestamp: commit.time().seconds(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        
+        // Sort by message index
+        checkpoints.sort_by_key(|c| c.message_index);
+        
+        Ok(checkpoints)
     }
     
     /// Capture checkpoint state synchronously and return data for async commit
@@ -170,14 +220,14 @@ impl CheckpointService {
     }
     
     
-    /// List all checkpoints for this attempt
+    /// List all checkpoints for this execution process
     pub fn list_checkpoints(&self) -> Result<Vec<CheckpointInfo>, CheckpointError> {
         let mut checkpoints = Vec::new();
         
         // Open the repository
         let repo = Repository::open(&self.worktree_path)?;
         
-        // Iterate through all refs matching our prefix
+        // Iterate through all refs matching our prefix (specific to this execution process)
         repo.references_glob(&format!("{}*", self.attempt_ref_prefix))?
             .filter_map(Result::ok)
             .for_each(|reference| {
