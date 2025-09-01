@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { AlertTriangle } from 'lucide-react';
 import Prompt from './Prompt';
 import ConversationEntry from './ConversationEntry';
+import SessionRestartBanner from './SessionRestartBanner';
 import { ConversationEntryDisplayType } from '@/lib/types';
 
 function Conversation() {
@@ -97,6 +98,29 @@ function Conversation() {
       >,
     [mainCodingAgentLog, followUpLogs]
   );
+
+  // Check for session restarts - when a follow-up has different/empty session_id
+  const sessionRestarts = useMemo(() => {
+    const restarts = new Set<string>();
+    allProcessLogs.forEach((log, index) => {
+      if (!log || index === 0) return;
+      const prevLog = allProcessLogs[index - 1];
+      if (!prevLog) return;
+      
+      // Check if this is a follow-up that started a new session
+      const isFollowUp = log.command === 'followup_executor';
+      const prevSessionId = prevLog.normalized_conversation.session_id;
+      const currSessionId = log.normalized_conversation.session_id;
+      
+      // A restart occurs when:
+      // 1. It's a follow-up AND
+      // 2. Either has no session_id OR has different session_id from previous
+      if (isFollowUp && (!currSessionId || (prevSessionId && currSessionId !== prevSessionId))) {
+        restarts.add(String(log.id));
+      }
+    });
+    return restarts;
+  }, [allProcessLogs]);
 
   // Flatten all entries, keeping process info for each entry
   const allEntries = useMemo(() => {
@@ -204,22 +228,28 @@ function Conversation() {
 
   const renderedVisibleEntries = useMemo(
     () =>
-      visibleEntries.map((entry, index) => (
-        <ConversationEntry
-          key={entry.entry.timestamp || index}
-          idx={index}
-          item={entry}
-          handleConversationUpdate={handleConversationUpdate}
-          visibleEntriesLength={visibleEntries.length}
-          runningProcessDetails={attemptData.runningProcessDetails}
-          sessionIdToCommand={sessionIdToCommand}
-        />
-      )),
+      visibleEntries.map((entry, index) => {
+        const showRestartBanner = entry.isFirstInProcess && sessionRestarts.has(entry.processId);
+        return (
+          <div key={entry.entry.timestamp || index}>
+            {showRestartBanner && <SessionRestartBanner />}
+            <ConversationEntry
+              idx={index}
+              item={entry}
+              handleConversationUpdate={handleConversationUpdate}
+              visibleEntriesLength={visibleEntries.length}
+              runningProcessDetails={attemptData.runningProcessDetails}
+              sessionIdToCommand={sessionIdToCommand}
+            />
+          </div>
+        );
+      }),
     [
       visibleEntries,
       handleConversationUpdate,
       attemptData.runningProcessDetails,
       sessionIdToCommand,
+      sessionRestarts,
     ]
   );
 
@@ -233,8 +263,10 @@ function Conversation() {
       const showPrompt =
         log.normalized_conversation.prompt &&
         (isFollowUp || !allEntries.some((e) => e.processId === String(log.id)));
+      const showRestartBanner = sessionRestarts.has(String(log.id));
       return (
         <div key={String(log.id)} className={i > 0 ? 'mt-8' : ''}>
+          {showRestartBanner && <SessionRestartBanner />}
           {showPrompt && (
             <Prompt prompt={log.normalized_conversation.prompt || ''} />
           )}
@@ -254,6 +286,7 @@ function Conversation() {
     handleConversationUpdate,
     allEntries,
     visibleCount,
+    sessionRestarts,
   ]);
 
   // Check if we should show the status banner - only if the most recent process failed/stopped

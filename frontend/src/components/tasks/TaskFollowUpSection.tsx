@@ -130,9 +130,18 @@ export function TaskFollowUpSection() {
         localStorage.removeItem(draftKey);
       }
       // Add a small delay to ensure the backend has created the process record
+      // For restarted sessions, we need a slightly longer delay to ensure the new process is ready
+      const delayMs = restartSession ? 1000 : 500;
       setTimeout(() => {
         fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
-      }, 500);
+      }, delayMs);
+      
+      // For restarted sessions, also poll a second time to ensure we catch the new process
+      if (restartSession) {
+        setTimeout(() => {
+          fetchAttemptData(selectedAttempt.id, selectedAttempt.task_id);
+        }, 2000);
+      }
     } catch (error: unknown) {
       // @ts-expect-error it is type ApiError
       setFollowUpError(`Failed to start follow-up execution: ${error.message}`);
