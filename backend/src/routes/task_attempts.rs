@@ -95,8 +95,7 @@ async fn normalize_process_logs(
     if !has_stdout && !has_stderr {
         return NormalizedConversation {
             entries: vec![],
-            // TODO: Should be executor_session.as_ref().and_then(|s| s.session_id.clone())
-            session_id: None,
+            session_id: executor_session.as_ref().and_then(|s| s.session_id.clone()),
             executor_type: process
                 .executor_type
                 .clone()
@@ -124,8 +123,7 @@ async fn normalize_process_logs(
                     Err(_) => {
                         return NormalizedConversation {
                             entries: vec![],
-                            // TODO: Should be executor_session.as_ref().and_then(|s| s.session_id.clone())
-                            session_id: None,
+                            session_id: executor_session.as_ref().and_then(|s| s.session_id.clone()),
                             executor_type: executor_type.to_string(),
                             prompt: executor_session.as_ref().and_then(|s| s.prompt.clone()),
                             summary: executor_session.as_ref().and_then(|s| s.summary.clone()),
@@ -185,11 +183,9 @@ async fn normalize_process_logs(
     };
     NormalizedConversation {
         entries: all_entries,
-        // TODO: Fix this to include the actual session_id from executor_session
-        // This should be: executor_session.as_ref().and_then(|s| s.session_id.clone())
-        // Currently hardcoded to None, which prevents the frontend from detecting
-        // session restarts (when restart_session=true creates a new session)
-        session_id: None,
+        // Include the actual session_id from executor_session for the frontend
+        // to detect session restarts (when restart_session=true creates a new session)
+        session_id: executor_session.as_ref().and_then(|s| s.session_id.clone()),
         executor_type,
         prompt: executor_session.as_ref().and_then(|s| s.prompt.clone()),
         summary: executor_session.as_ref().and_then(|s| s.summary.clone()),

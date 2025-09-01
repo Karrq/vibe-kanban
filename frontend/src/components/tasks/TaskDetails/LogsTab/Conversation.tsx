@@ -89,13 +89,34 @@ function Conversation() {
     [attemptData.allLogs]
   );
 
-  // Check for session restarts - currently disabled due to backend limitation
-  // The backend's normalize_process_logs always returns session_id: None in the NormalizedConversation,
-  // so we can't reliably detect restarts from the frontend.
-  // TODO: Fix backend to include actual session_id from executor_sessions in normalized conversation
+  // Check for session restarts - when a follow-up process starts a new session
+  // This happens when restart_session=true is used (Shift+Click or Cmd/Ctrl+Shift+Enter)
   const sessionRestarts = useMemo(() => {
-    return new Set<string>();
-  }, []);
+    const restarts = new Set<string>();
+    
+    // Track session changes between consecutive processes
+    for (let i = 1; i < allProcessLogs.length; i++) {
+      const prevLog = allProcessLogs[i - 1];
+      const currLog = allProcessLogs[i];
+      
+      if (!prevLog || !currLog) continue;
+      
+      const prevSessionId = prevLog.normalized_conversation.session_id;
+      const currSessionId = currLog.normalized_conversation.session_id;
+      
+      // A restart is detected when:
+      // 1. Previous process had a session_id AND
+      // 2. Current process either has no session_id OR has a different session_id
+      // 3. Current process is a follow-up (not a new executor)
+      const isFollowUp = currLog.command === 'followup_executor';
+      
+      if (isFollowUp && prevSessionId && (!currSessionId || currSessionId !== prevSessionId)) {
+        restarts.add(String(currLog.id));
+      }
+    }
+    
+    return restarts;
+  }, [allProcessLogs]);
 
   // Flatten all entries, keeping process info for each entry
   const allEntries = useMemo(() => {
@@ -224,6 +245,7 @@ function Conversation() {
       handleConversationUpdate,
       attemptData.runningProcessDetails,
       sessionIdToCommand,
+      sessionRestarts,
     ]
   );
 
@@ -260,6 +282,7 @@ function Conversation() {
     handleConversationUpdate,
     allEntries,
     visibleCount,
+    sessionRestarts,
   ]);
 
   // Check if we should show the status banner - only if the most recent process failed/stopped
