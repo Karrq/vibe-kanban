@@ -89,34 +89,47 @@ function Conversation() {
     [attemptData.allLogs]
   );
 
-  // Check for session restarts - when a follow-up process starts a new session
-  // This happens when restart_session=true is used (Shift+Click or Cmd/Ctrl+Shift+Enter)
+  // Check for session restarts - identifies processes that start new sessions
+  // This includes:
+  // 1. New executor processes (not follow-ups) after the first one
+  // 2. Follow-up processes with restart_session=true
   const sessionRestarts = useMemo(() => {
     const restarts = new Set<string>();
     
-    // Track session changes between consecutive processes
-    for (let i = 1; i < allProcessLogs.length; i++) {
-      const prevLog = allProcessLogs[i - 1];
-      const currLog = allProcessLogs[i];
+    // For each process, check if it should show a restart banner
+    allProcessLogs.forEach((log, index) => {
+      // Skip the very first process - it doesn't restart anything
+      if (index === 0) return;
       
-      if (!prevLog || !currLog) continue;
-      
-      const prevSessionId = prevLog.normalized_conversation.session_id;
-      const currSessionId = currLog.normalized_conversation.session_id;
-      
-      // A restart is detected when:
-      // 1. Previous process had a session_id AND
-      // 2. Current process either has no session_id OR has a different session_id
-      // 3. Current process is a follow-up (not a new executor)
-      const isFollowUp = currLog.command === 'followup_executor';
-      
-      if (isFollowUp && prevSessionId && (!currSessionId || currSessionId !== prevSessionId)) {
-        restarts.add(String(currLog.id));
+      // Check if this is a new executor (not a follow-up)
+      // Any executor after the first one indicates a task restart
+      if (log.command === 'executor') {
+        restarts.add(String(log.id));
+        return;
       }
-    }
+      
+      // For follow-ups, check the restart_session flag in args
+      if (log.command === 'followup_executor') {
+        // Try to get the process details from attemptData.processes
+        // which includes the args field with restart_session flag
+        const processDetails = attemptData.processes.find(p => p.id === String(log.id));
+        if (processDetails && processDetails.args) {
+          try {
+            const args = JSON.parse(processDetails.args);
+            // The args contains the operation_params which has restart_session
+            if (args && args.restart_session === true) {
+              restarts.add(String(log.id));
+            }
+          } catch (e) {
+            // If we can't parse args, don't show restart banner
+            console.debug('Could not parse process args:', e);
+          }
+        }
+      }
+    });
     
     return restarts;
-  }, [allProcessLogs]);
+  }, [allProcessLogs, attemptData.processes]);
 
   // Flatten all entries, keeping process info for each entry
   const allEntries = useMemo(() => {
