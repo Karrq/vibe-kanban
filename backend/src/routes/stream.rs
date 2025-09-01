@@ -47,21 +47,66 @@ pub async fn normalized_logs_stream(
     State(app_state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, axum::Error>>> {
     // Get process info including task_attempt_id and working directory
-    let (is_gemini, task_attempt_id, working_dir, process_type) = match ExecutionProcess::find_by_id(&app_state.db_pool, process_id).await {
+    let (is_gemini, task_attempt_id, working_dir, process_type, process_created_at) = match ExecutionProcess::find_by_id(&app_state.db_pool, process_id).await {
         Ok(Some(process)) => (
             process.executor_type.as_deref() == Some("gemini"),
             process.task_attempt_id,
             process.working_directory.clone(),
             process.process_type.clone(),
+            process.created_at,
         ),
         _ => {
             tracing::warn!(
                 "Failed to find execution process {} for SSE streaming",
                 process_id
             );
-            (false, Uuid::new_v4(), String::new(), crate::models::execution_process::ExecutionProcessType::CodingAgent)
+            (false, Uuid::new_v4(), String::new(), crate::models::execution_process::ExecutionProcessType::CodingAgent, chrono::Utc::now())
         }
     };
+
+    // Calculate cumulative message count from previous processes
+    let cumulative_message_count = if matches!(process_type, crate::models::execution_process::ExecutionProcessType::CodingAgent) {
+        // Get all previous CodingAgent processes for this attempt
+        match ExecutionProcess::find_by_task_attempt_id(&app_state.db_pool, task_attempt_id).await {
+            Ok(processes) => {
+                let mut count = 0;
+                for proc in processes.iter() {
+                    // Only count CodingAgent processes that started before this one
+                    if proc.process_type == crate::models::execution_process::ExecutionProcessType::CodingAgent 
+                        && proc.created_at < process_created_at {
+                        // Parse and normalize the logs to count entries
+                        if let Some(stdout) = &proc.stdout {
+                            if !stdout.trim().is_empty() {
+                                if let Some(executor_type) = &proc.executor_type {
+                                    use crate::executor::ExecutorConfig;
+                                    if let Ok(config) = executor_type.parse::<ExecutorConfig>() {
+                                        let executor = config.create_executor();
+                                        let working_dir_path = proc.working_directory.clone();
+                                        if let Ok(normalized) = executor.normalize_logs(stdout, &working_dir_path) {
+                                            count += normalized.entries.len();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                count
+            }
+            Err(e) => {
+                tracing::warn!("Failed to get previous processes for cumulative count: {}", e);
+                0
+            }
+        }
+    } else {
+        0
+    };
+
+    tracing::info!(
+        "Process {} starting with cumulative message count: {}",
+        process_id,
+        cumulative_message_count
+    );
 
     // Initialize checkpoint service for CodingAgent processes
     let checkpoint_service = if matches!(process_type, crate::models::execution_process::ExecutionProcessType::CodingAgent) {
@@ -256,7 +301,8 @@ pub async fn normalized_logs_stream(
                 // Checkpoint captures state after all entries in the batch
                 if let Some(checkpoint_svc) = &checkpoint_service {
                     if has_state_mutating_tool {
-                        let checkpoint_index = normalized.entries.len();
+                        // Use cumulative count + current process entries for global index
+                        let checkpoint_index = cumulative_message_count + normalized.entries.len();
                         let service = checkpoint_svc.lock().await;
                         match service.capture_checkpoint_state(checkpoint_index) {
                             Ok(Some(commit_data)) => {
