@@ -70,10 +70,11 @@ function Conversation() {
     }
   }, [shouldAutoScrollLogs]);
 
-  // Find main and follow-up processes from allLogs
-  const mainCodingAgentLog = useMemo(
+  // Find all executor and follow-up processes from allLogs
+  // Note: There can be multiple executor processes if the task was restarted
+  const mainCodingAgentLogs = useMemo(
     () =>
-      attemptData.allLogs.find(
+      attemptData.allLogs.filter(
         (log) =>
           log.process_type.toLowerCase() === 'codingagent' &&
           log.command === 'executor'
@@ -90,35 +91,24 @@ function Conversation() {
     [attemptData.allLogs]
   );
 
-  // Combine all logs in order (main first, then follow-ups)
+  // Combine all logs in chronological order
   const allProcessLogs = useMemo(
-    () =>
-      [mainCodingAgentLog, ...followUpLogs].filter(Boolean) as Array<
-        NonNullable<typeof mainCodingAgentLog>
-      >,
-    [mainCodingAgentLog, followUpLogs]
+    () => {
+      const allLogs = [...mainCodingAgentLogs, ...followUpLogs];
+      // Sort by ID or timestamp to maintain chronological order
+      // The logs should already be sorted from the backend, but ensure order
+      return allLogs;
+    },
+    [mainCodingAgentLogs, followUpLogs]
   );
 
-  // Check for session restarts - when a follow-up has empty or null session_id
-  // This indicates the user explicitly requested a restart (Shift+Click or Cmd/Ctrl+Shift+Enter)
+  // Check for session restarts - currently disabled due to backend limitation
+  // The backend's normalize_process_logs always returns session_id: None in the NormalizedConversation,
+  // so we can't reliably detect restarts from the frontend.
+  // TODO: Fix backend to include actual session_id from executor_sessions in normalized conversation
   const sessionRestarts = useMemo(() => {
-    const restarts = new Set<string>();
-    allProcessLogs.forEach((log) => {
-      if (!log) return;
-      
-      // Check if this is a follow-up that started a new session
-      const isFollowUp = log.command === 'followup_executor';
-      const sessionId = log.normalized_conversation.session_id;
-      
-      // A restart occurs when:
-      // 1. It's a follow-up AND
-      // 2. Session ID is empty string or null (backend sends empty string when restart_session=true)
-      if (isFollowUp && (!sessionId || sessionId === '')) {
-        restarts.add(String(log.id));
-      }
-    });
-    return restarts;
-  }, [allProcessLogs]);
+    return new Set<string>();
+  }, []);
 
   // Flatten all entries, keeping process info for each entry
   const allEntries = useMemo(() => {
@@ -247,7 +237,6 @@ function Conversation() {
       handleConversationUpdate,
       attemptData.runningProcessDetails,
       sessionIdToCommand,
-      sessionRestarts,
     ]
   );
 
@@ -284,16 +273,15 @@ function Conversation() {
     handleConversationUpdate,
     allEntries,
     visibleCount,
-    sessionRestarts,
   ]);
 
   // Check if we should show the status banner - only if the most recent process failed/stopped
   const getMostRecentProcess = () => {
-    if (followUpLogs.length > 0) {
-      // Sort by creation time or use last in array as most recent
-      return followUpLogs[followUpLogs.length - 1];
+    // Get the last process from allProcessLogs (which includes all executors and follow-ups)
+    if (allProcessLogs.length > 0) {
+      return allProcessLogs[allProcessLogs.length - 1];
     }
-    return mainCodingAgentLog;
+    return null;
   };
 
   const mostRecentProcess = getMostRecentProcess();
