@@ -273,22 +273,29 @@ function Conversation() {
         const startIndex = allEntries.length - visibleEntries.length;
         const globalIndex = startIndex + index;
         
-        // Check if checkpoint exists for this message from the same executor
-        // Extract short executor ID from the process ID (first segment before dash)
+        // Calculate local index within this executor's messages
+        // Count how many messages from this executor come before and including this one
         const executorIdShort = entry.processId.split('-')[0];
+        let localIndex = -1; // Start at -1 since we'll increment for each message including current
+        for (let i = 0; i <= globalIndex; i++) {
+          if (allEntries[i].processId.split('-')[0] === executorIdShort) {
+            localIndex++;
+          }
+        }
+        
+        // Check if checkpoint exists for this LOCAL message index from the same executor
         const hasCheckpoint = checkpoints.some(
-          (cp) => cp.message_index === globalIndex && cp.executor_id === executorIdShort
+          (cp) => cp.message_index === localIndex && cp.executor_id === executorIdShort
         );
         
         // Debug logging
-        if (index === 0) {
-          console.log('Rendering entry:', {
-            index,
+        if (hasCheckpoint || index === 0) {
+          console.log('Checkpoint check:', {
             globalIndex,
+            localIndex,
             executorIdShort,
             hasCheckpoint,
-            checkpointsCount: checkpoints.length,
-            checkpoints: checkpoints.map(cp => ({ 
+            checkpointsForExecutor: checkpoints.filter(cp => cp.executor_id === executorIdShort).map(cp => ({ 
               index: cp.message_index, 
               executor: cp.executor_id 
             }))
