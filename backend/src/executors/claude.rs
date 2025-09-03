@@ -162,13 +162,21 @@ impl Executor for ClaudeExecutor {
         } else {
             format!("{}{}", self.command, resume_flag)
         };
+        
+        // When restart_session is true (session_id is empty), use the full task prompt
+        // Otherwise, use the followup prompt
+        let input_prompt = if session_id.is_empty() {
+            prompt_utils::build_task_prompt(&project, &task)
+        } else {
+            prompt.to_string()
+        };
 
         let mut command = CommandRunner::new();
         command
             .command(shell_cmd)
             .arg(shell_arg)
             .arg(&claude_command)
-            .stdin(prompt)
+            .stdin(&input_prompt)
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1")
             .env_setup_script(project.executor_env_script.clone());

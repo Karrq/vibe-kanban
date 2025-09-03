@@ -405,14 +405,28 @@ impl Executor for SstOpencodeExecutor {
         )?;
         // Use shell command for cross-platform compatibility
         let (shell_cmd, shell_arg) = get_shell_command();
-        let opencode_command = format!("{} --session {}", self.command, session_id);
+        
+        // Only add --session flag if session_id is not empty
+        let opencode_command = if session_id.is_empty() {
+            self.command.clone()
+        } else {
+            format!("{} --session {}", self.command, session_id)
+        };
+        
+        // When restart_session is true (session_id is empty), use the full task prompt
+        // Otherwise, use the followup prompt
+        let input_prompt = if session_id.is_empty() {
+            prompt_utils::build_task_prompt(&project, &task)
+        } else {
+            prompt.to_string()
+        };
 
         let mut command = CommandRunner::new();
         command
             .command(shell_cmd)
             .arg(shell_arg)
             .arg(&opencode_command)
-            .stdin(prompt)
+            .stdin(&input_prompt)
             .working_dir(worktree_path)
             .env("NODE_NO_WARNINGS", "1")
             .env_setup_script(project.executor_env_script.clone());

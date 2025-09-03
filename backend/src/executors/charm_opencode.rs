@@ -58,18 +58,32 @@ impl Executor for CharmOpencodeExecutor {
 
     async fn spawn_followup(
         &self,
-        _pool: &sqlx::SqlitePool,
-        _task_id: Uuid,
-        _session_id: &str,
+        pool: &sqlx::SqlitePool,
+        task_id: Uuid,
+        session_id: &str,
         prompt: &str,
         worktree_path: &str,
     ) -> Result<CommandProcess, ExecutorError> {
-        // CharmOpencode doesn't support session-based followup, so we ignore session_id
-        // and just run with the new prompt
+        // CharmOpencode doesn't support session-based followup
+        // When session_id is empty (restart_session=true), use the full task prompt
+        // Otherwise use the followup prompt
+        let input_prompt = if session_id.is_empty() {
+            // Get the task and project to build the full prompt
+            let task = Task::find_by_id(pool, task_id)
+                .await?
+                .ok_or(ExecutorError::TaskNotFound)?;
+            let project = Project::find_by_id(pool, task.project_id).await?.ok_or(
+                ExecutorError::ContextCollectionFailed("Project not found".to_string()),
+            )?;
+            prompt_utils::build_task_prompt(&project, &task)
+        } else {
+            prompt.to_string()
+        };
+        
         let (shell_cmd, shell_arg) = get_shell_command();
         let opencode_command = format!(
             "opencode -p \"{}\" --output-format=json",
-            prompt.replace('"', "\\\"")
+            input_prompt.replace('"', "\\\"")
         );
 
         let mut command = CommandRunner::new();
