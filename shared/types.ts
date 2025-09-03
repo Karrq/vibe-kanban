@@ -126,11 +126,13 @@ export type NormalizedEntryType = { "type": "user_message" } | { "type": "assist
 
 export type ActionType = { "action": "file_read", path: string, } | { "action": "file_write", path: string, } | { "action": "command_run", command: string, } | { "action": "search", query: string, } | { "action": "web_fetch", url: string, } | { "action": "task_create", description: string, } | { "action": "plan_presentation", plan: string, } | { "action": "other", description: string, };
 
-export type ForkTaskAttemptRequest = { message_index: number, };
+export type ForkTaskAttemptRequest = { execution_process_id: string, message_index: number, };
 
-export type CheckpointResponse = { message_index: number, commit_sha: string, timestamp: bigint, };
+export type CheckpointResponse = { message_index: number, commit_sha: string, timestamp: bigint, executor_id: string, };
 
 export type ForkResponse = { new_attempt_id: string, worktree_path: string, branch: string, checkpoint_used: CheckpointResponse, };
+
+export type CheckpointInfo = { message_index: number, commit_sha: string, timestamp: bigint, executor_id: string, };
 
 // Generated constants
 export const EXECUTOR_TYPES: string[] = [

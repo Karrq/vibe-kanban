@@ -50,7 +50,7 @@ impl From<sqlx::Error> for ForkServiceError {
 pub struct ForkService {
     worktree_path: String,
     attempt_id: Uuid,
-    attempt_ref_prefix: String,
+    attempt_id_short: String,
 }
 
 impl ForkService {
@@ -59,14 +59,13 @@ impl ForkService {
         // Verify the repository exists
         let _repo = Repository::open(worktree_path)?;
 
-        // Format the ref prefix for this attempt
+        // Format the short attempt ID for checkpoint references
         let attempt_id_short = attempt_id
             .to_string()
             .split('-')
             .next()
             .unwrap_or("unknown")
             .to_string();
-        let attempt_ref_prefix = format!("refs/vk-checkpoints/{}/msg-", attempt_id_short);
 
         info!(
             "Initialized ForkService for attempt {} at {}",
@@ -76,7 +75,7 @@ impl ForkService {
         Ok(Self {
             worktree_path: worktree_path.to_string(),
             attempt_id,
-            attempt_ref_prefix,
+            attempt_id_short,
         })
     }
 
@@ -97,51 +96,49 @@ impl ForkService {
             message_index: 0,
             commit_sha: target_commit.id().to_string(),
             timestamp: target_commit.time().seconds(),
+            executor_id: String::from("branch"),  // Special indicator for branch-based checkpoint
         })
     }
 
-    /// Find the last checkpoint at or before the given message index
+    /// Find the last checkpoint at or before the given message index for a specific execution process
     pub fn find_last_checkpoint_before(
         &self,
+        execution_process_id: Uuid,
         message_index: usize,
     ) -> Result<Option<CheckpointInfo>, ForkServiceError> {
         let repo = Repository::open(&self.worktree_path)?;
 
-        let mut best_checkpoint: Option<CheckpointInfo> = None;
-
-        // Iterate through all refs matching our prefix
-        repo.references_glob(&format!("{}*", self.attempt_ref_prefix))?
+        // Get the short exec ID to match the checkpoint ref format
+        let exec_id_short = execution_process_id.to_string().split('-').next().unwrap_or("unknown").to_string();
+        
+        // Search in the specific execution process's checkpoint namespace
+        // Pattern: refs/vk-checkpoints/{attempt_id_short}/{exec_id_short}/msg-*
+        let glob_pattern = format!("refs/vk-checkpoints/{}/{}/msg-*", self.attempt_id_short, exec_id_short);
+        
+        let best_checkpoint = repo.references_glob(&glob_pattern)?
             .filter_map(Result::ok)
-            .for_each(|reference| {
-                if let Ok(commit) = reference.peel_to_commit() {
-                    // Extract message index from ref name
-                    if let Some(ref_name) = reference.name() {
-                        if let Some(index_str) = ref_name.strip_prefix(&self.attempt_ref_prefix) {
-                            if let Ok(index) = index_str.parse::<usize>() {
-                                // Only consider checkpoints at or before the requested index
-                                if index <= message_index {
-                                    let checkpoint = CheckpointInfo {
-                                        message_index: index,
-                                        commit_sha: commit.id().to_string(),
-                                        timestamp: commit.time().seconds(),
-                                    };
-
-                                    // Update best checkpoint if this one is closer to target
-                                    match &best_checkpoint {
-                                        None => best_checkpoint = Some(checkpoint),
-                                        Some(current_best) => {
-                                            if checkpoint.message_index > current_best.message_index
-                                            {
-                                                best_checkpoint = Some(checkpoint);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+            .filter_map(|reference| {
+                let commit = reference.peel_to_commit().ok()?;
+                let ref_name = reference.name()?;
+                
+                // Get the message index from the last part (msg-{index})
+                let msg_part = ref_name.split('/').last()?;
+                let index_str = msg_part.strip_prefix("msg-")?;
+                let index = index_str.parse::<usize>().ok()?;
+                
+                // Only consider checkpoints at or before the requested index
+                if index <= message_index {
+                    Some(CheckpointInfo {
+                        message_index: index,
+                        commit_sha: commit.id().to_string(),
+                        timestamp: commit.time().seconds(),
+                        executor_id: exec_id_short.clone(),
+                    })
+                } else {
+                    None
                 }
-            });
+            })
+            .max_by_key(|checkpoint| checkpoint.message_index);
 
         if let Some(ref checkpoint) = best_checkpoint {
             debug!(

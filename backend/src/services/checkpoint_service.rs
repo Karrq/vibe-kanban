@@ -45,17 +45,18 @@ pub struct CheckpointService {
 
 impl CheckpointService {
     /// Create a new CheckpointService for a worktree
-    pub fn new(worktree_path: &str, attempt_id: Uuid) -> Result<Self, CheckpointError> {
+    pub fn new(worktree_path: &str, attempt_id: Uuid, execution_process_id: Uuid) -> Result<Self, CheckpointError> {
         // Verify the repository exists
         let _repo = Repository::open(worktree_path)?;
         
-        // Format the ref prefix for this attempt
+        // Format the ref prefix for this attempt and execution process
         let attempt_id_short = attempt_id.to_string().split('-').next().unwrap_or("unknown").to_string();
-        let attempt_ref_prefix = format!("refs/vk-checkpoints/{}/msg-", attempt_id_short);
+        let exec_id_short = execution_process_id.to_string().split('-').next().unwrap_or("unknown").to_string();
+        let attempt_ref_prefix = format!("refs/vk-checkpoints/{}/{}/msg-", attempt_id_short, exec_id_short);
         
         info!(
-            "Initialized CheckpointService for attempt {} at {}",
-            attempt_id_short, worktree_path
+            "Initialized CheckpointService for attempt {} exec {} at {}",
+            attempt_id_short, exec_id_short, worktree_path
         );
         
         Ok(Self {
@@ -63,6 +64,55 @@ impl CheckpointService {
             attempt_ref_prefix,
             last_tree_oid: Mutex::new(None),
         })
+    }
+    
+    /// List all checkpoints for all execution processes within an attempt
+    /// This is a static method that doesn't require an execution_process_id
+    pub fn list_all_checkpoints_for_attempt(
+        worktree_path: &str,
+        attempt_id: Uuid,
+    ) -> Result<Vec<CheckpointInfo>, CheckpointError> {
+        // Open the repository
+        let repo = Repository::open(worktree_path)?;
+        
+        // Format the short attempt ID
+        let attempt_id_short = attempt_id.to_string().split('-').next().unwrap_or("unknown").to_string();
+        
+        // Search across all execution subdirectories for this attempt
+        // Pattern: refs/vk-checkpoints/{attempt_id_short}/*/msg-*
+        let glob_pattern = format!("refs/vk-checkpoints/{}/**/msg-*", attempt_id_short);
+        
+        let mut checkpoints: Vec<CheckpointInfo> = repo.references_glob(&glob_pattern)?
+            .filter_map(Result::ok)
+            .filter_map(|reference| {
+                let commit = reference.peel_to_commit().ok()?;
+                let ref_name = reference.name()?;
+                
+                // Extract executor ID from the path: refs/vk-checkpoints/{attempt_id}/{executor_id}/msg-{index}
+                let parts: Vec<&str> = ref_name.split('/').collect();
+                if parts.len() < 5 {
+                    return None;
+                }
+                let executor_id = parts[parts.len() - 2].to_string();
+                
+                // Get the message index from the last part (msg-{index})
+                let msg_part = ref_name.split('/').last()?;
+                let index_str = msg_part.strip_prefix("msg-")?;
+                let index = index_str.parse::<usize>().ok()?;
+                
+                Some(CheckpointInfo {
+                    message_index: index,
+                    commit_sha: commit.id().to_string(),
+                    timestamp: commit.time().seconds(),
+                    executor_id,
+                })
+            })
+            .collect();
+        
+        // Sort by message index
+        checkpoints.sort_by_key(|c| c.message_index);
+        
+        Ok(checkpoints)
     }
     
     /// Capture checkpoint state synchronously and return data for async commit
@@ -76,24 +126,22 @@ impl CheckpointService {
             
             // Get HEAD info
             let head = repo.head()?;
-            let head_tree = head.peel_to_tree()?;
             let parent_oid = head.peel_to_commit()?.id();
             
-            // Create a new in-memory index, pre-populated from HEAD
-            let mut temp_index = git2::Index::new()?;
-            temp_index.read_tree(&head_tree)?;
+            // Get the repository's index and use it to create a snapshot
+            let mut index = repo.index()?;
             
             // CRITICAL SECTION - must be fast and synchronous
-            // Update the temp index with all changes from the worktree
-            temp_index.update_all(&["."], None)?;
+            // Update the index with all changes from the worktree
+            index.update_all(&["."], None)?;
             
             // Add any new untracked files
             let mut add_opts = git2::IndexAddOption::DEFAULT;
             add_opts.insert(git2::IndexAddOption::CHECK_PATHSPEC);
-            temp_index.add_all(&["."], add_opts, None)?;
+            index.add_all(&["."], add_opts, None)?;
             
             // Write the index to a tree object
-            let tree_oid = temp_index.write_tree_to(&repo)?;
+            let tree_oid = index.write_tree()?;
             
             (tree_oid, parent_oid)
         };
@@ -170,32 +218,37 @@ impl CheckpointService {
     }
     
     
-    /// List all checkpoints for this attempt
+    /// List all checkpoints for this execution process
     pub fn list_checkpoints(&self) -> Result<Vec<CheckpointInfo>, CheckpointError> {
-        let mut checkpoints = Vec::new();
-        
         // Open the repository
         let repo = Repository::open(&self.worktree_path)?;
         
-        // Iterate through all refs matching our prefix
-        repo.references_glob(&format!("{}*", self.attempt_ref_prefix))?
+        // Iterate through all refs matching our prefix (specific to this execution process)
+        let mut checkpoints: Vec<CheckpointInfo> = repo.references_glob(&format!("{}*", self.attempt_ref_prefix))?
             .filter_map(Result::ok)
-            .for_each(|reference| {
-                if let Ok(commit) = reference.peel_to_commit() {
-                    // Extract message index from ref name
-                    if let Some(ref_name) = reference.name() {
-                        if let Some(index_str) = ref_name.strip_prefix(&self.attempt_ref_prefix) {
-                            if let Ok(index) = index_str.parse::<usize>() {
-                                checkpoints.push(CheckpointInfo {
-                                    message_index: index,
-                                    commit_sha: commit.id().to_string(),
-                                    timestamp: commit.time().seconds(),
-                                });
-                            }
-                        }
-                    }
+            .filter_map(|reference| {
+                let commit = reference.peel_to_commit().ok()?;
+                let ref_name = reference.name()?;
+                
+                // Extract executor ID from the path: refs/vk-checkpoints/{attempt_id}/{executor_id}/msg-{index}
+                let parts: Vec<&str> = ref_name.split('/').collect();
+                if parts.len() < 5 {
+                    return None;
                 }
-            });
+                let executor_id = parts[parts.len() - 2].to_string();
+                
+                // Extract message index from ref name
+                let index_str = ref_name.strip_prefix(&self.attempt_ref_prefix)?;
+                let index = index_str.parse::<usize>().ok()?;
+                
+                Some(CheckpointInfo {
+                    message_index: index,
+                    commit_sha: commit.id().to_string(),
+                    timestamp: commit.time().seconds(),
+                    executor_id,
+                })
+            })
+            .collect();
         
         // Sort by message index
         checkpoints.sort_by_key(|c| c.message_index);
@@ -205,11 +258,13 @@ impl CheckpointService {
 }
 
 /// Information about a checkpoint
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+#[ts(export)]
 pub struct CheckpointInfo {
     pub message_index: usize,
     pub commit_sha: String,
     pub timestamp: i64,
+    pub executor_id: String,  // Short executor ID from the checkpoint ref
 }
 
 /// Determines if a tool name represents a state-mutating operation

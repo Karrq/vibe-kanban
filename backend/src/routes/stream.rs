@@ -65,9 +65,9 @@ pub async fn normalized_logs_stream(
 
     // Initialize checkpoint service for CodingAgent processes
     let checkpoint_service = if matches!(process_type, crate::models::execution_process::ExecutionProcessType::CodingAgent) {
-        match CheckpointService::new(&working_dir, task_attempt_id) {
+        match CheckpointService::new(&working_dir, task_attempt_id, process_id) {
             Ok(service) => {
-                tracing::info!("Initialized checkpoint service for attempt {}", task_attempt_id);
+                tracing::info!("Initialized checkpoint service for attempt {} process {}", task_attempt_id, process_id);
                 Some(Arc::new(Mutex::new(service)))
             }
             Err(e) => {
@@ -256,6 +256,7 @@ pub async fn normalized_logs_stream(
                 // Checkpoint captures state after all entries in the batch
                 if let Some(checkpoint_svc) = &checkpoint_service {
                     if has_state_mutating_tool {
+                        // Use local process entry count for checkpoint index
                         let checkpoint_index = normalized.entries.len();
                         let service = checkpoint_svc.lock().await;
                         match service.capture_checkpoint_state(checkpoint_index) {
