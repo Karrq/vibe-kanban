@@ -273,9 +273,11 @@ function Conversation() {
         const startIndex = allEntries.length - visibleEntries.length;
         const globalIndex = startIndex + index;
         
-        // Check if checkpoint exists for this message
+        // Check if checkpoint exists for this message from the same executor
+        // Extract short executor ID from the process ID (first segment before dash)
+        const executorIdShort = entry.processId.split('-')[0];
         const hasCheckpoint = checkpoints.some(
-          (cp) => cp.message_index === globalIndex
+          (cp) => cp.message_index === globalIndex && cp.executor_id === executorIdShort
         );
         
         // Debug logging
@@ -283,9 +285,13 @@ function Conversation() {
           console.log('Rendering entry:', {
             index,
             globalIndex,
+            executorIdShort,
             hasCheckpoint,
             checkpointsCount: checkpoints.length,
-            checkpoints: checkpoints.map(cp => cp.message_index)
+            checkpoints: checkpoints.map(cp => ({ 
+              index: cp.message_index, 
+              executor: cp.executor_id 
+            }))
           });
         }
         

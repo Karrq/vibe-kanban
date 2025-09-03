@@ -71,6 +71,7 @@ pub struct CheckpointResponse {
     pub message_index: usize,
     pub commit_sha: String,
     pub timestamp: i64,
+    pub executor_id: String,
 }
 
 #[derive(Debug, Serialize, TS)]
@@ -1103,6 +1104,7 @@ pub async fn get_task_attempt_checkpoints(
             message_index: cp.message_index,
             commit_sha: cp.commit_sha,
             timestamp: cp.timestamp,
+            executor_id: cp.executor_id,
         })
         .collect();
 
@@ -1171,6 +1173,7 @@ pub async fn fork_task_attempt(
                     message_index: cp.message_index,
                     commit_sha: cp.commit_sha.clone(),
                     timestamp: cp.timestamp,
+                    executor_id: cp.executor_id.clone(),
                 },
             };
 

@@ -128,7 +128,7 @@ export type ActionType = { "action": "file_read", path: string, } | { "action": 
 
 export type ForkTaskAttemptRequest = { execution_process_id: string, message_index: number, };
 
-export type CheckpointResponse = { message_index: number, commit_sha: string, timestamp: bigint, };
+export type CheckpointResponse = { message_index: number, commit_sha: string, timestamp: bigint, executor_id: string, };
 
 export type ForkResponse = { new_attempt_id: string, worktree_path: string, branch: string, checkpoint_used: CheckpointResponse, };
 
