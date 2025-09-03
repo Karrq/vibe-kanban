@@ -36,6 +36,8 @@ function Conversation() {
   const [checkpointsLoading, setCheckpointsLoading] = useState(false);
   const [forkDialogOpen, setForkDialogOpen] = useState(false);
   const [selectedForkIndex, setSelectedForkIndex] = useState<number | null>(null);
+  const [selectedForkLocalIndex, setSelectedForkLocalIndex] = useState<number | null>(null);
+  const [selectedForkExecutorId, setSelectedForkExecutorId] = useState<string | null>(null);
   const [forkLoading, setForkLoading] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -90,18 +92,28 @@ function Conversation() {
   }, [shouldAutoScrollLogs]);
 
   // Handle fork request
-  const handleForkRequest = useCallback((messageIndex: number) => {
-    console.log('handleForkRequest called with messageIndex:', messageIndex);
+  const handleForkRequest = useCallback((messageIndex: number, localIndex: number, executorId: string) => {
+    console.log('handleForkRequest called with:', { messageIndex, localIndex, executorId });
     setSelectedForkIndex(messageIndex);
+    setSelectedForkLocalIndex(localIndex);
+    setSelectedForkExecutorId(executorId);
     setForkDialogOpen(true);
   }, []);
 
   // Find the checkpoint for a message index
   const getCheckpointForMessage = useCallback(
-    (messageIndex: number): CheckpointResponse | null => {
+    (messageIndex: number, localIndex: number | null, executorId: string | null): CheckpointResponse | null => {
       if (!checkpoints.length) return null;
       
-      // Find the last checkpoint at or before this message
+      // If we have executor-specific info, look for exact match
+      if (localIndex !== null && executorId !== null) {
+        const exactMatch = checkpoints.find(
+          (cp) => cp.message_index === localIndex && cp.executor_id === executorId
+        );
+        if (exactMatch) return exactMatch;
+      }
+      
+      // Fallback to global index (shouldn't happen in normal flow)
       const eligibleCheckpoints = checkpoints.filter(
         (cp) => cp.message_index <= messageIndex
       );
@@ -311,7 +323,7 @@ function Conversation() {
             visibleEntriesLength={visibleEntries.length}
             runningProcessDetails={attemptData.runningProcessDetails}
             globalMessageIndex={globalIndex}
-            onFork={handleForkRequest}
+            onFork={(msgIndex) => handleForkRequest(msgIndex, localIndex, executorIdShort)}
             hasCheckpoint={hasCheckpoint}
           />
         );
@@ -453,7 +465,7 @@ function Conversation() {
         open={forkDialogOpen}
         onOpenChange={setForkDialogOpen}
         messageIndex={selectedForkIndex ?? 0}
-        checkpoint={selectedForkIndex !== null ? getCheckpointForMessage(selectedForkIndex) : null}
+        checkpoint={selectedForkIndex !== null ? getCheckpointForMessage(selectedForkIndex, selectedForkLocalIndex, selectedForkExecutorId) : null}
         onConfirm={handleForkConfirm}
         isLoading={forkLoading}
       />
