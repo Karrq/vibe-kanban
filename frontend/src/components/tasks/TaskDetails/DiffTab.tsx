@@ -1,10 +1,15 @@
 import { DiffCard } from '@/components/tasks/TaskDetails/DiffCard.tsx';
-import { useContext } from 'react';
+import { useContext, useEffect } from 'react';
 import { TaskDiffContext } from '@/components/context/taskDetailsContext.ts';
 import { Loader } from '@/components/ui/loader';
 
 function DiffTab() {
-  const { diff, diffLoading, diffError } = useContext(TaskDiffContext);
+  const { diff, diffLoading, diffError, fetchDiff } = useContext(TaskDiffContext);
+
+  // Refresh diffs when tab is opened
+  useEffect(() => {
+    fetchDiff();
+  }, [fetchDiff]);
 
   if (diffLoading) {
     return (
