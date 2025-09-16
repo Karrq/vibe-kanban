@@ -22,10 +22,9 @@ const ConversationEntry = ({
   runningProcessDetails,
   sessionIdToCommand,
 }: Props) => {
-  // Show prompt only for the first entry of each process
-  // For follow-up processes: show at the start of each follow-up
-  // For main process: show at the start
-  const showPrompt = item.processPrompt && item.isFirstInProcess;
+  // Check if this is a prompt entry (special entry with entryIndex === -1)
+  const isPromptEntry = item.entryIndex === -1 && item.processPrompt;
+  
   // For running processes, render the live viewer below the static entries
   if (item.processIsRunning && idx === visibleEntriesLength - 1) {
     // Only render the live viewer for the last entry of a running process
@@ -33,7 +32,6 @@ const ConversationEntry = ({
     if (runningProcess) {
       return (
         <div key={item.entry.timestamp || idx}>
-          {showPrompt && <Prompt prompt={item.processPrompt || ''} />}
           <NormalizedConversationViewer
             executionProcess={runningProcess}
             onConversationUpdate={handleConversationUpdate}
@@ -44,10 +42,17 @@ const ConversationEntry = ({
     }
     // Fallback: show loading if not found
     return <Loader message="Loading live logs..." size={24} className="py-4" />;
-  } else {
+  } else if (isPromptEntry) {
+    // Render prompt entries with the special Prompt component
     return (
       <div key={item.entry.timestamp || idx}>
-        {showPrompt && <Prompt prompt={item.processPrompt || ''} />}
+        <Prompt prompt={item.processPrompt || ''} />
+      </div>
+    );
+  } else {
+    // Regular entry
+    return (
+      <div key={item.entry.timestamp || idx}>
         <DisplayConversationEntry
           entry={item.entry}
           index={idx}

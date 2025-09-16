@@ -101,26 +101,63 @@ function Conversation() {
   // Flatten all entries, keeping process info for each entry
   const allEntries = useMemo(() => {
     const entries: Array<ConversationEntryDisplayType> = [];
+    
     allProcessLogs.forEach((log, processIndex) => {
       if (!log) return;
       if (log.status === 'running') return; // Skip static entries for running processes
-      const processId = String(log.id); // Ensure string
+      const processId = String(log.id);
       const entriesArr = log.normalized_conversation.entries || [];
       
+      // Find the earliest timestamp for this process's entries
+      let earliestTimestamp: string | undefined;
+      const entriesWithTimestamp = entriesArr.filter(e => e.timestamp);
+      if (entriesWithTimestamp.length > 0) {
+        earliestTimestamp = entriesWithTimestamp.reduce((min, entry) => 
+          (!min || (entry.timestamp && entry.timestamp < min)) ? entry.timestamp! : min
+        , entriesWithTimestamp[0].timestamp!);
+      }
+      
+      // If there's a prompt, create a pseudo-entry for it with a timestamp just before the first entry
+      if (log.normalized_conversation.prompt && earliestTimestamp) {
+        // Create a timestamp slightly before the earliest entry to ensure prompt comes first
+        const promptTimestamp = new Date(earliestTimestamp);
+        promptTimestamp.setMilliseconds(promptTimestamp.getMilliseconds() - 1);
+        
+        entries.push({
+          entry: {
+            timestamp: promptTimestamp.toISOString(),
+            entry_type: { type: 'user_message' },
+            content: log.normalized_conversation.prompt,
+            tool_result: null,
+            tool_args: null,
+          },
+          processId,
+          processPrompt: log.normalized_conversation.prompt,
+          processStatus: log.status,
+          processIsRunning: false,
+          process: log,
+          isFirstInProcess: true,
+          processIndex,
+          entryIndex: -1, // Special index for prompts
+        });
+      }
+      
+      // Add all regular entries
       entriesArr.forEach((entry, entryIndex) => {
         entries.push({
           entry,
           processId,
-          processPrompt: undefined, // Don't attach prompt to every entry
+          processPrompt: undefined,
           processStatus: log.status,
-          processIsRunning: false, // Only completed processes here
+          processIsRunning: false,
           process: log,
-          isFirstInProcess: false, // Will be set correctly after sorting
+          isFirstInProcess: false,
           processIndex,
           entryIndex,
         });
       });
     });
+    
     // Sort by timestamp (entries without timestamp go last)
     entries.sort((a, b) => {
       if (a.entry.timestamp && b.entry.timestamp) {
@@ -129,26 +166,6 @@ function Conversation() {
       if (a.entry.timestamp) return -1;
       if (b.entry.timestamp) return 1;
       return 0;
-    });
-    
-    // After sorting, mark the actual first entry of each process and attach prompt
-    const seenProcessIds = new Set<string>();
-    const processPrompts = new Map<string, string | undefined>();
-    
-    // First, collect prompts for each process
-    allProcessLogs.forEach(log => {
-      if (log && log.normalized_conversation.prompt) {
-        processPrompts.set(String(log.id), log.normalized_conversation.prompt);
-      }
-    });
-    
-    // Then mark first entries and attach prompts only to them
-    entries.forEach(entry => {
-      if (!seenProcessIds.has(entry.processId)) {
-        entry.isFirstInProcess = true;
-        entry.processPrompt = processPrompts.get(entry.processId);
-        seenProcessIds.add(entry.processId);
-      }
     });
     
     return entries;
