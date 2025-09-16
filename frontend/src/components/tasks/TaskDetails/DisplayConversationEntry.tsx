@@ -102,6 +102,9 @@ const getEntryIcon = (entryType: NormalizedEntryType) => {
       if (toolNameLower === 'websearch' || toolNameLower === 'web_search') {
         return <Globe className="h-4 w-4 text-blue-600" />;
       }
+      if (toolNameLower === 'exitplanmode') {
+        return <CheckSquare className="h-4 w-4 text-blue-600" />;
+      }
     }
     if (action_type.action === 'task_create') {
       return <Plus className="h-4 w-4 text-teal-600" />;

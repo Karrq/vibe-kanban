@@ -46,6 +46,9 @@ export function ToolResultDisplay({
 
   // Check if this is a Task tool (subagent invocation)
   const isTaskTool = toolName && toolName.toLowerCase() === 'task';
+  
+  // Check if this is an ExitPlanMode tool
+  const isExitPlanModeTool = toolName && toolName.toLowerCase() === 'exitplanmode';
 
   // Check if this is a file editing tool (Edit, Write, MultiEdit, etc.)
   const isFileEditingTool = 
@@ -79,6 +82,7 @@ export function ToolResultDisplay({
     isKillBashTool ||
     isSearchTool ||
     isTaskTool ||
+    isExitPlanModeTool ||
     isFileEditingTool ||
     isFileReadingTool;
 
@@ -456,6 +460,45 @@ export function ToolResultDisplay({
               </pre>
             </div>
           )}
+        </div>
+      );
+    }
+  } else if (isExitPlanModeTool) {
+    // For ExitPlanMode: show "Exiting plan mode" when collapsed
+    displayContent = <span className="text-sm">Exiting plan mode</span>;
+    
+    // Extract the plan from tool args, handling Claude executor's wrapper format
+    let plan = '';
+    if (toolArgs) {
+      // Handle Claude executor's wrapper format
+      if (typeof toolArgs === 'object' && toolArgs._tool_input && toolArgs._tool_input.plan) {
+        plan = toolArgs._tool_input.plan;
+      } else if (typeof toolArgs === 'object' && toolArgs.plan) {
+        plan = toolArgs.plan;
+      } else if (typeof toolArgs === 'string') {
+        // Try to parse if it's a JSON string
+        try {
+          const parsed = JSON.parse(toolArgs);
+          plan = parsed.plan || parsed._tool_input?.plan || '';
+        } catch {
+          // Not JSON, use as-is
+          plan = toolArgs;
+        }
+      }
+    }
+    
+    // Show the plan when expanded
+    if (expanded && plan) {
+      outputContent = (
+        <div className="space-y-2">
+          <div className="px-3 py-3">
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">
+              Plan:
+            </div>
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <MarkdownRenderer content={plan} />
+            </div>
+          </div>
         </div>
       );
     }
